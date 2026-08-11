@@ -1,7 +1,6 @@
 package dev.securemesh.commander.core.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -17,7 +16,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -84,7 +82,7 @@ fun PressScaleSurface(
         border = border,
         shadowElevation = elevation,
     ) {
-        Box(Modifier.fillMaxSize(), content = content)
+        Box(content = content)
     }
 }
 
@@ -121,6 +119,6 @@ fun SoftGlowSurface(
         shape = CircleShape,
         border = BorderStroke(1.dp, accent.copy(alpha = .18f)),
     ) {
-        Box(Modifier.fillMaxSize().alpha(.98f), content = content)
+        Box(Modifier.alpha(.98f), content = content)
     }
 }
