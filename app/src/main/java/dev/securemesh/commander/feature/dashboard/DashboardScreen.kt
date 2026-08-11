@@ -34,6 +34,7 @@ fun DashboardScreen(
     val gpsFixes = state.nodes.count { it.position?.status(System.currentTimeMillis()) == GpsStatus.FIX }
     val minimumBattery = state.nodes.mapNotNull { it.batteryPercent }.minOrNull()
     val recentMessages = state.messages.sortedByDescending { it.createdAtEpochMs }.take(4)
+    val demoProfile = state.demoProfile
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -64,11 +65,11 @@ fun DashboardScreen(
 
         item { ConnectionBanner(state.connection) }
 
-        state.demoProfile?.let { profile ->
+        if (demoProfile != null) {
             item {
                 StatusChip(
-                    profile.ruLabel(),
-                    if (profile == DemoProfile.CURRENT_FIRMWARE_V05) SecureMeshColors.Warning else SecureMeshColors.Cyan,
+                    demoProfile.ruLabel(),
+                    if (demoProfile == DemoProfile.CURRENT_FIRMWARE_V05) SecureMeshColors.Warning else SecureMeshColors.Cyan,
                 )
             }
         }
@@ -127,11 +128,7 @@ fun DashboardScreen(
                 val peerId = if (message.origin == local?.nodeId) message.destination else message.origin
                 val peer = state.nodes.firstOrNull { it.id == peerId }
                 val peerName = deviceDisplayName(peer?.name ?: peerId)
-                Surface(
-                    color = SecureMeshColors.Surface,
-                    shape = MaterialTheme.shapes.large,
-                    onClick = onMessages,
-                ) {
+                Surface(color = SecureMeshColors.Surface, shape = MaterialTheme.shapes.large, onClick = onMessages) {
                     Row(
                         Modifier.fillMaxWidth().padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
