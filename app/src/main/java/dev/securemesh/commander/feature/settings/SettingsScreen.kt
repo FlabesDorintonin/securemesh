@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -13,17 +14,136 @@ import dev.securemesh.commander.core.ui.*
 
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel) {
-    val s by viewModel.settings.collectAsStateWithLifecycle()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("SETTINGS", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black) }
-        item { TechnicalCard("General") { SettingValue("Theme", s.theme); SettingValue("Units", s.units); SettingSwitch("Keep screen awake during test", s.keepScreenAwakeDuringTest) { v -> viewModel.update { it.copy(keepScreenAwakeDuringTest=v) } } } }
-        item { TechnicalCard("Bluetooth") { SettingSwitch("Auto reconnect", s.autoReconnect) { v -> viewModel.update { it.copy(autoReconnect=v) } }; SettingStepper("Scan duration", "${s.scanDurationSec}s", onMinus = { viewModel.update { it.copy(scanDurationSec=(it.scanDurationSec-1).coerceAtLeast(5)) } }, onPlus = { viewModel.update { it.copy(scanDurationSec=(it.scanDurationSec+1).coerceAtMost(30)) } }); SettingSwitch("Show unknown BLE", s.showUnknownBle) { v -> viewModel.update { it.copy(showUnknownBle=v) } }; SettingSwitch("Remember trusted SecureMesh identity", s.rememberTrustedNode) { v -> viewModel.update { it.copy(rememberTrustedNode=v) } } } }
-        item { TechnicalCard("Map") { SettingValue("Offline map", "provider / tile packs placeholder"); SettingSwitch("Position history", s.positionHistory) { v -> viewModel.update { it.copy(positionHistory=v) } } } }
-        item { TechnicalCard("Logging") { SettingSwitch("Store events", s.storeEvents) { v -> viewModel.update { it.copy(storeEvents=v) } }; SettingStepper("Retention", "${s.retentionDays} days", onMinus = { viewModel.update { it.copy(retentionDays=(it.retentionDays-1).coerceAtLeast(1)) } }, onPlus = { viewModel.update { it.copy(retentionDays=(it.retentionDays+1).coerceAtMost(365)) } }); SettingValue("Export logs", "JSON / CSV via local document picker") } }
-        item { TechnicalCard("Developer") { SettingSwitch("Development mode", s.developerMode) { v -> viewModel.update { it.copy(developerMode=v) } }; SettingSwitch("Mock mode", s.mockMode) { v -> viewModel.update { it.copy(mockMode=v) } }; SettingSwitch("Raw BLE", s.rawBle) { v -> viewModel.update { it.copy(rawBle=v) } }; SettingSwitch("Verbose logs", s.verboseLogs) { v -> viewModel.update { it.copy(verboseLogs=v) } }; SettingSwitch("Simulate failures", s.simulateFailures) { v -> viewModel.update { it.copy(simulateFailures=v) } } } }
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Text("Настройки", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Поведение приложения, Bluetooth и локальное хранение", color = SecureMeshColors.Muted)
+        }
+
+        item {
+            SettingsGroup("Основное") {
+                SettingValue("Тема", if (settings.theme.equals("dark", true)) "Тёмная" else settings.theme)
+                SettingValue("Единицы", if (settings.units.equals("metric", true)) "Метрические" else settings.units)
+                SettingSwitch("Не выключать экран во время теста", settings.keepScreenAwakeDuringTest) { value ->
+                    viewModel.update { it.copy(keepScreenAwakeDuringTest = value) }
+                }
+            }
+        }
+
+        item {
+            SettingsGroup("Bluetooth") {
+                SettingSwitch("Автоматическое переподключение", settings.autoReconnect) { value ->
+                    viewModel.update { it.copy(autoReconnect = value) }
+                }
+                SettingStepper(
+                    "Длительность поиска",
+                    "${settings.scanDurationSec} сек",
+                    onMinus = { viewModel.update { it.copy(scanDurationSec = (it.scanDurationSec - 1).coerceAtLeast(5)) } },
+                    onPlus = { viewModel.update { it.copy(scanDurationSec = (it.scanDurationSec + 1).coerceAtMost(30)) } },
+                )
+                SettingSwitch("Показывать неизвестные BLE-устройства", settings.showUnknownBle) { value ->
+                    viewModel.update { it.copy(showUnknownBle = value) }
+                }
+                SettingSwitch("Запоминать доверенный узел SecureMesh", settings.rememberTrustedNode) { value ->
+                    viewModel.update { it.copy(rememberTrustedNode = value) }
+                }
+            }
+        }
+
+        item {
+            SettingsGroup("Карта и история") {
+                SettingValue("Офлайн-карта", "Локальный провайдер")
+                SettingSwitch("Хранить историю позиций", settings.positionHistory) { value ->
+                    viewModel.update { it.copy(positionHistory = value) }
+                }
+            }
+        }
+
+        item {
+            SettingsGroup("Журнал") {
+                SettingSwitch("Сохранять события локально", settings.storeEvents) { value ->
+                    viewModel.update { it.copy(storeEvents = value) }
+                }
+                SettingStepper(
+                    "Хранить историю",
+                    "${settings.retentionDays} дн",
+                    onMinus = { viewModel.update { it.copy(retentionDays = (it.retentionDays - 1).coerceAtLeast(1)) } },
+                    onPlus = { viewModel.update { it.copy(retentionDays = (it.retentionDays + 1).coerceAtMost(365)) } },
+                )
+                SettingValue("Экспорт", "JSON / CSV на устройство")
+            }
+        }
+
+        item {
+            SettingsGroup("Для разработчика") {
+                SettingSwitch("Режим разработчика", settings.developerMode) { value -> viewModel.update { it.copy(developerMode = value) } }
+                SettingSwitch("Демо-транспорт", settings.mockMode) { value -> viewModel.update { it.copy(mockMode = value) } }
+                SettingSwitch("Сырой BLE", settings.rawBle) { value -> viewModel.update { it.copy(rawBle = value) } }
+                SettingSwitch("Подробные логи", settings.verboseLogs) { value -> viewModel.update { it.copy(verboseLogs = value) } }
+                SettingSwitch("Симулировать ошибки", settings.simulateFailures) { value -> viewModel.update { it.copy(simulateFailures = value) } }
+            }
+        }
+
+        item {
+            Text(
+                "Все данные приложения сохраняются локально. Сетевой backend для работы SecureMesh не требуется.",
+                color = SecureMeshColors.Muted,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            )
+        }
     }
 }
-@Composable private fun SettingValue(label:String,value:String){Row(Modifier.fillMaxWidth().padding(vertical=5.dp),horizontalArrangement=Arrangement.SpaceBetween){Text(label);Text(value,color=SecureMeshColors.Muted)}}
-@Composable private fun SettingSwitch(label:String,value:Boolean,set:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(label,Modifier.weight(1f));Switch(value,set)}}
 
-@Composable private fun SettingStepper(label:String,value:String,onMinus:()->Unit,onPlus:()->Unit){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(label);Row{OutlinedButton(onClick=onMinus,contentPadding=PaddingValues(horizontal=10.dp)){Text("−")};Text(value,Modifier.padding(horizontal=10.dp,vertical=12.dp),color=SecureMeshColors.Muted);OutlinedButton(onClick=onPlus,contentPadding=PaddingValues(horizontal=10.dp)){Text("+")}}}}
+@Composable
+private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    TechnicalCard(title) {
+        content()
+    }
+}
+
+@Composable
+private fun SettingValue(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 7.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f))
+        Text(value, color = SecureMeshColors.Muted)
+    }
+}
+
+@Composable
+private fun SettingSwitch(label: String, value: Boolean, set: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f))
+        Switch(checked = value, onCheckedChange = set)
+    }
+}
+
+@Composable
+private fun SettingStepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedIconButton(onClick = onMinus, modifier = Modifier.size(40.dp)) { Text("−") }
+            Text(value, color = SecureMeshColors.TextSecondary)
+            OutlinedIconButton(onClick = onPlus, modifier = Modifier.size(40.dp)) { Text("+") }
+        }
+    }
+}
