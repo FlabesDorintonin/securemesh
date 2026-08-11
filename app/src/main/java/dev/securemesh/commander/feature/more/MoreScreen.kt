@@ -1,8 +1,10 @@
 package dev.securemesh.commander.feature.more
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AltRoute
 import androidx.compose.material.icons.rounded.BugReport
@@ -14,7 +16,9 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,46 +31,175 @@ private data class MoreDestination(
     val description: String,
     val route: String,
     val icon: ImageVector,
+    val accent: Color,
 )
 
 @Composable
 fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
-    val menuItems = buildList {
-        if (UiAccessPolicy.canShowMap(session)) add(MoreDestination("Карта", "Позиции доступных узлов на локальной карте", "map", Icons.Rounded.Map))
-        if (UiAccessPolicy.canShowTopology(session)) add(MoreDestination("Схема сети", "Узлы и направленные радиосвязи", "topology", Icons.Rounded.Hub))
-        if (UiAccessPolicy.canShowRoutes(session)) add(MoreDestination("Маршруты", "Прямые и статические маршруты mesh-сети", "routes", Icons.Rounded.AltRoute))
-        if (UiAccessPolicy.canRunFieldTest(session)) add(MoreDestination("Полевой тест", "Проверка связи, RSSI, SNR и повторов", "fieldtest", Icons.Rounded.Science))
-        if (UiAccessPolicy.canShowSystemLog(session)) add(MoreDestination("События", "Журнал доступных событий системы", "events", Icons.Rounded.Notifications))
-        if (UiAccessPolicy.canShowDiagnostics(session)) add(MoreDestination("Диагностика", "Состояние приложения, BLE и mesh-сети", "diagnostics", Icons.Rounded.BugReport))
-        add(MoreDestination("Поиск", "Поиск по видимым узлам, сообщениям и событиям", "search", Icons.Rounded.Search))
-        add(MoreDestination("Настройки", "Bluetooth, хранение данных и режим разработчика", "settings", Icons.Rounded.Settings))
+    val canMapPoints = UiAccessPolicy.canShowMap(session)
+    val networkItems = buildList {
+        if (UiAccessPolicy.canShowTopology(session)) {
+            add(MoreDestination("Схема сети", "Кто с кем связан и в каком направлении идёт радио-линк", "topology", Icons.Rounded.Hub, SecureMeshColors.Cyan))
+        }
+        if (UiAccessPolicy.canShowRoutes(session)) {
+            add(MoreDestination("Маршруты", "Куда пойдёт пакет и через какой следующий узел", "routes", Icons.Rounded.AltRoute, SecureMeshColors.Blue))
+        }
     }
+    val toolItems = buildList {
+        if (UiAccessPolicy.canRunFieldTest(session)) {
+            add(MoreDestination("Полевой тест", "Проверка реальной связи, RSSI, SNR, PDR и повторов", "fieldtest", Icons.Rounded.Science, SecureMeshColors.Violet))
+        }
+        if (UiAccessPolicy.canShowSystemLog(session)) {
+            add(MoreDestination("События", "Локальная лента изменений, тревог и действий сети", "events", Icons.Rounded.Notifications, SecureMeshColors.Warning))
+        }
+        if (UiAccessPolicy.canShowDiagnostics(session)) {
+            add(MoreDestination("Диагностика", "Состояние приложения, Bluetooth и mesh-компонентов", "diagnostics", Icons.Rounded.BugReport, SecureMeshColors.Healthy))
+        }
+    }
+    val systemItems = listOf(
+        MoreDestination("Настройки", "Bluetooth, локальные данные, карта и режим разработчика", "settings", Icons.Rounded.Settings, SecureMeshColors.TextSecondary),
+    )
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    MeshBackdrop(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                Text("Все инструменты SecureMesh — разложены по назначению", color = SecureMeshColors.TextSecondary)
+                Spacer(Modifier.height(8.dp))
+            }
+
+            item {
+                Text("Быстрый доступ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    QuickActionCard(
+                        title = "Карта",
+                        subtitle = if (canMapPoints) "Узлы и GPS-точки" else "Карта готова к GPS",
+                        icon = Icons.Rounded.Map,
+                        accent = SecureMeshColors.Cyan,
+                        modifier = Modifier.weight(1f),
+                    ) { open("map") }
+                    QuickActionCard(
+                        title = "Поиск",
+                        subtitle = "Узлы, сообщения, события",
+                        icon = Icons.Rounded.Search,
+                        accent = SecureMeshColors.Blue,
+                        modifier = Modifier.weight(1f),
+                    ) { open("search") }
+                }
+            }
+
+            if (networkItems.isNotEmpty()) {
+                item { MenuSectionHeader("Сеть", "Как устроена mesh-сеть и куда идут пакеты", SecureMeshColors.Cyan) }
+                items(networkItems, key = { it.route }) { destination ->
+                    DestinationRow(destination) { open(destination.route) }
+                }
+            }
+
+            if (toolItems.isNotEmpty()) {
+                item { MenuSectionHeader("Инструменты", "Проверка, наблюдение и техническая работа", SecureMeshColors.Violet) }
+                items(toolItems, key = { it.route }) { destination ->
+                    DestinationRow(destination) { open(destination.route) }
+                }
+            }
+
+            item { MenuSectionHeader("Приложение", "Локальные параметры и поведение SecureMesh", SecureMeshColors.TextSecondary) }
+            items(systemItems, key = { it.route }) { destination ->
+                DestinationRow(destination) { open(destination.route) }
+            }
+
+            item {
+                Surface(
+                    color = SecureMeshColors.SurfaceHigh.copy(alpha = .72f),
+                    shape = MaterialTheme.shapes.large,
+                    border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .72f)),
+                ) {
+                    Text(
+                        "Разделы сети появляются только когда текущая защищённая сессия реально даёт соответствующие права. Карта при этом доступна всегда: без GPS она показывает локальную координатную сцену, а точки добавятся автоматически после появления координат.",
+                        color = SecureMeshColors.Muted,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(13.dp),
+                    )
+                }
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 126.dp),
+        color = SecureMeshColors.SurfaceHigh,
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, accent.copy(alpha = .28f)),
+        tonalElevation = 2.dp,
     ) {
-        item {
-            Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Инструменты SecureMesh для текущей сессии", color = SecureMeshColors.Muted)
-            Spacer(Modifier.height(4.dp))
+        Column(
+            Modifier.fillMaxSize().padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Surface(shape = CircleShape, color = accent.copy(alpha = .14f)) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.padding(10.dp).size(23.dp))
+            }
+            Spacer(Modifier.height(15.dp))
+            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
         }
-        items(menuItems, key = { it.route }) { destination ->
-            MenuRow(
-                title = destination.title,
-                subtitle = destination.description,
-                icon = destination.icon,
-                onClick = { open(destination.route) },
-            )
+    }
+}
+
+@Composable
+private fun MenuSectionHeader(title: String, subtitle: String, accent: Color) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(Modifier.size(7.dp), shape = CircleShape, color = accent) {}
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
-        item {
-            Text(
-                "Доступные разделы зависят от возможностей узла и разрешений защищённой сессии.",
-                color = SecureMeshColors.Muted,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-            )
+        Text(subtitle, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun DestinationRow(destination: MoreDestination, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        color = SecureMeshColors.SurfaceHigh.copy(alpha = .94f),
+        shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, destination.accent.copy(alpha = .16f)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Surface(shape = CircleShape, color = destination.accent.copy(alpha = .13f)) {
+                Icon(
+                    destination.icon,
+                    contentDescription = null,
+                    tint = destination.accent,
+                    modifier = Modifier.padding(10.dp).size(22.dp),
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(destination.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                Text(destination.description, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("›", color = destination.accent.copy(alpha = .78f), style = MaterialTheme.typography.headlineSmall)
         }
     }
 }
