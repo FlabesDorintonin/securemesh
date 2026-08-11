@@ -100,7 +100,7 @@ fun WelcomeContent(
                                 fontWeight = FontWeight.ExtraBold,
                                 color = SecureMeshColors.CyanHot,
                             )
-                            StatusChip("OFFLINE-FIRST", SecureMeshColors.Healthy)
+                            StatusChip("АВТОНОМНАЯ СЕТЬ", SecureMeshColors.Healthy)
                         }
                     }
                 }
@@ -117,7 +117,7 @@ fun WelcomeContent(
                             color = SecureMeshColors.Text,
                         )
                         Text(
-                            "Подключи ESP32 по Bluetooth и общайся через автономную mesh-сеть так же удобно, как в обычном мессенджере.",
+                            "Подключи ESP32 по Bluetooth и общайся через автономную ячеистую сеть SecureMesh так же удобно, как в обычном мессенджере.",
                             color = SecureMeshColors.TextSecondary,
                             style = MaterialTheme.typography.bodyLarge,
                         )
