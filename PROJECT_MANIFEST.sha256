@@ -1,3 +1,4 @@
+1ada18a113c2c403a8901ca760b5a78148e1421c13fee794a8e1c15f407b9976  ./.github/workflows/android-debug-apk.yml
 e766efeee0903f2cc50dd1359f7dd6414a1e7ad85a25507c6d2f164b69754bf6  ./.gitignore
 903b724eb8514fb74fbd3cbd3709cf3b2f05b8d8ed13b455df451c61f8f6e958  ./ARCHITECTURE_REVIEW.md
 16381fd99e4690ff03dd8ae846f3f1fbe0c68ea2e29d99bd99ea96e8484680fc  ./BOOTSTRAP_STANDARD_WRAPPER.bat
@@ -5,8 +6,9 @@ e22099d783fb91f9434ccca9e81cbb0e5c8542cc0efeb0dc6e4bb8a05d8b8d18  ./BOOTSTRAP_ST
 92c1ff488ca085779eb0b8dc5965139f40216c0a7b1fae9b5150771cdfea4438  ./BUILD_ENVIRONMENT.md
 03d1321445048e8b6abb5e6a55ee01deb34ec860afbf90f410df114666b788e2  ./DEFERRED_FIRMWARE_CONTRACT.md
 19b2629b64ed3bd92a41146616d11700a2943f670b7072ff7d5a65867a2d9c84  ./DOMAIN_ALIGNMENT_REPORT.md
+c80e078116f47651b7a944bea828a811c611fbb0830786af9958e857a3af08bd  ./GITHUB_APK_BUILD.md
 6c392a5565d8f3155b4c333d1cfbc9e8188e7923a9880119f1726a2623083484  ./QUALITY_GATE.md
-6d69c34a26bdb40d9d7e5bfa7cc502c1f9bb3cdfc6bead707e122d2e3d558b6c  ./README.md
+eda55a18a8c923a4bc96693f41b1bb7e5c4cb8e13828732c0a884328c554bd0f  ./README.md
 a4917a6d8c39c5c50e3947fc0a795558a1b40e41ceaac1eb6e97c45236097f53  ./app/build.gradle.kts
 5a5ceffb3174a3bacf75f3c86b630f63d367b59757416b3d351f1c5d3a781f6a  ./app/proguard-rules.pro
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./app/schemas/.gitkeep
@@ -49,12 +51,12 @@ ae6247182d61d99f7e2adb1f5d9f1fdaf457794df3908673e0829ea019f76010  ./app/src/main
 85ac49f5540751dee4b423caa47c7cc222f8dcabd6b5328cfbe5e3f57a724177  ./app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryViewModel.kt
 61459ae4d0d85e28b61f91dc61cdb27cf2673a9793134d1466cd9e40535d6a38  ./app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt
 31dedcc88fb8d31577d798277439b03126f9ec7aec6a0c5712a9cec7dcc39ec4  ./app/src/main/java/dev/securemesh/commander/feature/events/EventsViewModel.kt
-5ccf12cc4547b5bfbfd2906bde58ec71a384b9a1088498eab725f9fa7a95cb36  ./app/src/main/java/dev/securemesh/commander/feature/fieldtest/FieldTestScreen.kt
+2c045dc4384d5e529f923112b6336e5e3a21fa8dbae2d483e19afcc69f0beb0c  ./app/src/main/java/dev/securemesh/commander/feature/fieldtest/FieldTestScreen.kt
 b6e9b6f9f885d1dda6b86db5242af67102ff0fff72cbc919a15536247735617b  ./app/src/main/java/dev/securemesh/commander/feature/fieldtest/FieldTestViewModel.kt
 ef792c2d10825cd7573b07dbdc70331980f2d4cc34c869720b704da8fa17b0e0  ./app/src/main/java/dev/securemesh/commander/feature/map/MapScreen.kt
-b65b21f8bf191ce8cde1a354b24f5b2ee186e5520d5d7a606a50f244715af2bb  ./app/src/main/java/dev/securemesh/commander/feature/messages/MessagesScreen.kt
+ad34f8d518c8ea6984e954701ce26c863ae7daf8510c3aeafd08b7c1f51d383b  ./app/src/main/java/dev/securemesh/commander/feature/messages/MessagesScreen.kt
 591d4a13ddd2ae08bd87cb28117caf235adbf765bad1766546df78604387a90c  ./app/src/main/java/dev/securemesh/commander/feature/messages/MessagesViewModel.kt
-7e7acaaf1923784040b04b8b58406dff574a27af979ee1519d9a170a8ac80a18  ./app/src/main/java/dev/securemesh/commander/feature/more/MoreScreen.kt
+d2227e0663659ad9950d8386db66461e211e7803ae61a2fffffa437d1e7fa108  ./app/src/main/java/dev/securemesh/commander/feature/more/MoreScreen.kt
 dc5d1878238ac3c9e15ddf5f98fe19d3ba1c881c9bf0dbe087917e712e7b2094  ./app/src/main/java/dev/securemesh/commander/feature/network/NetworkViewModel.kt
 8bea4da11220a6f1aaac9a799bff0f75143e66abc64de1e419fef6bbb3a588df  ./app/src/main/java/dev/securemesh/commander/feature/network/TopologyScreen.kt
 0cc5b172f64589ddbcc6884e9809e221afc493a1e8a4467277f02efd2ca8bf6d  ./app/src/main/java/dev/securemesh/commander/feature/nodes/NodeDetailsViewModel.kt
@@ -62,7 +64,7 @@ dc5d1878238ac3c9e15ddf5f98fe19d3ba1c881c9bf0dbe087917e712e7b2094  ./app/src/main
 feed10068b0a66dd51a48dbc01992fad2a4243827a0a79bb22d55bcd826fb0e6  ./app/src/main/java/dev/securemesh/commander/feature/nodes/NodesViewModel.kt
 d34ab9eb1af0ec797b2fcb203a06ee472bc6f28a2e27cf802aadeb43bef5bb11  ./app/src/main/java/dev/securemesh/commander/feature/routes/RoutesScreen.kt
 e06c51553e751c44e9b5ad8071fe4ca4fbeb6f5998875465068dcf911d4abcb7  ./app/src/main/java/dev/securemesh/commander/feature/routes/RoutesViewModel.kt
-9672768be9de61031ab624c2d2dc7f94e4db8dc0ab5cf9692e27e76d89b82632  ./app/src/main/java/dev/securemesh/commander/feature/search/SearchScreen.kt
+a6ee9a85ce9ff82fcecaf0bbae17b93757b686c3ca42ea2dd3b022bebec142fd  ./app/src/main/java/dev/securemesh/commander/feature/search/SearchScreen.kt
 3e5ed3299737105b359c0d365017a29f4925fcd4e4a6393935c37b74eefd939a  ./app/src/main/java/dev/securemesh/commander/feature/search/SearchViewModel.kt
 1d6ddb7f9e30354ae62e28aafac86014aef2bd9ea369287dbeb3735bd9ae5f4c  ./app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt
 978626e56aa88ac330fcc9cfdfcf457916bdb664025732ba9d50689680013136  ./app/src/main/java/dev/securemesh/commander/feature/settings/SettingsViewModel.kt
@@ -89,5 +91,5 @@ d43d03d651dc513dcd62ed4345cadf5e95abe2d9d61cdf9990d87123899b9f24  ./gradle.prope
 43bf5ee3bece21e119f57429b698049987c69bb0c19f3c6116b43ff2f0a39b08  ./gradlew
 89dc17c1839adfbca9f5871927955c52be14f89a08b4ccaad910a8b12da9c755  ./gradlew.bat
 607680548f3d31e50b638df45d7388e83051357ed3488b9b973dcdd4da8f2d14  ./settings.gradle.kts
-fbb29fc6bb5386eb780cc3bcb40e5cc3e9573ee71f096b6ecae14cddfab1d74b  ./tools/domain_alignment_gate.py
+a31d6bfa83d02d6c8f64240d710640391a909b9bf3a25753d38ce9d7f3d611be  ./tools/domain_alignment_gate.py
 33f5faf105c1f0785adba1ed3649eab9170ec5ac8e74c0eb2b2185d6e720396e  ./tools/quality_gate.py

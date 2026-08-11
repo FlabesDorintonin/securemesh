@@ -105,7 +105,7 @@ check("Welcome auto-connect reacts only to BLE transport", "mode==TransportMode.
 
 # Field-test correctness.
 FIELD_SCREEN=(MAIN/"feature/fieldtest/FieldTestScreen.kt").read_text()
-check("RSSI and SNR use separate chart surfaces", 'Chart("RSSI dBm"' in FIELD_SCREEN and 'Chart("SNR dB"' in FIELD_SCREEN)
+check("RSSI and SNR use separate chart surfaces", bool(re.search(r'Chart\(\s*\"RSSI dBm\"', FIELD_SCREEN)) and bool(re.search(r'Chart\(\s*\"SNR dB\"', FIELD_SCREEN)))
 check("Per-hop field telemetry model", "data class HopTestTelemetry" in MODEL and "hopResults" in MODEL)
 
 # Anti-hardcoding and maintainability.

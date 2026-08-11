@@ -402,3 +402,7 @@ Do not place protocol parsing in screens/ViewModels. The future contract plugs i
 - repository mapping from authenticated transport frames to domain models.
 
 The goal is that approved firmware protocol details change transport/mapping code, not Dashboard/Map/Messages/Topology architecture.
+
+### GitHub Android compile repair
+
+The GitHub build revision also hardens Compose LazyList DSL usage found by the first real `compileDebugKotlin` run: lazy `item/items` declarations are now emitted directly from `LazyListScope` rather than from nested `let/forEach` blocks in Messages, Field Test, Search and More.
