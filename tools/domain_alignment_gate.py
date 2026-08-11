@@ -101,11 +101,17 @@ check("Real BLE transport never fabricates SecureMeshSession", "_session.value =
 check("Bounded BLE scan", "durationMs.coerceIn(5_000L, 30_000L)" in BLE and "delay(boundedDurationMs)" in BLE and "stopScanInternal" in BLE)
 check("Connection flow has future identification/sync stages", "IdentifyingSecureMesh" in MODEL and "SyncingSession" in MODEL)
 check("BLE disconnect has local cleanup fallback", "BLE disconnect timeout; local GATT closed" in BLE and "No active BLE link" in BLE)
-check("Welcome auto-connect reacts only to BLE transport", "mode==TransportMode.BLE&&connection is MeshConnectionState.Connected" in WELCOME)
+check(
+    "Welcome auto-connect reacts only to BLE transport",
+    bool(re.search(r"mode\s*==\s*TransportMode\.BLE\s*&&\s*connection\s+is\s+MeshConnectionState\.Connected", WELCOME)),
+)
 
 # Field-test correctness.
 FIELD_SCREEN=(MAIN/"feature/fieldtest/FieldTestScreen.kt").read_text()
-check("RSSI and SNR use separate chart surfaces", bool(re.search(r'Chart\(\s*\"RSSI dBm\"', FIELD_SCREEN)) and bool(re.search(r'Chart\(\s*\"SNR dB\"', FIELD_SCREEN)))
+check(
+    "RSSI and SNR use separate chart surfaces",
+    bool(re.search(r'Chart\(\s*"RSSI[^\"]*dBm"', FIELD_SCREEN)) and bool(re.search(r'Chart\(\s*"SNR[^\"]*dB"', FIELD_SCREEN)),
+)
 check("Per-hop field telemetry model", "data class HopTestTelemetry" in MODEL and "hopResults" in MODEL)
 
 # Anti-hardcoding and maintainability.

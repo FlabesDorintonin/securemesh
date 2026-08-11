@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -19,6 +21,141 @@ import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.domain.model.*
 import kotlin.math.*
 
-@Composable fun TopologyScreen(viewModel:NetworkViewModel,onNode:(String)->Unit){val s by viewModel.uiState.collectAsStateWithLifecycle();if(!s.canTopology)return EmptyState("Topology unavailable","VIEW_NETWORK_TOPOLOGY was not granted for this session.");var selectedNode by remember{mutableStateOf<NodeId?>(null)};var selectedLink by remember{mutableStateOf<MeshLink?>(null)};var zoom by remember{mutableFloatStateOf(1f)};var pan by remember{mutableStateOf(Offset.Zero)};var size by remember{mutableStateOf(IntSize.Zero)};val positions=remember(s.topology.nodes,size,zoom,pan,s.localNodeId){layout(s.topology.nodes,s.localNodeId,size,zoom,pan)};Column(Modifier.fillMaxSize().padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){Text("NETWORK TOPOLOGY",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black);Text("Directional links · layout computed by UI",color=SecureMeshColors.Muted);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton({zoom=1f;pan=Offset.Zero}){Text("CENTER GRAPH")};selectedNode?.let{id->OutlinedButton({onNode(id)}){Text("OPEN NODE")}}};Canvas(Modifier.fillMaxWidth().weight(1f).onSizeChanged{size=it}.pointerInput(s.topology){detectTransformGestures{_,p,z,_->zoom=(zoom*z).coerceIn(.6f,3f);pan+=p}}.pointerInput(positions,s.topology){detectTapGestures{tap->val node=positions.minByOrNull{(it.value-tap).getDistance()};if(node!=null&&(node.value-tap).getDistance()<50f){selectedNode=node.key;selectedLink=null}else{selectedLink=s.topology.links.minByOrNull{l->val a=positions[l.fromNode]?:return@minByOrNull Float.MAX_VALUE;val b=positions[l.toNode]?:return@minByOrNull Float.MAX_VALUE;distanceToSegment(tap,a,b)}?.takeIf{l->val a=positions[l.fromNode]!!;val b=positions[l.toNode]!!;distanceToSegment(tap,a,b)<35f};selectedNode=null}}}){s.topology.links.forEach{l->val a=positions[l.fromNode]?:return@forEach;val b=positions[l.toNode]?:return@forEach;val color=linkQualityColor(l.quality());drawLine(color,a,b,strokeWidth=4f*zoom)};positions.forEach{(id,p)->val n=s.nodes.firstOrNull{it.id==id};val color=if(n?.online==true)SecureMeshColors.Healthy else SecureMeshColors.Critical;drawCircle(color.copy(alpha=.18f),34f*zoom,p);drawCircle(color,22f*zoom,p);if(id==s.localNodeId)drawCircle(SecureMeshColors.Cyan,31f*zoom,p,style=Stroke(3f*zoom));if(id==selectedNode)drawCircle(SecureMeshColors.Warning,40f*zoom,p,style=Stroke(3f*zoom))}};selectedNode?.let{id->s.nodes.firstOrNull{it.id==id}?.let{n->TechnicalCard("Node quick view"){Text("${n.name} · ${n.id}",fontWeight=FontWeight.Bold);Text("${n.role} · ${if(n.online)"ONLINE" else "OFFLINE"}",color=SecureMeshColors.Muted)}}};selectedLink?.let{l->TechnicalCard("${l.fromNode} → ${l.toNode}"){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Metric("RSSI",dbm(l.rssi));Metric("SNR",snr(l.snr));Metric("PDR",percent(l.pdr));Metric("Retries",l.retries?.toString()?:"UNKNOWN")};Text("Age ${l.lastSeenEpochMs?.let(::ageLabel)?:"UNKNOWN"}",color=SecureMeshColors.Muted)}}}}
-private fun layout(ids:List<NodeId>,local:NodeId?,size:IntSize,zoom:Float,pan:Offset):Map<NodeId,Offset>{if(size.width==0||ids.isEmpty())return emptyMap();val center=Offset(size.width/2f,size.height/2f);val ordered=ids.filter{it!=local};val radius=min(size.width,size.height)*.32f;val out=mutableMapOf<NodeId,Offset>();local?.takeIf{it in ids}?.let{out[it]=center+pan};ordered.forEachIndexed{i,id->val angle=-Math.PI/2+2*Math.PI*i/max(1,ordered.size);val raw=Offset(center.x+cos(angle).toFloat()*radius,center.y+sin(angle).toFloat()*radius);out[id]=center+(raw-center)*zoom+pan};if(local==null)ids.forEachIndexed{i,id->val angle=-Math.PI/2+2*Math.PI*i/max(1,ids.size);val raw=Offset(center.x+cos(angle).toFloat()*radius,center.y+sin(angle).toFloat()*radius);out[id]=center+(raw-center)*zoom+pan};return out}
-private fun distanceToSegment(p:Offset,a:Offset,b:Offset):Float{val vx=b.x-a.x;val vy=b.y-a.y;val l=vx*vx+vy*vy;if(l==0f)return(p-a).getDistance();val t=(((p.x-a.x)*vx+(p.y-a.y)*vy)/l).coerceIn(0f,1f);return hypot((p.x-(a.x+t*vx)).toDouble(),(p.y-(a.y+t*vy)).toDouble()).toFloat()}
+@Composable
+fun TopologyScreen(viewModel: NetworkViewModel, onNode: (String) -> Unit) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    if (!state.canTopology) {
+        EmptyState("Схема сети недоступна", "Текущая сессия не разрешает просмотр топологии.")
+        return
+    }
+
+    var selectedNode by remember { mutableStateOf<NodeId?>(null) }
+    var selectedLink by remember { mutableStateOf<MeshLink?>(null) }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    val positions = remember(state.topology.nodes, size, zoom, pan, state.localNodeId) {
+        layout(state.topology.nodes, state.localNodeId, size, zoom, pan)
+    }
+
+    Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Схема сети", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Цвет линии показывает качество направленной связи. Масштабируй двумя пальцами.", color = SecureMeshColors.Muted)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { zoom = 1f; pan = Offset.Zero }) {
+                Icon(Icons.Rounded.CenterFocusStrong, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("По центру")
+            }
+            selectedNode?.let { id -> TextButton(onClick = { onNode(id) }) { Text("Открыть узел") } }
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            color = SecureMeshColors.Surface,
+            shape = MaterialTheme.shapes.large,
+        ) {
+            if (state.topology.nodes.isEmpty()) {
+                EmptyState("Сеть пока пуста", "Нет доступных узлов и направленных связей.")
+            } else {
+                Canvas(
+                    Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { size = it }
+                        .pointerInput(state.topology) {
+                            detectTransformGestures { _, panDelta, zoomDelta, _ ->
+                                zoom = (zoom * zoomDelta).coerceIn(.6f, 3f)
+                                pan += panDelta
+                            }
+                        }
+                        .pointerInput(positions, state.topology) {
+                            detectTapGestures { tap ->
+                                val node = positions.minByOrNull { (it.value - tap).getDistance() }
+                                if (node != null && (node.value - tap).getDistance() < 50f) {
+                                    selectedNode = node.key
+                                    selectedLink = null
+                                } else {
+                                    selectedLink = state.topology.links.minByOrNull { link ->
+                                        val a = positions[link.fromNode] ?: return@minByOrNull Float.MAX_VALUE
+                                        val b = positions[link.toNode] ?: return@minByOrNull Float.MAX_VALUE
+                                        distanceToSegment(tap, a, b)
+                                    }?.takeIf { link ->
+                                        val a = positions[link.fromNode] ?: return@takeIf false
+                                        val b = positions[link.toNode] ?: return@takeIf false
+                                        distanceToSegment(tap, a, b) < 35f
+                                    }
+                                    selectedNode = null
+                                }
+                            }
+                        },
+                ) {
+                    state.topology.links.forEach { link ->
+                        val a = positions[link.fromNode] ?: return@forEach
+                        val b = positions[link.toNode] ?: return@forEach
+                        val color = linkQualityColor(link.quality())
+                        drawLine(color.copy(alpha = .85f), a, b, strokeWidth = 4f * zoom)
+                    }
+                    positions.forEach { (id, point) ->
+                        val node = state.nodes.firstOrNull { it.id == id }
+                        val color = if (node?.online == true) SecureMeshColors.Healthy else SecureMeshColors.Muted
+                        drawCircle(color.copy(alpha = .14f), 36f * zoom, point)
+                        drawCircle(color, 21f * zoom, point)
+                        if (id == state.localNodeId) drawCircle(SecureMeshColors.Cyan, 31f * zoom, point, style = Stroke(3f * zoom))
+                        if (id == selectedNode) drawCircle(SecureMeshColors.Warning, 40f * zoom, point, style = Stroke(3f * zoom))
+                    }
+                }
+            }
+        }
+
+        selectedNode?.let { id ->
+            state.nodes.firstOrNull { it.id == id }?.let { node ->
+                TechnicalCard("${deviceDisplayName(node.name)} · ${node.id}") {
+                    Text("${node.role.ruLabel()} · ${if (node.online) "в сети" else "не в сети"}", color = SecureMeshColors.TextSecondary)
+                }
+            }
+        }
+
+        selectedLink?.let { link ->
+            TechnicalCard("${link.fromNode} → ${link.toNode}") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Metric("RSSI", dbm(link.rssi), Modifier.weight(1f), linkQualityColor(link.quality()))
+                    Metric("SNR", snr(link.snr), Modifier.weight(1f))
+                    Metric("PDR", percent(link.pdr), Modifier.weight(1f))
+                }
+                Text("Повторы: ${link.retries ?: "—"} · возраст данных: ${link.lastSeenEpochMs?.let(::ageLabel) ?: "—"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+private fun layout(ids: List<NodeId>, local: NodeId?, size: IntSize, zoom: Float, pan: Offset): Map<NodeId, Offset> {
+    if (size.width == 0 || ids.isEmpty()) return emptyMap()
+    val center = Offset(size.width / 2f, size.height / 2f)
+    val ordered = ids.filter { it != local }
+    val radius = min(size.width, size.height) * .32f
+    val out = mutableMapOf<NodeId, Offset>()
+    local?.takeIf { it in ids }?.let { out[it] = center + pan }
+    ordered.forEachIndexed { index, id ->
+        val angle = -Math.PI / 2 + 2 * Math.PI * index / max(1, ordered.size)
+        val raw = Offset(center.x + cos(angle).toFloat() * radius, center.y + sin(angle).toFloat() * radius)
+        out[id] = center + (raw - center) * zoom + pan
+    }
+    if (local == null) {
+        ids.forEachIndexed { index, id ->
+            val angle = -Math.PI / 2 + 2 * Math.PI * index / max(1, ids.size)
+            val raw = Offset(center.x + cos(angle).toFloat() * radius, center.y + sin(angle).toFloat() * radius)
+            out[id] = center + (raw - center) * zoom + pan
+        }
+    }
+    return out
+}
+
+private fun distanceToSegment(point: Offset, a: Offset, b: Offset): Float {
+    val vx = b.x - a.x
+    val vy = b.y - a.y
+    val lengthSquared = vx * vx + vy * vy
+    if (lengthSquared == 0f) return (point - a).getDistance()
+    val t = (((point.x - a.x) * vx + (point.y - a.y) * vy) / lengthSquared).coerceIn(0f, 1f)
+    return hypot((point.x - (a.x + t * vx)).toDouble(), (point.y - (a.y + t * vy)).toDouble()).toFloat()
+}

@@ -4,11 +4,19 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.BluetoothSearching
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,6 +30,7 @@ fun DiscoveryScreen(viewModel: DiscoveryViewModel, onBack: () -> Unit, onBleConn
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { viewModel.scan() }
     val bluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { viewModel.scan() }
+
     LaunchedEffect(Unit) { viewModel.scan() }
     DisposableEffect(Unit) { onDispose { viewModel.stopScan() } }
     LaunchedEffect(state.connection) {
@@ -29,18 +38,31 @@ fun DiscoveryScreen(viewModel: DiscoveryViewModel, onBack: () -> Unit, onBleConn
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("BLE DISCOVERY") }, navigationIcon = { TextButton(onClick = onBack) { Text("BACK") } }) },
+        containerColor = SecureMeshColors.Graphite,
+        topBar = {
+            TopAppBar(
+                title = { Text("Подключение", fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SecureMeshColors.Graphite),
+            )
+        },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ConnectionBanner(state.connection)
             when (val connection = state.connection) {
-                is MeshConnectionState.PermissionRequired -> EnvironmentAction("Bluetooth permission required", "Android requires explicit nearby-device permission for BLE scan/connect.") {
-                    permissionLauncher.launch(connection.permissions.toTypedArray())
-                }
-                MeshConnectionState.BluetoothDisabled -> EnvironmentAction("Bluetooth is disabled", "Enable Bluetooth, then SecureMesh can run a bounded scan session.") {
-                    bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-                }
-                MeshConnectionState.BluetoothUnavailable -> EmptyState("BLE unavailable", "This device reports no Bluetooth adapter.")
+                is MeshConnectionState.PermissionRequired -> EnvironmentAction(
+                    title = "Разреши доступ к Bluetooth",
+                    detail = "Android требует разрешение на поиск и подключение к ближайшим BLE-устройствам.",
+                    actionText = "Разрешить",
+                ) { permissionLauncher.launch(connection.permissions.toTypedArray()) }
+
+                MeshConnectionState.BluetoothDisabled -> EnvironmentAction(
+                    title = "Bluetooth выключен",
+                    detail = "Включи Bluetooth, чтобы найти ближайшие узлы SecureMesh.",
+                    actionText = "Включить Bluetooth",
+                ) { bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
+
+                MeshConnectionState.BluetoothUnavailable -> EmptyState("Bluetooth недоступен", "Телефон сообщает, что BLE-адаптер отсутствует.")
                 else -> DeviceDiscoveryContent(state, viewModel)
             }
         }
@@ -48,41 +70,76 @@ fun DiscoveryScreen(viewModel: DiscoveryViewModel, onBack: () -> Unit, onBleConn
 }
 
 @Composable
-private fun EnvironmentAction(title: String, detail: String, action: () -> Unit) {
-    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun EnvironmentAction(title: String, detail: String, actionText: String, action: () -> Unit) {
+    Column(Modifier.padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(detail, color = SecureMeshColors.Muted)
-        Button(onClick = action) { Text("CONTINUE") }
+        Button(onClick = action, modifier = Modifier.fillMaxWidth()) { Text(actionText) }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: DiscoveryViewModel) {
-    Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val scanning = state.connection is MeshConnectionState.Scanning || state.connection is MeshConnectionState.DeviceFound
+
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
             value = state.filter.query,
             onValueChange = viewModel::setQuery,
-            label = { Text("Search name or address") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+            label = { Text("Поиск устройства") },
+            placeholder = { Text("Имя или BLE-адрес") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            shape = MaterialTheme.shapes.extraLarge,
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(state.filter.secureMeshOnly, { viewModel.setSecureMeshOnly(!state.filter.secureMeshOnly) }, { Text("SECUREMESH ONLY") })
-            FilterChip(state.filter.sort == DeviceSort.RSSI, { viewModel.setSort(DeviceSort.RSSI) }, { Text("RSSI") })
-            FilterChip(state.filter.sort == DeviceSort.NAME, { viewModel.setSort(DeviceSort.NAME) }, { Text("NAME") })
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            FilterChip(
+                selected = state.filter.secureMeshOnly,
+                onClick = { viewModel.setSecureMeshOnly(!state.filter.secureMeshOnly) },
+                label = { Text("Только SecureMesh") },
+            )
+            FilterChip(
+                selected = state.filter.sort == DeviceSort.RSSI,
+                onClick = { viewModel.setSort(DeviceSort.RSSI) },
+                label = { Text("Сильнее сигнал") },
+            )
         }
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val scanning = state.connection is MeshConnectionState.Scanning || state.connection is MeshConnectionState.DeviceFound
-            Button(onClick = { if (scanning) viewModel.stopScan() else viewModel.scan() }) { Text(if (scanning) "STOP SCAN" else "START SCAN") }
-            OutlinedButton(onClick = viewModel::refresh) { Text("REFRESH") }
+            Button(onClick = { if (scanning) viewModel.stopScan() else viewModel.scan() }) {
+                Icon(Icons.Rounded.BluetoothSearching, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text(if (scanning) "Остановить" else "Искать")
+            }
+            OutlinedIconButton(onClick = viewModel::refresh) {
+                Icon(Icons.Rounded.Refresh, contentDescription = "Обновить")
+            }
         }
-        Text("Scan sessions are time-limited; restart explicitly when needed.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+
+        AnimatedVisibility(visible = scanning) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        Text(
+            "Поиск ограничен по времени и не работает бесконечно в фоне.",
+            color = SecureMeshColors.Muted,
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         if (state.devices.isEmpty()) {
-            EmptyState("No devices yet", "Nearby BLE advertisements will appear here. Unknown devices can be shown in development mode.")
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState("Устройства пока не найдены", "Оставь узел включённым рядом с телефоном и запусти поиск ещё раз.")
+            }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-                items(state.devices, key = { it.address }) { device -> DeviceCard(device) { viewModel.connect(device) } }
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                items(state.devices, key = { it.address }) { device ->
+                    DeviceCard(device) { viewModel.connect(device) }
+                }
             }
         }
     }
@@ -90,51 +147,69 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
 
 @Composable
 private fun DeviceCard(device: DiscoveredDevice, onConnect: () -> Unit) {
-    TechnicalCard(device.advertisedName ?: "UNNAMED BLE DEVICE", Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(device.address, style = MaterialTheme.typography.bodyMedium)
-                Text("RSSI ${device.rssi} dBm · ${signalLabel(device.rssi)}", fontWeight = FontWeight.SemiBold)
-                Text("Last seen ${ageLabel(device.lastSeenEpochMs)} · ${device.bondStatus}", color = SecureMeshColors.Muted)
+    val name = deviceDisplayName(device.advertisedName)
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onConnect),
+        color = SecureMeshColors.Surface,
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            MeshAvatar(name, size = 48.dp, accent = if (device.classification == DeviceClassification.UNKNOWN_BLE) SecureMeshColors.Muted else SecureMeshColors.Cyan)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+                    Text("${device.rssi} dBm", color = SecureMeshColors.Cyan, style = MaterialTheme.typography.labelLarge)
+                }
+                Text(signalLabel(device.rssi), color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("${device.classification.ruLabel()} · ${device.bondStatus.ruLabel()}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+                Text(device.address, color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
             }
-            StatusChip(
-                when (device.classification) {
-                    DeviceClassification.TRUSTED_SECUREMESH -> "TRUSTED"
-                    DeviceClassification.KNOWN_SECUREMESH -> "KNOWN SECUREMESH"
-                    DeviceClassification.SECUREMESH_CANDIDATE -> "CANDIDATE"
-                    DeviceClassification.UNKNOWN_BLE -> "UNKNOWN BLE"
-                },
-                if (device.classification == DeviceClassification.UNKNOWN_BLE) SecureMeshColors.Muted else SecureMeshColors.Cyan,
+            Text("›", style = MaterialTheme.typography.headlineSmall, color = SecureMeshColors.Muted)
+        }
+    }
+}
+
+@Composable
+fun ProtocolUnavailableScreen(
+    connection: MeshConnectionState.Connected,
+    onDisconnect: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().padding(22.dp)) {
+        Column(Modifier.fillMaxWidth().widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            StatusChip("BLE подключён", SecureMeshColors.Healthy)
+            Text("Протокол SecureMesh ещё не настроен", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "BLE/GATT-соединение уже настоящее. Но Service UUID и контракт характеристик ещё не зафиксированы в прошивке, поэтому приложение не выдумывает команды и не считает соединение защищённой сессией.",
+                color = SecureMeshColors.TextSecondary,
             )
-        }
-        if (device.matchReasons.isNotEmpty()) Text(device.matchReasons.joinToString(" · "), color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
-        Button(onClick = onConnect, modifier = Modifier.fillMaxWidth()) { Text("CONNECT") }
-    }
-}
-
-@Composable
-fun ProtocolUnavailableScreen(connection: MeshConnectionState.Connected, onDisconnect: () -> Unit, onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(24.dp)) {
-        Column(Modifier.widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            StatusChip("BLE CONNECTED", SecureMeshColors.Healthy)
-            Text("SECUREMESH PROTOCOL NOT AVAILABLE / NOT CONFIGURED", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Text("The Android GATT link is real, but no SecureMesh Service UUID / characteristic contract has been approved in firmware yet. The app therefore does not invent commands or treat the link as an authenticated SecureMesh session.", color = SecureMeshColors.Muted)
-            TechnicalCard("Connection") {
-                Metric("Device", connection.device.advertisedName ?: connection.device.address)
-                Metric("Secure session", connection.secureSession.name)
-                Metric("Protocol configured", connection.protocolConfigured.toString())
+            TechnicalCard("Соединение") {
+                Metric("Устройство", deviceDisplayName(connection.device.advertisedName ?: connection.device.address))
+                Metric("Защищённая сессия", connection.secureSession.ruLabel())
+                Metric("Протокол", if (connection.protocolConfigured) "Настроен" else "Не настроен")
             }
-            Button(onClick = onDisconnect) { Text("DISCONNECT") }
-            OutlinedButton(onClick = onBack) { Text("BACK TO DISCOVERY") }
+            Button(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) { Text("Отключиться") }
+            OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Назад к поиску") }
         }
     }
 }
 
 @Composable
-fun PairingCodeScreen(deviceName: String, expires: String, code: String, onCode: (String) -> Unit, onCancel: () -> Unit, onConfirm: () -> Unit) {
+fun PairingCodeScreen(
+    deviceName: String,
+    expires: String,
+    code: String,
+    onCode: (String) -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("ENTER CODE", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-        Text("Device: $deviceName\nExpires: $expires", color = SecureMeshColors.Muted)
+        Text("Подтверждение устройства", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("${deviceDisplayName(deviceName)} · код действует до $expires", color = SecureMeshColors.Muted)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             repeat(6) { index ->
                 Surface(color = SecureMeshColors.SurfaceHigh, shape = MaterialTheme.shapes.medium) {
@@ -142,11 +217,21 @@ fun PairingCodeScreen(deviceName: String, expires: String, code: String, onCode:
                 }
             }
         }
-        OutlinedTextField(value = code.take(6), onValueChange = { value -> onCode(value.filter(Char::isDigit).take(6)) }, label = { Text("6-digit code") }, singleLine = true)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onCancel) { Text("CANCEL") }
-            Button(onClick = onConfirm, enabled = code.length == 6) { Text("CONFIRM") }
+        OutlinedTextField(
+            value = code.take(6),
+            onValueChange = { value -> onCode(value.filter(Char::isDigit).take(6)) },
+            label = { Text("6-значный код") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Отмена") }
+            Button(onClick = onConfirm, enabled = code.length == 6, modifier = Modifier.weight(1f)) { Text("Подтвердить") }
         }
-        Text("PairingController is intentionally a contract only until firmware security is defined.", color = SecureMeshColors.Warning)
+        Text(
+            "Криптографический протокол сопряжения будет подключён после фиксации контракта прошивки.",
+            color = SecureMeshColors.Warning,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }

@@ -21,14 +21,19 @@ fun SosOverlay(
     AlertDialog(
         onDismissRequest = {},
         containerColor = SecureMeshColors.Surface,
-        title = { Text("SOS · NODE ${alert.nodeId}", color = SecureMeshColors.Critical, fontWeight = FontWeight.Black) },
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Сигнал SOS", color = SecureMeshColors.Critical, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("Узел ${alert.nodeId}", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            }
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Metric("Time", clockLabel(alert.raisedAtEpochMs))
-                Metric("Location", alert.position?.let { "${coordinate(it.latitude)}, ${coordinate(it.longitude)}" } ?: "UNAVAILABLE")
-                Metric("Position age", alert.position?.let { ageLabel(it.timestampEpochMs) } ?: "UNAVAILABLE")
-                Metric("Battery", alert.batteryPercent?.let { "$it%" } ?: "UNKNOWN")
-                Metric("Network", alert.networkStatus)
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Metric("Время", clockLabel(alert.raisedAtEpochMs))
+                Metric("Координаты", alert.position?.let { "${coordinate(it.latitude)}, ${coordinate(it.longitude)}" } ?: "Нет данных")
+                Metric("Возраст позиции", alert.position?.let { ageLabel(it.timestampEpochMs) } ?: "Нет данных")
+                Metric("Заряд", alert.batteryPercent?.let { "$it%" } ?: "Нет данных")
+                Metric("Сеть", localizedTechnicalText(alert.networkStatus))
             }
         },
         confirmButton = {
@@ -36,12 +41,14 @@ fun SosOverlay(
                 onClick = onAck,
                 enabled = canAcknowledge,
                 colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Critical),
-            ) { Text(if (canAcknowledge) "ACKNOWLEDGE" else "ACK NOT PERMITTED") }
+            ) {
+                Text(if (canAcknowledge) "Подтвердить получение" else "Нет права подтверждения")
+            }
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (canOpenMap) TextButton(onClick = onMap) { Text("OPEN MAP") }
-                if (canOpenNode) TextButton(onClick = onNode) { Text("OPEN NODE") }
+                if (canOpenMap) TextButton(onClick = onMap) { Text("Карта") }
+                if (canOpenNode) TextButton(onClick = onNode) { Text("Узел") }
             }
         },
     )
