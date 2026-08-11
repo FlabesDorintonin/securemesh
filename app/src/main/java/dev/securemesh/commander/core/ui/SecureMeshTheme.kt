@@ -13,33 +13,39 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 object SecureMeshColors {
-    val Graphite = Color(0xFF071118)
-    val Surface = Color(0xFF0D1A24)
-    val SurfaceHigh = Color(0xFF132531)
-    val SurfaceBright = Color(0xFF193140)
-    val Cyan = Color(0xFF52D5FF)
-    val Blue = Color(0xFF6A9CFF)
-    val Healthy = Color(0xFF55E39A)
-    val Warning = Color(0xFFFFC857)
-    val Critical = Color(0xFFFF6574)
-    val Muted = Color(0xFF8FA5B2)
-    val Text = Color(0xFFF2F7FA)
-    val TextSecondary = Color(0xFFB7C8D1)
-    val Divider = Color(0xFF1C3441)
-    val BubbleIncoming = Color(0xFF132733)
-    val BubbleOutgoing = Color(0xFF12394A)
-    val Navigation = Color(0xFF0A1720)
+    val Graphite = Color(0xFF030A10)
+    val GraphiteSoft = Color(0xFF06131C)
+    val Surface = Color(0xFF0A1822)
+    val SurfaceHigh = Color(0xFF102733)
+    val SurfaceBright = Color(0xFF173A49)
+    val Cyan = Color(0xFF35D9FF)
+    val CyanHot = Color(0xFF74EAFF)
+    val Blue = Color(0xFF6E83FF)
+    val Violet = Color(0xFFA56EFF)
+    val Healthy = Color(0xFF56F0A7)
+    val Warning = Color(0xFFFFC861)
+    val Critical = Color(0xFFFF637D)
+    val Muted = Color(0xFF8EA7B6)
+    val Text = Color(0xFFF6FBFF)
+    val TextSecondary = Color(0xFFC3D4DE)
+    val Divider = Color(0xFF1C3A49)
+    val BubbleIncoming = Color(0xFF102631)
+    val BubbleOutgoing = Color(0xFF0E4055)
+    val Navigation = Color(0xFF07151E)
 }
 
 private val DarkScheme = darkColorScheme(
     primary = SecureMeshColors.Cyan,
     secondary = SecureMeshColors.Blue,
-    tertiary = SecureMeshColors.Healthy,
+    tertiary = SecureMeshColors.Violet,
     background = SecureMeshColors.Graphite,
     surface = SecureMeshColors.Surface,
     surfaceVariant = SecureMeshColors.SurfaceHigh,
-    onPrimary = Color(0xFF00222E),
+    primaryContainer = SecureMeshColors.SurfaceBright,
+    secondaryContainer = SecureMeshColors.SurfaceHigh,
+    onPrimary = Color(0xFF002631),
     onSecondary = Color(0xFF071B34),
+    onTertiary = Color(0xFF20003B),
     onBackground = SecureMeshColors.Text,
     onSurface = SecureMeshColors.Text,
     onSurfaceVariant = SecureMeshColors.TextSecondary,
@@ -49,16 +55,16 @@ private val DarkScheme = darkColorScheme(
 
 private val SecureMeshTypography = Typography(
     displaySmall = TextStyle(
-        fontWeight = FontWeight.Bold,
-        fontSize = 34.sp,
-        lineHeight = 40.sp,
-        letterSpacing = (-0.6).sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 36.sp,
+        lineHeight = 41.sp,
+        letterSpacing = (-0.8).sp,
     ),
     headlineMedium = TextStyle(
         fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 34.sp,
-        letterSpacing = (-0.35).sp,
+        fontSize = 29.sp,
+        lineHeight = 35.sp,
+        letterSpacing = (-0.4).sp,
     ),
     headlineSmall = TextStyle(
         fontWeight = FontWeight.Bold,

@@ -14,8 +14,8 @@ android {
         applicationId = "dev.securemesh.commander"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0-ru-messenger-ui"
+        versionCode = 4
+        versionName = "0.4.0-final-ui-polish"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

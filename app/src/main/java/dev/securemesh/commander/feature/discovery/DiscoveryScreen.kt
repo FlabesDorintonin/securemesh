@@ -5,7 +5,7 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,33 +38,38 @@ fun DiscoveryScreen(viewModel: DiscoveryViewModel, onBack: () -> Unit, onBleConn
         if (state.connection is MeshConnectionState.Connected) onBleConnected()
     }
 
-    Scaffold(
-        containerColor = SecureMeshColors.Graphite,
-        topBar = {
-            TopAppBar(
-                title = { Text("Подключение", fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SecureMeshColors.Graphite),
-            )
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ConnectionBanner(state.connection)
-            when (val connection = state.connection) {
-                is MeshConnectionState.PermissionRequired -> EnvironmentAction(
-                    title = "Разреши доступ к Bluetooth",
-                    detail = "Android требует разрешение на поиск и подключение к ближайшим BLE-устройствам.",
-                    actionText = "Разрешить",
-                ) { permissionLauncher.launch(connection.permissions.toTypedArray()) }
+    MeshBackdrop(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = { Text("Подключение", fontWeight = FontWeight.Bold, color = SecureMeshColors.Text) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад") } },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                )
+            },
+        ) { padding ->
+            Column(
+                Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                ConnectionBanner(state.connection)
+                when (val connection = state.connection) {
+                    is MeshConnectionState.PermissionRequired -> EnvironmentAction(
+                        title = "Разреши доступ к Bluetooth",
+                        detail = "Android требует разрешение на поиск и подключение к ближайшим BLE-устройствам.",
+                        actionText = "Разрешить",
+                    ) { permissionLauncher.launch(connection.permissions.toTypedArray()) }
 
-                MeshConnectionState.BluetoothDisabled -> EnvironmentAction(
-                    title = "Bluetooth выключен",
-                    detail = "Включи Bluetooth, чтобы найти ближайшие узлы SecureMesh.",
-                    actionText = "Включить Bluetooth",
-                ) { bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
+                    MeshConnectionState.BluetoothDisabled -> EnvironmentAction(
+                        title = "Bluetooth выключен",
+                        detail = "Включи Bluetooth, чтобы найти ближайшие узлы SecureMesh.",
+                        actionText = "Включить Bluetooth",
+                    ) { bluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)) }
 
-                MeshConnectionState.BluetoothUnavailable -> EmptyState("Bluetooth недоступен", "Телефон сообщает, что BLE-адаптер отсутствует.")
-                else -> DeviceDiscoveryContent(state, viewModel)
+                    MeshConnectionState.BluetoothUnavailable -> EmptyState("Bluetooth недоступен", "Телефон сообщает, что BLE-адаптер отсутствует.")
+                    else -> DeviceDiscoveryContent(state, viewModel)
+                }
             }
         }
     }
@@ -72,9 +78,9 @@ fun DiscoveryScreen(viewModel: DiscoveryViewModel, onBack: () -> Unit, onBleConn
 @Composable
 private fun EnvironmentAction(title: String, detail: String, actionText: String, action: () -> Unit) {
     Column(Modifier.padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
         Text(detail, color = SecureMeshColors.Muted)
-        Button(onClick = action, modifier = Modifier.fillMaxWidth()) { Text(actionText) }
+        VibrantPrimaryButton(actionText, action, Modifier.fillMaxWidth())
     }
 }
 
@@ -108,10 +114,13 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { if (scanning) viewModel.stopScan() else viewModel.scan() }) {
+            Button(
+                onClick = { if (scanning) viewModel.stopScan() else viewModel.scan() },
+                colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Cyan, contentColor = Color(0xFF001E28)),
+            ) {
                 Icon(Icons.Rounded.BluetoothSearching, contentDescription = null)
                 Spacer(Modifier.width(7.dp))
-                Text(if (scanning) "Остановить" else "Искать")
+                Text(if (scanning) "Остановить" else "Искать", fontWeight = FontWeight.SemiBold)
             }
             OutlinedIconButton(onClick = viewModel::refresh) {
                 Icon(Icons.Rounded.Refresh, contentDescription = "Обновить")
@@ -119,7 +128,7 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
         }
 
         AnimatedVisibility(visible = scanning) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = SecureMeshColors.Cyan)
         }
 
         Text(
@@ -149,26 +158,36 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
 private fun DeviceCard(device: DiscoveredDevice, onConnect: () -> Unit) {
     val name = deviceDisplayName(device.advertisedName)
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onConnect),
-        color = SecureMeshColors.Surface,
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onConnect,
+        color = SecureMeshColors.SurfaceHigh,
         shape = MaterialTheme.shapes.large,
+        border = BorderStroke(
+            1.dp,
+            if (device.classification == DeviceClassification.UNKNOWN_BLE) SecureMeshColors.Divider else SecureMeshColors.Cyan.copy(alpha = .22f),
+        ),
+        tonalElevation = 1.dp,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            MeshAvatar(name, size = 48.dp, accent = if (device.classification == DeviceClassification.UNKNOWN_BLE) SecureMeshColors.Muted else SecureMeshColors.Cyan)
+            MeshAvatar(
+                name,
+                size = 48.dp,
+                accent = if (device.classification == DeviceClassification.UNKNOWN_BLE) SecureMeshColors.Muted else SecureMeshColors.Cyan,
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
-                    Text("${device.rssi} dBm", color = SecureMeshColors.Cyan, style = MaterialTheme.typography.labelLarge)
+                    Text(name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, color = SecureMeshColors.Text)
+                    Text("${device.rssi} dBm", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.labelLarge)
                 }
                 Text(signalLabel(device.rssi), color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Text("${device.classification.ruLabel()} · ${device.bondStatus.ruLabel()}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
                 Text(device.address, color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
             }
-            Text("›", style = MaterialTheme.typography.headlineSmall, color = SecureMeshColors.Muted)
+            Text("›", style = MaterialTheme.typography.headlineSmall, color = SecureMeshColors.Cyan.copy(alpha = .65f))
         }
     }
 }
@@ -179,10 +198,13 @@ fun ProtocolUnavailableScreen(
     onDisconnect: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().padding(22.dp)) {
-        Column(Modifier.fillMaxWidth().widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    MeshBackdrop(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.fillMaxWidth().widthIn(max = 620.dp).padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             StatusChip("BLE подключён", SecureMeshColors.Healthy)
-            Text("Протокол SecureMesh ещё не настроен", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Протокол SecureMesh ещё не настроен", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
             Text(
                 "BLE/GATT-соединение уже настоящее. Но Service UUID и контракт характеристик ещё не зафиксированы в прошивке, поэтому приложение не выдумывает команды и не считает соединение защищённой сессией.",
                 color = SecureMeshColors.TextSecondary,
@@ -207,31 +229,42 @@ fun PairingCodeScreen(
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Подтверждение устройства", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("${deviceDisplayName(deviceName)} · код действует до $expires", color = SecureMeshColors.Muted)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            repeat(6) { index ->
-                Surface(color = SecureMeshColors.SurfaceHigh, shape = MaterialTheme.shapes.medium) {
-                    Text(code.getOrNull(index)?.toString() ?: "_", Modifier.padding(horizontal = 14.dp, vertical = 12.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    MeshBackdrop(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Подтверждение устройства", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
+            Text("${deviceDisplayName(deviceName)} · код действует до $expires", color = SecureMeshColors.Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(6) { index ->
+                    Surface(
+                        color = SecureMeshColors.SurfaceHigh,
+                        shape = MaterialTheme.shapes.medium,
+                        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .18f)),
+                    ) {
+                        Text(
+                            code.getOrNull(index)?.toString() ?: "_",
+                            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
             }
+            OutlinedTextField(
+                value = code.take(6),
+                onValueChange = { value -> onCode(value.filter(Char::isDigit).take(6)) },
+                label = { Text("6-значный код") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Отмена") }
+                VibrantPrimaryButton("Подтвердить", onConfirm, Modifier.weight(1f), enabled = code.length == 6)
+            }
+            Text(
+                "Криптографический протокол сопряжения будет подключён после фиксации контракта прошивки.",
+                color = SecureMeshColors.Warning,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
-        OutlinedTextField(
-            value = code.take(6),
-            onValueChange = { value -> onCode(value.filter(Char::isDigit).take(6)) },
-            label = { Text("6-значный код") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Отмена") }
-            Button(onClick = onConfirm, enabled = code.length == 6, modifier = Modifier.weight(1f)) { Text("Подтвердить") }
-        }
-        Text(
-            "Криптографический протокол сопряжения будет подключён после фиксации контракта прошивки.",
-            color = SecureMeshColors.Warning,
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
 }
