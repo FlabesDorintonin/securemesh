@@ -2,27 +2,37 @@ package dev.securemesh.commander.core.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,22 +41,57 @@ import androidx.compose.ui.unit.dp
 import dev.securemesh.commander.domain.model.*
 
 @Composable
+fun MeshBackdrop(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        SecureMeshColors.GraphiteSoft,
+                        SecureMeshColors.Graphite,
+                        Color(0xFF04101A),
+                    ),
+                ),
+            )
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        SecureMeshColors.Cyan.copy(alpha = .08f),
+                        Color.Transparent,
+                        SecureMeshColors.Violet.copy(alpha = .055f),
+                    ),
+                ),
+            ),
+        content = content,
+    )
+}
+
+@Composable
 fun TechnicalCard(
     title: String,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = SecureMeshColors.Surface),
+        modifier = modifier.animateContentSize(animationSpec = tween(220)),
+        colors = CardDefaults.cardColors(containerColor = SecureMeshColors.SurfaceHigh.copy(alpha = .94f)),
         shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = 0.72f)),
+        border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = 0.82f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
             Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.labelLarge, color = SecureMeshColors.TextSecondary, fontWeight = FontWeight.SemiBold)
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = SecureMeshColors.TextSecondary,
+                fontWeight = FontWeight.SemiBold,
+            )
             content()
         }
     }
@@ -54,40 +99,81 @@ fun TechnicalCard(
 
 @Composable
 fun SectionHeader(title: String, action: String? = null, onAction: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
         if (action != null && onAction != null) TextButton(onClick = onAction) { Text(action) }
     }
 }
 
 @Composable
-fun Metric(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
+fun Metric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = SecureMeshColors.Muted)
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = valueColor)
+        AnimatedContent(
+            targetState = value,
+            transitionSpec = {
+                (fadeIn(tween(170)) + slideInVertically(tween(170)) { it / 5 }) togetherWith
+                    (fadeOut(tween(120)) + slideOutVertically(tween(120)) { -it / 5 })
+            },
+            label = "metric-value",
+        ) { current ->
+            Text(
+                current,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = valueColor,
+            )
+        }
     }
 }
 
 @Composable
-fun MetricTile(label: String, value: String, modifier: Modifier = Modifier, accent: Color = SecureMeshColors.Cyan) {
+fun MetricTile(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    accent: Color = SecureMeshColors.Cyan,
+) {
     Surface(
-        modifier = modifier,
-        color = SecureMeshColors.Surface,
+        modifier = modifier.animateContentSize(animationSpec = tween(220)),
+        color = SecureMeshColors.SurfaceHigh,
         shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .65f)),
+        border = BorderStroke(1.dp, accent.copy(alpha = .22f)),
+        tonalElevation = 1.dp,
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = SecureMeshColors.Muted)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = accent)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Box(Modifier.size(6.dp).background(accent, CircleShape))
+                Text(label, style = MaterialTheme.typography.labelMedium, color = SecureMeshColors.TextSecondary)
+            }
+            AnimatedContent(
+                targetState = value,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "metric-tile-value",
+            ) { current ->
+                Text(current, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = accent)
+            }
         }
     }
 }
 
 @Composable
 fun StatusChip(text: String, color: Color, modifier: Modifier = Modifier) {
-    val animatedColor by animateColorAsState(color, label = "status-chip-color")
+    val animatedColor by animateColorAsState(color, tween(220), label = "status-chip-color")
     Row(
-        modifier = modifier.background(animatedColor.copy(alpha = 0.13f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier = modifier
+            .background(animatedColor.copy(alpha = 0.15f), RoundedCornerShape(50))
+            .border(1.dp, animatedColor.copy(alpha = .22f), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -107,20 +193,28 @@ fun MeshAvatar(
     val initials = name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
         .joinToString("") { it.take(1).uppercase() }.ifBlank { "SM" }
     Box(modifier.size(size)) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            shape = CircleShape,
-            color = accent.copy(alpha = .15f),
-            border = BorderStroke(1.dp, accent.copy(alpha = .30f)),
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            accent.copy(alpha = .34f),
+                            SecureMeshColors.Blue.copy(alpha = .20f),
+                        ),
+                    ),
+                )
+                .border(1.dp, accent.copy(alpha = .42f), CircleShape),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(initials, color = accent, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            }
+            Text(initials, color = SecureMeshColors.Text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
         }
         if (online != null) {
             Box(
-                Modifier.align(Alignment.BottomEnd)
-                    .size((size.value * .28f).dp)
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .size((size.value * .29f).dp)
                     .background(SecureMeshColors.Graphite, CircleShape)
                     .padding(2.dp)
                     .background(if (online) SecureMeshColors.Healthy else SecureMeshColors.Muted, CircleShape),
@@ -130,27 +224,92 @@ fun MeshAvatar(
 }
 
 @Composable
-fun MenuRow(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun MenuRow(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Surface(
-        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
-        color = SecureMeshColors.Surface,
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
+        color = SecureMeshColors.SurfaceHigh,
         shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .62f)),
+        border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .78f)),
+        tonalElevation = 1.dp,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Surface(shape = CircleShape, color = SecureMeshColors.Cyan.copy(alpha = .12f)) {
-                Icon(icon, contentDescription = null, tint = SecureMeshColors.Cyan, modifier = Modifier.padding(11.dp).size(22.dp))
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                SecureMeshColors.Cyan.copy(alpha = .20f),
+                                SecureMeshColors.Blue.copy(alpha = .13f),
+                            ),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = SecureMeshColors.CyanHot, modifier = Modifier.size(22.dp))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SecureMeshColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = SecureMeshColors.Text)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SecureMeshColors.Muted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text("›", style = MaterialTheme.typography.headlineSmall, color = SecureMeshColors.Muted)
+            Text("›", style = MaterialTheme.typography.headlineSmall, color = SecureMeshColors.Cyan.copy(alpha = .70f))
         }
+    }
+}
+
+@Composable
+fun VibrantPrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+) {
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .985f else 1f, tween(90), label = "primary-button-scale")
+
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        interactionSource = interactions,
+        modifier = modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        },
+        colors = ButtonDefaults.buttonColors(
+            containerColor = SecureMeshColors.Cyan,
+            contentColor = Color(0xFF001E28),
+            disabledContainerColor = SecureMeshColors.SurfaceBright,
+            disabledContentColor = SecureMeshColors.Muted,
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 7.dp, pressedElevation = 2.dp),
+        shape = MaterialTheme.shapes.extraLarge,
+        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 16.dp),
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(9.dp))
+        }
+        Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -180,10 +339,11 @@ fun ConnectionBanner(state: MeshConnectionState, modifier: Modifier = Modifier) 
         state is MeshConnectionState.Scanning || state is MeshConnectionState.Reconnecting
 
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = presentation.third.copy(alpha = .09f),
+        modifier = modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
+        color = presentation.third.copy(alpha = .105f),
         shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, presentation.third.copy(alpha = .24f)),
+        border = BorderStroke(1.dp, presentation.third.copy(alpha = .30f)),
+        tonalElevation = 1.dp,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
@@ -197,7 +357,7 @@ fun ConnectionBanner(state: MeshConnectionState, modifier: Modifier = Modifier) 
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
                 label = "connection-banner",
             ) { (title, subtitle) ->
-                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = presentation.third)
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SecureMeshColors.TextSecondary)
                 }
@@ -210,18 +370,30 @@ fun ConnectionBanner(state: MeshConnectionState, modifier: Modifier = Modifier) 
 private fun PulseDot(active: Boolean, color: Color) {
     val transition = rememberInfiniteTransition(label = "connection-pulse")
     val pulse by transition.animateFloat(
-        initialValue = .45f,
+        initialValue = .42f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(animation = tween(900), repeatMode = RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(animation = tween(820), repeatMode = RepeatMode.Reverse),
         label = "connection-pulse-alpha",
     )
-    Box(
-        Modifier.size(14.dp)
-            .alpha(if (active) pulse else 1f)
-            .background(color.copy(alpha = .22f), CircleShape)
-            .padding(4.dp)
-            .background(color, CircleShape),
+    val halo by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.55f,
+        animationSpec = infiniteRepeatable(animation = tween(820), repeatMode = RepeatMode.Reverse),
+        label = "connection-pulse-scale",
     )
+    Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(12.dp)
+                .graphicsLayer {
+                    scaleX = if (active) halo else 1f
+                    scaleY = if (active) halo else 1f
+                }
+                .alpha(if (active) pulse * .42f else .18f)
+                .background(color, CircleShape),
+        )
+        Box(Modifier.size(7.dp).background(color, CircleShape))
+    }
 }
 
 fun linkQualityColor(quality: LinkQuality): Color = when (quality) {
@@ -238,11 +410,27 @@ fun EmptyState(title: String, detail: String, actionLabel: String? = null, onAct
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Surface(shape = CircleShape, color = SecureMeshColors.Cyan.copy(alpha = .10f)) {
-            Text("SM", Modifier.padding(14.dp), color = SecureMeshColors.Cyan, fontWeight = FontWeight.Bold)
+        Box(
+            Modifier
+                .size(58.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            SecureMeshColors.Cyan.copy(alpha = .20f),
+                            SecureMeshColors.Violet.copy(alpha = .12f),
+                        ),
+                    ),
+                )
+                .border(1.dp, SecureMeshColors.Cyan.copy(alpha = .28f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("SM", color = SecureMeshColors.CyanHot, fontWeight = FontWeight.ExtraBold)
         }
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
         Text(detail, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodyMedium)
-        if (actionLabel != null && onAction != null) Button(onClick = onAction) { Text(actionLabel) }
+        if (actionLabel != null && onAction != null) {
+            VibrantPrimaryButton(actionLabel, onAction, Modifier.padding(top = 4.dp))
+        }
     }
 }
