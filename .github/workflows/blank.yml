@@ -46,7 +46,29 @@ jobs:
         run: python3 tools/domain_alignment_gate.py
 
       - name: Run JVM unit tests
-        run: gradle --no-daemon --stacktrace testDebugUnitTest
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace --console=plain testDebugUnitTest > test-debug.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "----- concise Gradle/Kotlin failure -----"
+            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" test-debug.log | head -n 160 || true
+            echo "----- tail -----"
+            tail -n 80 test-debug.log
+          else
+            tail -n 30 test-debug.log
+          fi
+          exit "$code"
+
+      - name: Upload test failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-test-failure-log-${{ github.run_number }}
+          path: test-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace assembleDebug
