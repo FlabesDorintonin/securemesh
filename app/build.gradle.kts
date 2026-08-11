@@ -14,8 +14,8 @@ android {
         applicationId = "dev.securemesh.commander"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-domain-alignment"
+        versionCode = 3
+        versionName = "0.3.0-ru-messenger-ui"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -49,7 +49,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.runtime.compose)
