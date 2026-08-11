@@ -3,16 +3,22 @@
 package dev.securemesh.commander.feature.messages
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -25,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,11 +58,11 @@ fun MessagesScreen(viewModel: MessagesViewModel) {
         targetState = selectedPeerId,
         transitionSpec = {
             if (targetState != null) {
-                (slideInHorizontally { it / 3 } + fadeIn()) togetherWith
-                    (slideOutHorizontally { -it / 4 } + fadeOut())
+                (slideInHorizontally(spring(dampingRatio = .90f, stiffness = 520f)) { it / 4 } + fadeIn(tween(170))) togetherWith
+                    (slideOutHorizontally(tween(160)) { -it / 7 } + fadeOut(tween(120)))
             } else {
-                (slideInHorizontally { -it / 3 } + fadeIn()) togetherWith
-                    (slideOutHorizontally { it / 4 } + fadeOut())
+                (slideInHorizontally(spring(dampingRatio = .90f, stiffness = 520f)) { -it / 4 } + fadeIn(tween(170))) togetherWith
+                    (slideOutHorizontally(tween(160)) { it / 7 } + fadeOut(tween(120)))
             }
         },
         label = "chat-navigation",
@@ -88,29 +95,44 @@ fun MessagesScreen(viewModel: MessagesViewModel) {
     }
 
     if (showNewChat) {
-        ModalBottomSheet(onDismissRequest = { showNewChat = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showNewChat = false },
+            containerColor = SecureMeshColors.SurfaceHigh,
+        ) {
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Новый чат", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("Новый чат", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                 Text("Выбери доступный узел SecureMesh", color = SecureMeshColors.Muted)
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(5.dp))
                 if (remotes.isEmpty()) {
                     EmptyState("Нет доступных узлов", "Сессия пока не показывает узлы для переписки.")
                 } else {
                     remotes.forEach { node ->
                         val name = deviceDisplayName(node.name)
-                        ListItem(
-                            headlineContent = { Text(name, fontWeight = FontWeight.SemiBold) },
-                            supportingContent = { Text("${node.role.ruLabel()} · ${node.id}") },
-                            leadingContent = { MeshAvatar(name, node.online, size = 44.dp) },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            modifier = Modifier.clickable {
+                        PressScaleSurface(
+                            onClick = {
                                 selectedPeerId = node.id
                                 showNewChat = false
                             },
-                        )
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color.Transparent,
+                            border = null,
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                MeshAvatar(name, node.online, size = 46.dp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, fontWeight = FontWeight.SemiBold)
+                                    Text("${node.role.ruLabel()} · ${node.id}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+                                }
+                                Text("›", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.headlineSmall)
+                            }
+                        }
                     }
                 }
             }
@@ -136,51 +158,71 @@ private fun ConversationsScreen(
             .maxByOrNull { it.createdAtEpochMs }
         last?.let { node to it }
     }.sortedByDescending { it.second.createdAtEpochMs }
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
 
     Scaffold(
-        containerColor = SecureMeshColors.Graphite,
+        containerColor = Color.Transparent,
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Чаты", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = SecureMeshColors.Graphite),
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Чаты", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+                        Text("SecureMesh messenger", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onNewChat,
+                containerColor = SecureMeshColors.Cyan,
+                contentColor = Color(0xFF001E28),
+                shape = MaterialTheme.shapes.extraLarge,
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text("Новый чат") },
+                text = { Text("Новый чат", fontWeight = FontWeight.Bold) },
             )
         },
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Text(
-                    "Сообщения идут через локальный узел и mesh-сеть. Hop-ACK не считается финальной доставкой.",
-                    color = SecureMeshColors.Muted,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                )
+                StaggeredReveal(entered, 20) {
+                    Surface(
+                        color = SecureMeshColors.Cyan.copy(alpha = .075f),
+                        shape = MaterialTheme.shapes.large,
+                        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .14f)),
+                    ) {
+                        Text(
+                            "Локальные сообщения через mesh-сеть · hop-ACK не считается финальной доставкой",
+                            color = SecureMeshColors.TextSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        )
+                    }
+                }
             }
             if (conversations.isEmpty()) {
                 item {
-                    EmptyState(
-                        "Переписок пока нет",
-                        "Нажми «Новый чат», выбери узел и отправь первое сообщение.",
-                        "Новый чат",
-                        onNewChat,
-                    )
+                    StaggeredReveal(entered, 80) {
+                        EmptyState(
+                            "Переписок пока нет",
+                            "Нажми «Новый чат», выбери узел и отправь первое сообщение.",
+                            "Новый чат",
+                            onNewChat,
+                        )
+                    }
                 }
             } else {
                 items(conversations, key = { it.first.id }) { (node, message) ->
                     ConversationRow(node, message, localNodeId) { onOpen(node.id) }
-                    HorizontalDivider(color = SecureMeshColors.Divider.copy(alpha = .7f), modifier = Modifier.padding(start = 72.dp))
                 }
             }
-            item { Spacer(Modifier.height(88.dp)) }
+            item { Spacer(Modifier.height(92.dp)) }
         }
     }
 }
@@ -188,29 +230,36 @@ private fun ConversationsScreen(
 @Composable
 private fun ConversationRow(node: MeshNode, message: MeshMessage, localNodeId: NodeId?, onClick: () -> Unit) {
     val name = deviceDisplayName(node.name)
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    PressScaleSurface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = SecureMeshColors.SurfaceHigh.copy(alpha = .82f),
+        border = BorderStroke(1.dp, if (node.online) SecureMeshColors.Cyan.copy(alpha = .14f) else SecureMeshColors.Divider.copy(alpha = .62f)),
     ) {
-        MeshAvatar(name, node.online, size = 52.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(clockLabel(message.createdAtEpochMs), style = MaterialTheme.typography.labelSmall, color = SecureMeshColors.Muted)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (message.origin == localNodeId) {
-                    Text("Вы: ", color = SecureMeshColors.Cyan, style = MaterialTheme.typography.bodyMedium)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            MeshAvatar(name, node.online, size = 52.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(clockLabel(message.createdAtEpochMs), style = MaterialTheme.typography.labelSmall, color = SecureMeshColors.Muted)
                 }
-                Text(
-                    message.payload,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = SecureMeshColors.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (message.origin == localNodeId) {
+                        Text("Вы: ", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    }
+                    Text(
+                        message.payload,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = SecureMeshColors.TextSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
     }
@@ -237,19 +286,22 @@ private fun ChatScreen(
     }
 
     Scaffold(
-        containerColor = SecureMeshColors.Graphite,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        MeshAvatar(peerName, peer?.online, size = 38.dp)
-                        Column {
-                            Text(peerName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                if (peer?.online == true) "в сети" else "не в сети",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (peer?.online == true) SecureMeshColors.Healthy else SecureMeshColors.Muted,
-                            )
+                        MeshAvatar(peerName, peer?.online, size = 40.dp)
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(peerName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Surface(Modifier.size(6.dp), shape = CircleShape, color = if (peer?.online == true) SecureMeshColors.Healthy else SecureMeshColors.Muted) {}
+                                Text(
+                                    if (peer?.online == true) "в сети" else "не в сети",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (peer?.online == true) SecureMeshColors.Healthy else SecureMeshColors.Muted,
+                                )
+                            }
                         }
                     }
                 },
@@ -258,7 +310,7 @@ private fun ChatScreen(
                         Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SecureMeshColors.Graphite),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SecureMeshColors.Graphite.copy(alpha = .92f)),
             )
         },
         bottomBar = {
@@ -277,21 +329,40 @@ private fun ChatScreen(
             )
         },
     ) { padding ->
-        if (messages.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                EmptyState("Начни диалог", "Сообщения этой переписки появятся здесь.")
-            }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                items(messages, key = { it.id }) { message ->
-                    MessageBubble(message, outgoing = message.origin == localNodeId) { onMessageDetails(message) }
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            ChatPattern(Modifier.fillMaxSize())
+            if (messages.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyState("Начни диалог", "Сообщения этой переписки появятся здесь.")
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 15.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        MessageBubble(message, outgoing = message.origin == localNodeId) { onMessageDetails(message) }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ChatPattern(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val spacing = 42.dp.toPx()
+        var y = spacing / 2f
+        while (y < size.height) {
+            var x = spacing / 2f
+            while (x < size.width) {
+                drawCircle(SecureMeshColors.Cyan.copy(alpha = .025f), radius = 1.2f, center = androidx.compose.ui.geometry.Offset(x, y))
+                x += spacing
+            }
+            y += spacing
         }
     }
 }
@@ -302,10 +373,15 @@ private fun MessageBubble(message: MeshMessage, outgoing: Boolean, onClick: () -
         Surface(
             modifier = Modifier.widthIn(max = 330.dp).clickable(onClick = onClick),
             color = if (outgoing) SecureMeshColors.BubbleOutgoing else SecureMeshColors.BubbleIncoming,
-            shape = if (outgoing) RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp) else RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp),
+            shape = if (outgoing) RoundedCornerShape(21.dp, 21.dp, 7.dp, 21.dp) else RoundedCornerShape(21.dp, 21.dp, 21.dp, 7.dp),
+            border = BorderStroke(
+                1.dp,
+                if (outgoing) SecureMeshColors.Cyan.copy(alpha = .18f) else SecureMeshColors.Divider.copy(alpha = .62f),
+            ),
+            shadowElevation = 2.dp,
         ) {
-            Column(Modifier.padding(horizontal = 13.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(message.payload, style = MaterialTheme.typography.bodyLarge)
+            Column(Modifier.padding(horizontal = 13.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(message.payload, style = MaterialTheme.typography.bodyLarge, color = SecureMeshColors.Text)
                 Row(
                     Modifier.align(Alignment.End),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -316,6 +392,7 @@ private fun MessageBubble(message: MeshMessage, outgoing: Boolean, onClick: () -
                         Text(
                             message.finalState.ruLabel(),
                             style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
                             color = when (message.finalState) {
                                 MessageFinalState.DELIVERED -> SecureMeshColors.Healthy
                                 MessageFinalState.FAILED, MessageFinalState.EXPIRED -> SecureMeshColors.Critical
@@ -338,23 +415,32 @@ private fun MessageComposer(
     error: String?,
     onSend: () -> Unit,
 ) {
-    Surface(color = SecureMeshColors.Navigation, tonalElevation = 0.dp) {
-        Column(Modifier.fillMaxWidth().imePadding()) {
-            if (!enabled) {
-                Text(
-                    "Отправка сейчас недоступна",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    color = SecureMeshColors.Warning,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-            error?.let {
-                Text(it, modifier = Modifier.padding(horizontal = 16.dp, vertical = 3.dp), color = SecureMeshColors.Critical, style = MaterialTheme.typography.labelSmall)
-            }
+    val sendScale by animateFloatAsState(
+        targetValue = if (enabled && text.isNotBlank()) 1f else .90f,
+        animationSpec = spring(dampingRatio = .78f, stiffness = 620f),
+        label = "send-button-scale",
+    )
+
+    Column(
+        Modifier.fillMaxWidth().imePadding().padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (!enabled) {
+            Text("Отправка сейчас недоступна", modifier = Modifier.padding(horizontal = 12.dp), color = SecureMeshColors.Warning, style = MaterialTheme.typography.labelSmall)
+        }
+        error?.let {
+            Text(it, modifier = Modifier.padding(horizontal = 12.dp), color = SecureMeshColors.Critical, style = MaterialTheme.typography.labelSmall)
+        }
+        Surface(
+            color = SecureMeshColors.Navigation.copy(alpha = .96f),
+            shape = MaterialTheme.shapes.extraLarge,
+            border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = if (text.isNotBlank()) .22f else .10f)),
+            shadowElevation = 10.dp,
+        ) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 OutlinedTextField(
                     value = text,
@@ -363,8 +449,28 @@ private fun MessageComposer(
                     placeholder = { Text("Сообщение") },
                     maxLines = 5,
                     shape = MaterialTheme.shapes.extraLarge,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        disabledBorderColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                    ),
                 )
-                FilledIconButton(onClick = onSend, enabled = enabled && text.isNotBlank(), modifier = Modifier.size(50.dp)) {
+                FilledIconButton(
+                    onClick = onSend,
+                    enabled = enabled && text.isNotBlank(),
+                    modifier = Modifier.size(50.dp).graphicsLayer {
+                        scaleX = sendScale
+                        scaleY = sendScale
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = SecureMeshColors.Cyan,
+                        contentColor = Color(0xFF001E28),
+                        disabledContainerColor = SecureMeshColors.SurfaceBright,
+                        disabledContentColor = SecureMeshColors.Muted,
+                    ),
+                ) {
                     Icon(Icons.Rounded.Send, contentDescription = "Отправить")
                 }
             }
@@ -374,14 +480,16 @@ private fun MessageComposer(
 
 @Composable
 private fun MessageDetailsSheet(message: MeshMessage, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = SecureMeshColors.SurfaceHigh) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Rounded.Chat, contentDescription = null, tint = SecureMeshColors.Cyan)
-                Text("Детали сообщения", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Surface(shape = CircleShape, color = SecureMeshColors.Cyan.copy(alpha = .12f)) {
+                    Icon(Icons.Rounded.Chat, contentDescription = null, tint = SecureMeshColors.CyanHot, modifier = Modifier.padding(10.dp).size(22.dp))
+                }
+                Text("Детали сообщения", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
             }
             TechnicalCard("Состояние") {
                 Metric("Откуда", message.origin)
