@@ -46,12 +46,7 @@ fun TechnicalCard(
             Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.labelLarge,
-                color = SecureMeshColors.TextSecondary,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Text(title, style = MaterialTheme.typography.labelLarge, color = SecureMeshColors.TextSecondary, fontWeight = FontWeight.SemiBold)
             content()
         }
     }
@@ -59,25 +54,14 @@ fun TechnicalCard(
 
 @Composable
 fun SectionHeader(title: String, action: String? = null, onAction: (() -> Unit)? = null) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        if (action != null && onAction != null) {
-            TextButton(onClick = onAction) { Text(action) }
-        }
+        if (action != null && onAction != null) TextButton(onClick = onAction) { Text(action) }
     }
 }
 
 @Composable
-fun Metric(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-) {
+fun Metric(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = SecureMeshColors.Muted)
         Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = valueColor)
@@ -85,12 +69,7 @@ fun Metric(
 }
 
 @Composable
-fun MetricTile(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    accent: Color = SecureMeshColors.Cyan,
-) {
+fun MetricTile(label: String, value: String, modifier: Modifier = Modifier, accent: Color = SecureMeshColors.Cyan) {
     Surface(
         modifier = modifier,
         color = SecureMeshColors.Surface,
@@ -108,9 +87,7 @@ fun MetricTile(
 fun StatusChip(text: String, color: Color, modifier: Modifier = Modifier) {
     val animatedColor by animateColorAsState(color, label = "status-chip-color")
     Row(
-        modifier = modifier
-            .background(animatedColor.copy(alpha = 0.13f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier = modifier.background(animatedColor.copy(alpha = 0.13f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -142,8 +119,7 @@ fun MeshAvatar(
         }
         if (online != null) {
             Box(
-                Modifier
-                    .align(Alignment.BottomEnd)
+                Modifier.align(Alignment.BottomEnd)
                     .size((size.value * .28f).dp)
                     .background(SecureMeshColors.Graphite, CircleShape)
                     .padding(2.dp)
@@ -154,13 +130,7 @@ fun MeshAvatar(
 }
 
 @Composable
-fun MenuRow(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+fun MenuRow(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
         color = SecureMeshColors.Surface,
@@ -206,7 +176,8 @@ fun ConnectionBanner(state: MeshConnectionState, modifier: Modifier = Modifier) 
         is MeshConnectionState.DeviceFound -> Triple("Устройства найдены", "Выбери узел для подключения", SecureMeshColors.Cyan)
         else -> Triple("Не подключено", "Подключи локальный узел или запусти демо", SecureMeshColors.Muted)
     }
-    val active = state is MeshConnectionState.Connected || state is MeshConnectionState.Connecting || state is MeshConnectionState.Scanning || state is MeshConnectionState.Reconnecting
+    val active = state is MeshConnectionState.Connected || state is MeshConnectionState.Connecting ||
+        state is MeshConnectionState.Scanning || state is MeshConnectionState.Reconnecting
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -222,10 +193,11 @@ fun ConnectionBanner(state: MeshConnectionState, modifier: Modifier = Modifier) 
             PulseDot(active = active, color = presentation.third)
             AnimatedContent(
                 targetState = presentation.first to presentation.second,
+                modifier = Modifier.weight(1f),
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
                 label = "connection-banner",
             ) { (title, subtitle) ->
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = presentation.third)
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = SecureMeshColors.TextSecondary)
                 }
@@ -243,7 +215,13 @@ private fun PulseDot(active: Boolean, color: Color) {
         animationSpec = infiniteRepeatable(animation = tween(900), repeatMode = RepeatMode.Reverse),
         label = "connection-pulse-alpha",
     )
-    Box(Modifier.size(14.dp).alpha(if (active) pulse else 1f).background(color.copy(alpha = .22f), CircleShape).padding(4.dp).background(color, CircleShape))
+    Box(
+        Modifier.size(14.dp)
+            .alpha(if (active) pulse else 1f)
+            .background(color.copy(alpha = .22f), CircleShape)
+            .padding(4.dp)
+            .background(color, CircleShape),
+    )
 }
 
 fun linkQualityColor(quality: LinkQuality): Color = when (quality) {
