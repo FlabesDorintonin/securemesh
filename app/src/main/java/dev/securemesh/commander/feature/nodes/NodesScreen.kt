@@ -144,6 +144,7 @@ private fun NodeContactRow(item: NodeListItem, onOpen: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NodeDetailsScreen(viewModel: NodeDetailsViewModel, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -245,9 +246,12 @@ fun NodeDetailsScreen(viewModel: NodeDetailsViewModel, onBack: () -> Unit) {
 
         item {
             TechnicalCard("Возможности") {
-                if (node.capabilities.isEmpty()) Text("Не объявлены", color = SecureMeshColors.Muted)
-                else FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    node.capabilities.forEach { capability -> AssistChip(onClick = {}, label = { Text(capability.ruLabel()) }) }
+                if (node.capabilities.isEmpty()) {
+                    Text("Не объявлены", color = SecureMeshColors.Muted)
+                } else {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        node.capabilities.forEach { capability -> AssistChip(onClick = {}, label = { Text(capability.ruLabel()) }) }
+                    }
                 }
             }
         }
