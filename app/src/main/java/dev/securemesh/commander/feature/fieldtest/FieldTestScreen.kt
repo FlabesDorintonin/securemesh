@@ -1,0 +1,20 @@
+package dev.securemesh.commander.feature.fieldtest
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.securemesh.commander.core.ui.*
+import dev.securemesh.commander.domain.model.*
+
+@Composable fun FieldTestScreen(vm:FieldTestViewModel){val s by vm.uiState.collectAsStateWithLifecycle();val history by vm.history.collectAsStateWithLifecycle();if(!s.canRun)return EmptyState("Field Test unavailable","RUN_FIELD_TEST or FIELD_TEST capability is unavailable.");val local=s.localNodeId?:return EmptyState("No local node","SecureMesh session identity is required.");val remotes=s.nodes.filter{it.id!=local};var target by remember(remotes){mutableStateOf(remotes.firstOrNull()?.id.orEmpty())};var mode by remember{mutableStateOf(FieldTestMode.AUTO)};LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){item{Text("FIELD TEST LAB",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Black);Text("Source is locked to local BLE-connected node: $local",color=SecureMeshColors.Muted)};item{TechnicalCard("Configuration"){Metric("Source",local);Selector(target,remotes){target=it};Row{FieldTestMode.entries.forEach{m->FilterChip(mode==m,{mode=m},{Text(m.name)})}};if(s.active?.running==true)Button(onClick=vm::stop){Text("STOP TEST")}else Button({vm.start(FieldTestConfig(local,target,mode,100,1000,32))},enabled=target.isNotBlank()){Text("START TEST")}}};s.active?.let{t->item{Live(t)};item{Chart("RSSI dBm",t.points.flatMap{it.rssiSamples().map { value -> value.toDouble() }},-120.0,-35.0,SecureMeshColors.Cyan)};item{Chart("SNR dB",t.points.flatMap{it.snrSamples()},-15.0,15.0,SecureMeshColors.Warning)};item{TechnicalCard("Per-hop latest"){t.points.lastOrNull()?.hopResults?.forEach{h->Text("${h.from} → ${h.to} · ${h.ackState} · RSSI ${dbm(h.rssi)} · SNR ${snr(h.snr)} · retries ${h.retries?:"UNKNOWN"}")}}}};item{Text("TEST HISTORY",fontWeight=FontWeight.Bold)};items(history,key={it.id}){t->TechnicalCard(t.id){Text("${t.config.source} → ${t.config.target}");Text("Sent ${t.sent} · E2E PDR ${t.pdr?.let{"%.1f%%".format(it*100)}?:"UNKNOWN"} · retries ${t.retries}",color=SecureMeshColors.Muted)}}}}
+@Composable private fun Selector(value:String,nodes:List<MeshNode>,set:(String)->Unit){var open by remember{mutableStateOf(false)};Box{OutlinedButton({open=true}){Text("Target: ${nodes.firstOrNull{it.id==value}?.name?:"Select"}")};DropdownMenu(open,{open=false}){nodes.forEach{n->DropdownMenuItem({Text("${n.name} · ${n.id}")},{set(n.id);open=false})}}}}
+@Composable private fun Live(t:FieldTestSession){TechnicalCard("Live telemetry"){Metric("Sent",t.sent.toString());Metric("Confirmed received",t.confirmedReceived?.toString()?:"UNKNOWN");Metric("Confirmed lost",t.confirmedLost?.toString()?:"UNKNOWN");Metric("E2E PDR",t.pdr?.let{"%.1f%%".format(it*100)}?:"UNKNOWN");Metric("Retries",t.retries.toString());Text("Route ${t.route.joinToString(" → ")}",color=SecureMeshColors.Muted)}}
+@Composable private fun Chart(title:String,values:List<Double>,min:Double,max:Double,color:androidx.compose.ui.graphics.Color){TechnicalCard(title){if(values.size<2)Text("Waiting for telemetry…",color=SecureMeshColors.Muted)else Canvas(Modifier.fillMaxWidth().height(120.dp)){val p=Path();values.forEachIndexed{i,v->val x=i.toFloat()/(values.size-1)*size.width;val y=(size.height-((v-min)/(max-min)).toFloat()*size.height).coerceIn(0f,size.height);if(i==0)p.moveTo(x,y)else p.lineTo(x,y)};drawPath(p,color,style=Stroke(3f));drawLine(SecureMeshColors.Muted.copy(alpha=.2f),Offset(0f,size.height/2),Offset(size.width,size.height/2),1f)}}}
