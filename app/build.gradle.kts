@@ -14,8 +14,8 @@ android {
         applicationId = "dev.securemesh.commander"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0-map-menu"
+        versionCode = 6
+        versionName = "0.6.0-delight-ui"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

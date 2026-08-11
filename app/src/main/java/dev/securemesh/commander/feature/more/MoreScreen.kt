@@ -15,7 +15,7 @@ import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -59,6 +59,8 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
     val systemItems = listOf(
         MoreDestination("Настройки", "Bluetooth, локальные данные, карта и режим разработчика", "settings", Icons.Rounded.Settings, SecureMeshColors.TextSecondary),
     )
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
 
     MeshBackdrop(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -67,59 +69,79 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
-                Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-                Text("Все инструменты SecureMesh — разложены по назначению", color = SecureMeshColors.TextSecondary)
-                Spacer(Modifier.height(8.dp))
+                StaggeredReveal(entered, 0) {
+                    Column {
+                        Text("Ещё", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                        Text("Все инструменты SecureMesh — разложены по назначению", color = SecureMeshColors.TextSecondary)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
             }
 
             item {
-                Text("Быстрый доступ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    QuickActionCard(
-                        title = "Карта",
-                        subtitle = if (canMapPoints) "Узлы и GPS-точки" else "Карта готова к GPS",
-                        icon = Icons.Rounded.Map,
-                        accent = SecureMeshColors.Cyan,
-                        modifier = Modifier.weight(1f),
-                    ) { open("map") }
-                    QuickActionCard(
-                        title = "Поиск",
-                        subtitle = "Узлы, сообщения, события",
-                        icon = Icons.Rounded.Search,
-                        accent = SecureMeshColors.Blue,
-                        modifier = Modifier.weight(1f),
-                    ) { open("search") }
+                StaggeredReveal(entered, 55) {
+                    Column {
+                        Text("Быстрый доступ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            QuickActionCard(
+                                title = "Карта",
+                                subtitle = if (canMapPoints) "Узлы и GPS-точки" else "Карта готова к GPS",
+                                icon = Icons.Rounded.Map,
+                                accent = SecureMeshColors.Cyan,
+                                modifier = Modifier.weight(1f),
+                            ) { open("map") }
+                            QuickActionCard(
+                                title = "Поиск",
+                                subtitle = "Узлы, сообщения, события",
+                                icon = Icons.Rounded.Search,
+                                accent = SecureMeshColors.Blue,
+                                modifier = Modifier.weight(1f),
+                            ) { open("search") }
+                        }
+                    }
                 }
             }
 
             if (networkItems.isNotEmpty()) {
-                item { MenuSectionHeader("Сеть", "Как устроена mesh-сеть и куда идут пакеты", SecureMeshColors.Cyan) }
+                item {
+                    StaggeredReveal(entered, 105) {
+                        MenuSectionHeader("Сеть", "Как устроена mesh-сеть и куда идут пакеты", SecureMeshColors.Cyan)
+                    }
+                }
                 items(networkItems, key = { it.route }) { destination ->
                     DestinationRow(destination) { open(destination.route) }
                 }
             }
 
             if (toolItems.isNotEmpty()) {
-                item { MenuSectionHeader("Инструменты", "Проверка, наблюдение и техническая работа", SecureMeshColors.Violet) }
+                item {
+                    StaggeredReveal(entered, 155) {
+                        MenuSectionHeader("Инструменты", "Проверка, наблюдение и техническая работа", SecureMeshColors.Violet)
+                    }
+                }
                 items(toolItems, key = { it.route }) { destination ->
                     DestinationRow(destination) { open(destination.route) }
                 }
             }
 
-            item { MenuSectionHeader("Приложение", "Локальные параметры и поведение SecureMesh", SecureMeshColors.TextSecondary) }
+            item {
+                StaggeredReveal(entered, 205) {
+                    MenuSectionHeader("Приложение", "Локальные параметры и поведение SecureMesh", SecureMeshColors.TextSecondary)
+                }
+            }
             items(systemItems, key = { it.route }) { destination ->
                 DestinationRow(destination) { open(destination.route) }
             }
 
             item {
                 Surface(
-                    color = SecureMeshColors.SurfaceHigh.copy(alpha = .72f),
+                    color = SecureMeshColors.SurfaceHigh.copy(alpha = .70f),
                     shape = MaterialTheme.shapes.large,
-                    border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .72f)),
+                    border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .70f)),
                 ) {
                     Text(
-                        "Разделы сети появляются только когда текущая защищённая сессия реально даёт соответствующие права. Карта при этом доступна всегда: без GPS она показывает локальную координатную сцену, а точки добавятся автоматически после появления координат.",
+                        "Разделы сети появляются только когда текущая защищённая сессия реально даёт соответствующие права. Карта доступна всегда: без GPS она показывает локальную координатную сцену, а точки добавятся автоматически после появления координат.",
                         color = SecureMeshColors.Muted,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(13.dp),
@@ -140,13 +162,11 @@ private fun QuickActionCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Surface(
+    PressScaleSurface(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 126.dp),
+        modifier = modifier.height(132.dp),
         color = SecureMeshColors.SurfaceHigh,
-        shape = MaterialTheme.shapes.large,
         border = BorderStroke(1.dp, accent.copy(alpha = .28f)),
-        tonalElevation = 2.dp,
     ) {
         Column(
             Modifier.fillMaxSize().padding(14.dp),
@@ -155,9 +175,10 @@ private fun QuickActionCard(
             Surface(shape = CircleShape, color = accent.copy(alpha = .14f)) {
                 Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.padding(10.dp).size(23.dp))
             }
-            Spacer(Modifier.height(15.dp))
-            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            Text(subtitle, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Text(subtitle, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -175,11 +196,10 @@ private fun MenuSectionHeader(title: String, subtitle: String, accent: Color) {
 
 @Composable
 private fun DestinationRow(destination: MoreDestination, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
+    PressScaleSurface(
         onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         color = SecureMeshColors.SurfaceHigh.copy(alpha = .94f),
-        shape = MaterialTheme.shapes.large,
         border = BorderStroke(1.dp, destination.accent.copy(alpha = .16f)),
     ) {
         Row(
