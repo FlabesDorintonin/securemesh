@@ -14,8 +14,9 @@ fun Enum<*>?.ruLabel(): String {
         "ADMIN" -> "Администратор"
 
         "AUTHENTICATED" -> "Подтверждена"
-        "UNAUTHENTICATED" -> "Не подтверждена"
-        "NOT_AUTHENTICATED" -> "Не подтверждена"
+        "UNAUTHENTICATED", "NOT_AUTHENTICATED" -> "Не подтверждена"
+        "PAIRING_REQUIRED" -> "Нужно сопряжение"
+        "AUTHENTICATING" -> "Проверка доступа"
         "ESTABLISHED" -> "Установлена"
         "NOT_CONFIGURED" -> "Не настроена"
         "PENDING" -> "Ожидание"
@@ -25,6 +26,7 @@ fun Enum<*>?.ruLabel(): String {
         "DYNAMIC" -> "Динамический"
         "ROUTED" -> "Через сеть"
         "AUTO" -> "Авто"
+        "STALE" -> "Устарел"
 
         "QUEUED" -> "В очереди"
         "ROUTING" -> "Поиск маршрута"
@@ -40,9 +42,11 @@ fun Enum<*>?.ruLabel(): String {
         "ACKED" -> "Подтверждено"
         "NACKED" -> "Отклонено"
         "TIMEOUT" -> "Тайм-аут"
+        "UNAVAILABLE" -> "Недоступно"
 
         "SYSTEM" -> "Система"
         "RADIO" -> "Радио"
+        "ROUTING" -> "Маршрутизация"
         "MESSAGES" -> "Сообщения"
         "GPS" -> "GPS"
         "SECURITY" -> "Безопасность"
@@ -70,6 +74,8 @@ fun Enum<*>?.ruLabel(): String {
         "NETWORK_DIAGNOSTICS" -> "Диагностика сети"
         "OTA" -> "Обновление прошивки"
         "SENSORS" -> "Датчики"
+        "RELAY" -> "Ретрансляция"
+        "SOS" -> "SOS"
 
         "NAME" -> "По имени"
         "STATUS" -> "По статусу"
@@ -79,7 +85,7 @@ fun Enum<*>?.ruLabel(): String {
 
         "FIX" -> "Есть фиксация"
         "NO_FIX" -> "Нет фиксации"
-        "STALE" -> "Устарело"
+        "INVALID" -> "Недействительно"
 
         else -> key
             .lowercase()
@@ -88,26 +94,30 @@ fun Enum<*>?.ruLabel(): String {
     }
 }
 
-fun localizedTechnicalText(text: String): String = text
-    .replace("DEMO PROFILE ACTIVE", "Демо-профиль активен", ignoreCase = true)
-    .replace("DEVELOPMENT SCENARIO APPLIED", "Сценарий разработчика применён", ignoreCase = true)
-    .replace("SECUREMESH SESSION ESTABLISHED", "Защищённая сессия установлена", ignoreCase = true)
-    .replace("BLE CONNECTED / SECUREMESH UNKNOWN", "BLE подключён · SecureMesh не распознан", ignoreCase = true)
-    .replace("STATIC ROUTE UPDATED", "Статический маршрут обновлён", ignoreCase = true)
-    .replace("STATIC ROUTE REMOVED", "Статический маршрут удалён", ignoreCase = true)
-    .replace("FIELD TEST COMPLETE", "Полевой тест завершён", ignoreCase = true)
-    .replace("MESSAGE #", "Сообщение #", ignoreCase = true)
-    .replace(" E2E UNKNOWN", " · сквозная доставка не подтверждена", ignoreCase = true)
-    .replace(" DELIVERED", " · доставлено", ignoreCase = true)
-    .replace(" QUEUED", " · в очереди", ignoreCase = true)
-    .replace("Future demo end-to-end confirmation", "Демо: сквозное подтверждение доставки", ignoreCase = true)
-    .replace(
-        "All observed hop ACKs succeeded; v0.5 has no end-to-end delivery confirmation",
-        "Все hop-ACK получены; в v0.5 сквозное подтверждение доставки не реализовано",
-        ignoreCase = true,
-    )
-    .replace("E2E PDR unavailable; hop telemetry captured", "Сквозной PDR недоступен; hop-телеметрия сохранена", ignoreCase = true)
-    .replace("User requested", "Отключено пользователем", ignoreCase = true)
+fun localizedTechnicalText(text: String?): String {
+    if (text.isNullOrBlank()) return "Нет данных"
+    return text
+        .replace("DEMO PROFILE ACTIVE", "Демо-профиль активен", ignoreCase = true)
+        .replace("DEVELOPMENT SCENARIO APPLIED", "Сценарий разработчика применён", ignoreCase = true)
+        .replace("SECUREMESH SESSION ESTABLISHED", "Защищённая сессия установлена", ignoreCase = true)
+        .replace("BLE CONNECTED / SECUREMESH UNKNOWN", "BLE подключён · SecureMesh не распознан", ignoreCase = true)
+        .replace("STATIC ROUTE UPDATED", "Статический маршрут обновлён", ignoreCase = true)
+        .replace("STATIC ROUTE REMOVED", "Статический маршрут удалён", ignoreCase = true)
+        .replace("FIELD TEST COMPLETE", "Полевой тест завершён", ignoreCase = true)
+        .replace("MESSAGE #", "Сообщение #", ignoreCase = true)
+        .replace(" E2E UNKNOWN", " · сквозная доставка не подтверждена", ignoreCase = true)
+        .replace(" DELIVERED", " · доставлено", ignoreCase = true)
+        .replace(" QUEUED", " · в очереди", ignoreCase = true)
+        .replace("Future demo end-to-end confirmation", "Демо: сквозное подтверждение доставки", ignoreCase = true)
+        .replace(
+            "All observed hop ACKs succeeded; v0.5 has no end-to-end delivery confirmation",
+            "Все hop-ACK получены; в v0.5 сквозное подтверждение доставки не реализовано",
+            ignoreCase = true,
+        )
+        .replace("E2E PDR unavailable; hop telemetry captured", "Сквозной PDR недоступен; hop-телеметрия сохранена", ignoreCase = true)
+        .replace("Development scenario applied", "Сценарий разработчика применён", ignoreCase = true)
+        .replace("User requested", "Отключено пользователем", ignoreCase = true)
+}
 
 fun localizedError(text: String?): String? {
     if (text.isNullOrBlank()) return null
@@ -126,5 +136,10 @@ fun deviceDisplayName(name: String?): String = when (name) {
     null, "" -> "BLE-устройство без имени"
     "SecureMesh Field Node" -> "Полевой узел SecureMesh"
     "Nearby Sensor" -> "Соседний датчик"
+    "Field Node" -> "Полевой узел"
+    "Command Node" -> "Командный узел"
+    "Relay North" -> "Ретранслятор «Север»"
+    "Team Node" -> "Узел группы"
+    "Direct Node" -> "Прямой узел"
     else -> name
 }
