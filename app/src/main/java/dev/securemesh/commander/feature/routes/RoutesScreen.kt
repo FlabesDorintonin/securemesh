@@ -29,6 +29,7 @@ fun RoutesScreen(viewModel: RoutesViewModel) {
     var showAdd by remember { mutableStateOf(false) }
     var destination by remember { mutableStateOf("") }
     var via by remember { mutableStateOf("") }
+    val visibleError = localizedError(error)
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -55,8 +56,8 @@ fun RoutesScreen(viewModel: RoutesViewModel) {
             )
         }
 
-        localizedError(error)?.let { message ->
-            item { Text(message, color = SecureMeshColors.Critical) }
+        if (visibleError != null) {
+            item { Text(visibleError, color = SecureMeshColors.Critical) }
         }
 
         if (state.routes.isEmpty()) {
