@@ -26,10 +26,10 @@ fun Enum<*>?.ruLabel(): String {
         "DYNAMIC" -> "Динамический"
         "ROUTED" -> "Через сеть"
         "AUTO" -> "Авто"
-        "STALE" -> "Устарел"
+        "STALE" -> "Устарело"
 
         "QUEUED" -> "В очереди"
-        "ROUTING" -> "Поиск маршрута"
+        "ROUTING" -> "Маршрутизация"
         "SENDING" -> "Отправка"
         "HOP_PROGRESS" -> "Передача по узлам"
         "FINAL_CONFIRMATION_PENDING" -> "Ждём финальное подтверждение"
@@ -46,7 +46,6 @@ fun Enum<*>?.ruLabel(): String {
 
         "SYSTEM" -> "Система"
         "RADIO" -> "Радио"
-        "ROUTING" -> "Маршрутизация"
         "MESSAGES" -> "Сообщения"
         "GPS" -> "GPS"
         "SECURITY" -> "Безопасность"
@@ -74,8 +73,6 @@ fun Enum<*>?.ruLabel(): String {
         "NETWORK_DIAGNOSTICS" -> "Диагностика сети"
         "OTA" -> "Обновление прошивки"
         "SENSORS" -> "Датчики"
-        "RELAY" -> "Ретрансляция"
-        "SOS" -> "SOS"
 
         "NAME" -> "По имени"
         "STATUS" -> "По статусу"
