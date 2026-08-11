@@ -1,5 +1,6 @@
 package dev.securemesh.commander.navigation
 
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -9,15 +10,18 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -67,6 +71,7 @@ private fun itemsFor(session: SecureMeshSession?): List<NavItem> = buildList {
     } else {
         session?.let { add(NavItem("node/${it.localNodeIdentity.nodeId}", "Мой узел", Icons.Rounded.People)) }
     }
+    add(NavItem("map", "Карта", Icons.Rounded.Map))
     add(NavItem("more", "Ещё", Icons.Rounded.MoreHoriz))
 }
 
@@ -77,16 +82,20 @@ fun SecureMeshRoot(repository: SecureMeshRepository) {
         navController = nav,
         startDestination = RootRoute.WELCOME,
         enterTransition = {
-            fadeIn(tween(230)) + slideInHorizontally(tween(260)) { it / 12 }
+            fadeIn(tween(190)) + slideInHorizontally(
+                animationSpec = spring(dampingRatio = .92f, stiffness = 520f),
+            ) { it / 10 }
         },
         exitTransition = {
-            fadeOut(tween(150)) + slideOutHorizontally(tween(190)) { -it / 18 }
+            fadeOut(tween(130)) + slideOutHorizontally(tween(180)) { -it / 20 }
         },
         popEnterTransition = {
-            fadeIn(tween(210)) + slideInHorizontally(tween(240)) { -it / 14 }
+            fadeIn(tween(180)) + slideInHorizontally(
+                animationSpec = spring(dampingRatio = .92f, stiffness = 520f),
+            ) { -it / 11 }
         },
         popExitTransition = {
-            fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { it / 18 }
+            fadeOut(tween(120)) + slideOutHorizontally(tween(170)) { it / 20 }
         },
     ) {
         composable(RootRoute.WELCOME) {
@@ -132,7 +141,7 @@ private fun MainShell(repository: SecureMeshRepository) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             if (maxWidth >= 760.dp) {
                 Row(Modifier.fillMaxSize()) {
-                    PrimaryRail(nav, items, Modifier.width(108.dp))
+                    PrimaryRail(nav, items, Modifier.width(112.dp))
                     Box(Modifier.weight(1f)) { MainNavHost(nav, repository, session) }
                 }
             } else {
@@ -169,16 +178,20 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
         startDestination = "home",
         modifier = Modifier.fillMaxSize(),
         enterTransition = {
-            fadeIn(tween(210)) + slideInVertically(tween(240)) { it / 20 }
+            fadeIn(tween(170)) + slideInVertically(
+                animationSpec = spring(dampingRatio = .94f, stiffness = 600f),
+            ) { it / 22 }
         },
         exitTransition = {
-            fadeOut(tween(140)) + slideOutVertically(tween(170)) { -it / 28 }
+            fadeOut(tween(115)) + slideOutVertically(tween(150)) { -it / 32 }
         },
         popEnterTransition = {
-            fadeIn(tween(190)) + slideInVertically(tween(220)) { -it / 24 }
+            fadeIn(tween(160)) + slideInVertically(
+                animationSpec = spring(dampingRatio = .94f, stiffness = 600f),
+            ) { -it / 24 }
         },
         popExitTransition = {
-            fadeOut(tween(130)) + slideOutVertically(tween(160)) { it / 28 }
+            fadeOut(tween(110)) + slideOutVertically(tween(145)) { it / 32 }
         },
     ) {
         composable("home") {
@@ -218,7 +231,7 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
 }
 
 private fun isMoreRoute(route: String?): Boolean = route in setOf(
-    "more", "map", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search",
+    "more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search",
 )
 
 private fun isSelected(current: String?, item: NavItem): Boolean = when {
@@ -238,31 +251,54 @@ private fun navigateTopLevel(nav: NavHostController, route: String) {
 @Composable
 private fun PrimaryBar(nav: NavHostController, items: List<NavItem>) {
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
-    Surface(
-        color = SecureMeshColors.Navigation.copy(alpha = .98f),
-        shadowElevation = 12.dp,
-        border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .55f)),
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 10.dp, vertical = 7.dp),
     ) {
-        NavigationBar(
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            windowInsets = NavigationBarDefaults.windowInsets,
+        Surface(
+            color = SecureMeshColors.Navigation.copy(alpha = .96f),
+            shadowElevation = 18.dp,
+            shape = RoundedCornerShape(30.dp),
+            border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .14f)),
         ) {
-            items.forEach { item ->
-                NavigationBarItem(
-                    selected = isSelected(current, item),
-                    onClick = { navigateTopLevel(nav, item.route) },
-                    icon = { Icon(item.icon, contentDescription = item.label) },
-                    label = { Text(item.label) },
-                    alwaysShowLabel = true,
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = SecureMeshColors.CyanHot,
-                        selectedTextColor = SecureMeshColors.CyanHot,
-                        indicatorColor = SecureMeshColors.Cyan.copy(alpha = .18f),
-                        unselectedIconColor = SecureMeshColors.Muted,
-                        unselectedTextColor = SecureMeshColors.Muted,
-                    ),
-                )
+            NavigationBar(
+                containerColor = Color.Transparent,
+                tonalElevation = 0.dp,
+                windowInsets = WindowInsets(0, 0, 0, 0),
+            ) {
+                items.forEach { item ->
+                    val selected = isSelected(current, item)
+                    val iconScale by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (selected) 1.10f else 1f,
+                        animationSpec = spring(dampingRatio = .78f, stiffness = 560f),
+                        label = "nav-icon-scale-${item.route}",
+                    )
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { navigateTopLevel(nav, item.route) },
+                        icon = {
+                            Icon(
+                                item.icon,
+                                contentDescription = item.label,
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                },
+                            )
+                        },
+                        label = { Text(item.label) },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = SecureMeshColors.CyanHot,
+                            selectedTextColor = SecureMeshColors.CyanHot,
+                            indicatorColor = SecureMeshColors.Cyan.copy(alpha = .18f),
+                            unselectedIconColor = SecureMeshColors.Muted,
+                            unselectedTextColor = SecureMeshColors.Muted,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -271,22 +307,31 @@ private fun PrimaryBar(nav: NavHostController, items: List<NavItem>) {
 @Composable
 private fun PrimaryRail(nav: NavHostController, items: List<NavItem>, modifier: Modifier = Modifier) {
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
-    NavigationRail(modifier = modifier, containerColor = SecureMeshColors.Navigation.copy(alpha = .98f)) {
-        Spacer(Modifier.height(18.dp))
-        items.forEach { item ->
-            NavigationRailItem(
-                selected = isSelected(current, item),
-                onClick = { navigateTopLevel(nav, item.route) },
-                icon = { Icon(item.icon, contentDescription = item.label) },
-                label = { Text(item.label) },
-                colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = SecureMeshColors.CyanHot,
-                    selectedTextColor = SecureMeshColors.CyanHot,
-                    indicatorColor = SecureMeshColors.Cyan.copy(alpha = .18f),
-                    unselectedIconColor = SecureMeshColors.Muted,
-                    unselectedTextColor = SecureMeshColors.Muted,
-                ),
-            )
+    Surface(
+        modifier = modifier.padding(8.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = SecureMeshColors.Navigation.copy(alpha = .96f),
+        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .12f)),
+        shadowElevation = 16.dp,
+    ) {
+        NavigationRail(containerColor = Color.Transparent) {
+            Spacer(Modifier.height(18.dp))
+            items.forEach { item ->
+                val selected = isSelected(current, item)
+                NavigationRailItem(
+                    selected = selected,
+                    onClick = { navigateTopLevel(nav, item.route) },
+                    icon = { Icon(item.icon, contentDescription = item.label) },
+                    label = { Text(item.label) },
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = SecureMeshColors.CyanHot,
+                        selectedTextColor = SecureMeshColors.CyanHot,
+                        indicatorColor = SecureMeshColors.Cyan.copy(alpha = .18f),
+                        unselectedIconColor = SecureMeshColors.Muted,
+                        unselectedTextColor = SecureMeshColors.Muted,
+                    ),
+                )
+            }
         }
     }
 }
