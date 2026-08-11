@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package dev.securemesh.commander.feature.messages
 
 import androidx.compose.animation.AnimatedContent
@@ -6,7 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,7 +32,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.domain.model.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessagesScreen(viewModel: MessagesViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -100,10 +100,11 @@ fun MessagesScreen(viewModel: MessagesViewModel) {
                     EmptyState("Нет доступных узлов", "Сессия пока не показывает узлы для переписки.")
                 } else {
                     remotes.forEach { node ->
+                        val name = deviceDisplayName(node.name)
                         ListItem(
-                            headlineContent = { Text(node.name, fontWeight = FontWeight.SemiBold) },
+                            headlineContent = { Text(name, fontWeight = FontWeight.SemiBold) },
                             supportingContent = { Text("${node.role.ruLabel()} · ${node.id}") },
-                            leadingContent = { MeshAvatar(node.name, node.online, size = 44.dp) },
+                            leadingContent = { MeshAvatar(name, node.online, size = 44.dp) },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             modifier = Modifier.clickable {
                                 selectedPeerId = node.id
@@ -186,15 +187,16 @@ private fun ConversationsScreen(
 
 @Composable
 private fun ConversationRow(node: MeshNode, message: MeshMessage, localNodeId: NodeId?, onClick: () -> Unit) {
+    val name = deviceDisplayName(node.name)
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        MeshAvatar(node.name, node.online, size = 52.dp)
+        MeshAvatar(name, node.online, size = 52.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(node.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(clockLabel(message.createdAtEpochMs), style = MaterialTheme.typography.labelSmall, color = SecureMeshColors.Muted)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -214,7 +216,6 @@ private fun ConversationRow(node: MeshNode, message: MeshMessage, localNodeId: N
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatScreen(
     peer: MeshNode?,
@@ -229,6 +230,7 @@ private fun ChatScreen(
 ) {
     var text by remember(peerId) { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val peerName = deviceDisplayName(peer?.name ?: peerId)
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -240,9 +242,9 @@ private fun ChatScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        MeshAvatar(peer?.name ?: peerId, peer?.online, size = 38.dp)
+                        MeshAvatar(peerName, peer?.online, size = 38.dp)
                         Column {
-                            Text(peer?.name ?: peerId, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(peerName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text(
                                 if (peer?.online == true) "в сети" else "не в сети",
                                 style = MaterialTheme.typography.labelSmall,
@@ -296,10 +298,7 @@ private fun ChatScreen(
 
 @Composable
 private fun MessageBubble(message: MeshMessage, outgoing: Boolean, onClick: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth(),
-        horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start,
-    ) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
         Surface(
             modifier = Modifier.widthIn(max = 330.dp).clickable(onClick = onClick),
             color = if (outgoing) SecureMeshColors.BubbleOutgoing else SecureMeshColors.BubbleIncoming,
@@ -365,11 +364,7 @@ private fun MessageComposer(
                     maxLines = 5,
                     shape = MaterialTheme.shapes.extraLarge,
                 )
-                FilledIconButton(
-                    onClick = onSend,
-                    enabled = enabled && text.isNotBlank(),
-                    modifier = Modifier.size(50.dp),
-                ) {
+                FilledIconButton(onClick = onSend, enabled = enabled && text.isNotBlank(), modifier = Modifier.size(50.dp)) {
                     Icon(Icons.Rounded.Send, contentDescription = "Отправить")
                 }
             }
@@ -377,7 +372,6 @@ private fun MessageComposer(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MessageDetailsSheet(message: MeshMessage, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
