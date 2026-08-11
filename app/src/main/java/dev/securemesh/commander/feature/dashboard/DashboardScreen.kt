@@ -1,6 +1,5 @@
 package dev.securemesh.commander.feature.dashboard
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,6 +29,7 @@ fun DashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val local = state.session?.localNodeIdentity
+    val localName = local?.displayName?.let(::deviceDisplayName) ?: "Мой узел"
     val online = state.nodes.count { it.online }
     val gpsFixes = state.nodes.count { it.position?.status(System.currentTimeMillis()) == GpsStatus.FIX }
     val minimumBattery = state.nodes.mapNotNull { it.batteryPercent }.minOrNull()
@@ -46,10 +46,10 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(13.dp),
             ) {
-                MeshAvatar(local?.displayName ?: "SecureMesh", online = state.session != null, size = 54.dp)
+                MeshAvatar(localName, online = state.session != null, size = 54.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("SecureMesh", color = SecureMeshColors.Cyan, style = MaterialTheme.typography.labelLarge)
-                    Text(local?.displayName ?: "Мой узел", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(localName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text(
                         local?.let { "${it.role.ruLabel()} · ${it.nodeId}" } ?: "Идентичность ещё не установлена",
                         color = SecureMeshColors.Muted,
@@ -118,9 +118,7 @@ fun DashboardScreen(
             }
         }
 
-        item {
-            SectionHeader("Последние сообщения", action = "Все чаты", onAction = onMessages)
-        }
+        item { SectionHeader("Последние сообщения", action = "Все чаты", onAction = onMessages) }
 
         if (recentMessages.isEmpty()) {
             item { EmptyState("Сообщений пока нет", "Открой «Чаты» и отправь первое сообщение по сети SecureMesh.") }
@@ -128,6 +126,7 @@ fun DashboardScreen(
             items(recentMessages, key = { it.id }) { message ->
                 val peerId = if (message.origin == local?.nodeId) message.destination else message.origin
                 val peer = state.nodes.firstOrNull { it.id == peerId }
+                val peerName = deviceDisplayName(peer?.name ?: peerId)
                 Surface(
                     color = SecureMeshColors.Surface,
                     shape = MaterialTheme.shapes.large,
@@ -138,10 +137,10 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        MeshAvatar(peer?.name ?: peerId, online = peer?.online, size = 44.dp)
+                        MeshAvatar(peerName, online = peer?.online, size = 44.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(peer?.name ?: peerId, fontWeight = FontWeight.SemiBold)
+                                Text(peerName, fontWeight = FontWeight.SemiBold)
                                 Text(clockLabel(message.createdAtEpochMs), style = MaterialTheme.typography.labelSmall, color = SecureMeshColors.Muted)
                             }
                             Text(message.payload, color = SecureMeshColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -151,13 +150,8 @@ fun DashboardScreen(
             }
         }
 
-        AnimatedVisibility(state.canOpenEvents) {
-            item {
-                SectionHeader("События", action = "Журнал", onAction = onEvents)
-            }
-        }
-
         if (state.canOpenEvents) {
+            item { SectionHeader("События", action = "Журнал", onAction = onEvents) }
             if (state.events.isEmpty()) {
                 item { Text("Новых событий нет", color = SecureMeshColors.Muted) }
             } else {
