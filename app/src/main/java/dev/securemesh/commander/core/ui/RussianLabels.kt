@@ -3,7 +3,8 @@ package dev.securemesh.commander.core.ui
 fun Enum<*>?.ruLabel(): String {
     val key = this?.name ?: return "Нет данных"
     return when (key) {
-        "CURRENT_FIRMWARE_V05" -> "Текущая прошивка v0.5"
+        // Legacy enum name retained to avoid widening the migration surface; user-visible current demo is v0.6.
+        "CURRENT_FIRMWARE_V05" -> "Текущая прошивка v0.6"
         "FUTURE_DEMO" -> "Демо будущих функций"
 
         "MEMBER" -> "Участник"
@@ -12,6 +13,8 @@ fun Enum<*>?.ruLabel(): String {
         "OPERATOR" -> "Оператор"
         "COMMANDER" -> "Командир"
         "ADMIN" -> "Администратор"
+        "DEVELOPMENT" -> "Разработка"
+        "UNKNOWN" -> "Неизвестно"
 
         "AUTHENTICATED" -> "Подтверждена"
         "UNAUTHENTICATED", "NOT_AUTHENTICATED" -> "Не подтверждена"
@@ -36,7 +39,6 @@ fun Enum<*>?.ruLabel(): String {
         "DELIVERED" -> "Доставлено"
         "FAILED" -> "Ошибка"
         "EXPIRED" -> "Истекло"
-        "UNKNOWN" -> "Нет данных"
         "CONFIRMED_RECEIVED" -> "Получено"
 
         "ACKED" -> "Подтверждено"
@@ -70,6 +72,8 @@ fun Enum<*>?.ruLabel(): String {
 
         "MESSAGING" -> "Сообщения"
         "FIELD_TEST" -> "Полевой тест"
+        "STATIC_ROUTING" -> "Статические маршруты"
+        "BLE_CONTROL" -> "BLE-управление"
         "NETWORK_DIAGNOSTICS" -> "Диагностика сети"
         "OTA" -> "Обновление прошивки"
         "SENSORS" -> "Датчики"
@@ -84,10 +88,7 @@ fun Enum<*>?.ruLabel(): String {
         "NO_FIX" -> "Нет фиксации"
         "INVALID" -> "Недействительно"
 
-        else -> key
-            .lowercase()
-            .replace('_', ' ')
-            .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        else -> key.lowercase().replace('_', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
     }
 }
 
@@ -108,7 +109,7 @@ fun localizedTechnicalText(text: String?): String {
         .replace("Future demo end-to-end confirmation", "Демо: сквозное подтверждение доставки", ignoreCase = true)
         .replace(
             "All observed hop ACKs succeeded; v0.5 has no end-to-end delivery confirmation",
-            "Все hop-ACK получены; в v0.5 сквозное подтверждение доставки не реализовано",
+            "Все hop-ACK получены; обычного сквозного подтверждения доставки в текущей прошивке нет",
             ignoreCase = true,
         )
         .replace("E2E PDR unavailable; hop telemetry captured", "Сквозной PDR недоступен; hop-телеметрия сохранена", ignoreCase = true)
