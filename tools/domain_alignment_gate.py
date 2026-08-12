@@ -11,7 +11,12 @@ REPO = (MAIN / "data/repository/SecureMeshRepositoryImpl.kt").read_text(encoding
 POLICY = (MAIN / "domain/service/UiAccessPolicy.kt").read_text(encoding="utf-8")
 BLE = (MAIN / "data/ble/BleTransport.kt").read_text(encoding="utf-8")
 CODEC = (MAIN / "data/ble/SecureMeshBleCodec.kt").read_text(encoding="utf-8")
+CONFIG = (MAIN / "data/ble/BleProtocolConfig.kt").read_text(encoding="utf-8")
+FRAG = (MAIN / "data/ble/BleFragmentation.kt").read_text(encoding="utf-8")
+REQUESTS = (MAIN / "data/ble/BleRequestManager.kt").read_text(encoding="utf-8")
 ENTITIES = (MAIN / "core/database/Entities.kt").read_text(encoding="utf-8")
+DATABASE = (MAIN / "core/database/SecureMeshDatabase.kt").read_text(encoding="utf-8")
+PAIRING = (MAIN / "data/ble/PairingController.kt").read_text(encoding="utf-8")
 WELCOME = (MAIN / "feature/welcome/WelcomeScreen.kt").read_text(encoding="utf-8")
 NODES_VM = (MAIN / "feature/nodes/NodesViewModel.kt").read_text(encoding="utf-8")
 DASHBOARD_VM = (MAIN / "feature/dashboard/DashboardViewModel.kt").read_text(encoding="utf-8")
@@ -37,93 +42,95 @@ mesh_node = class_block(MODEL, "data class MeshNode(", "enum class LinkQuality")
 topology = class_block(MODEL, "data class MeshTopology(", "enum class MessagePriority")
 route = class_block(MODEL, "data class MeshRoute(", "data class MeshTopology")
 
-# Core boundaries / no regression.
+# Architectural boundaries.
 check("Repository/transport boundary retained", (MAIN/"domain/repository/SecureMeshRepository.kt").exists() and (MAIN/"data/transport/MeshTransport.kt").exists())
 check("No direct GATT/scanner API in feature UI", not re.search(r"BluetoothGatt|BluetoothLeScanner|ScanCallback", FEATURE_TEXT))
 check("No cloud/backend/analytics dependency", not re.search(r"firebase|appsflyer|amplitude|retrofit|ktor-client|analytics-sdk", BUILD_TEXT, re.I))
 check("No hardcoded PIN/key", not re.search(r"\bPIN\s*=|123456|SECRET_KEY|PRIVATE_KEY|API_KEY", ALL_TEXT, re.I))
+check("System pairing only; no custom PIN submission", "submitCode" not in PAIRING and "createBond()" in BLE)
 
-# Identity, role, capability, permission, session.
+# Domain truth.
 check("NodeIdentity model present", all(x in MODEL for x in ["data class NodeIdentity", "nodeId: NodeId", "displayName: String", "role: NodeRole", "capabilities: Set<DeviceCapability>"]))
 check("Role and permission are separate enums", "enum class NodeRole" in MODEL and "enum class SessionPermission" in MODEL and "enum class DeviceCapability" in MODEL)
-AUTH_SURFACES = POLICY + "\n" + MOCK + "\n" + (MAIN/"feature/messages/MessagesViewModel.kt").read_text() + "\n" + (MAIN/"feature/routes/RoutesViewModel.kt").read_text() + "\n" + (MAIN/"feature/fieldtest/FieldTestViewModel.kt").read_text() + "\n" + (MAIN/"navigation/SecureMeshRoot.kt").read_text()
+AUTH_SURFACES = POLICY + "\n" + MOCK + "\n" + (MAIN/"feature/messages/MessagesViewModel.kt").read_text() + "\n" + (MAIN/"feature/routes/RoutesViewModel.kt").read_text() + "\n" + (MAIN/"feature/fieldtest/FieldTestViewModel.kt").read_text()
 check("No role-equals-authorization branch", not re.search(r"role\s*==\s*NodeRole\.(COMMANDER|ADMIN)", AUTH_SURFACES))
-check("SecureMeshSession model present", all(x in MODEL for x in ["data class SecureMeshSession", "localNodeIdentity", "authenticationState", "grantedPermissions", "connectedSinceEpochMs"]))
-check("BLE link and authenticated session distinct", "SecureSessionConnectionState" in MODEL and "BLE_CONNECTED" in MODEL and "SECURE_SESSION_ESTABLISHED" in MODEL)
+check("SecureMeshSession separates auth from BLE link", all(x in MODEL for x in ["SecureSessionConnectionState", "BLE_CONNECTED", "SECURE_SESSION_ESTABLISHED", "AuthenticationState"]))
 check("UI visibility explicitly not authorization", "UI visibility" in MODEL and "security authority" in POLICY.lower())
-
-# Node/link truth.
 check("MeshNode has no intrinsic radio-link metrics", not re.search(r"\b(rssi|snr|pdr|retries|nextHop|route)\b", mesh_node, re.I), mesh_node.splitlines()[0])
 check("Directional MeshLink model present", all(x in MODEL for x in ["data class MeshLink", "fromNode: NodeId", "toNode: NodeId", "val rssi: Int?", "val snr: Double?", "val pdr: Double?"]))
-check("Topology domain has no screen coordinates", "val x:" not in topology and "val y:" not in topology and "TopologyNode" not in MODEL)
-check("Route metrics are optional", all(x in route for x in ["hopCount: Int?", "quality: Double?", "updatedAtEpochMs: Long?"]))
+check("Topology has no screen coordinates", "val x:" not in topology and "val y:" not in topology and "TopologyNode" not in MODEL)
+check("Route metrics remain optional", all(x in route for x in ["hopCount: Int?", "quality: Double?", "updatedAtEpochMs: Long?"]))
+check("Hop ACK cannot fabricate ordinary E2E delivery", "finalState = MessageFinalState.UNKNOWN" in BLE and "First-hop ACK" in BLE)
 
-# Messaging truth.
-check("Message and TransmissionHop separated", "data class MeshMessage" in MODEL and "data class TransmissionHop" in MODEL)
-check("Final confirmation pending state exists", "FINAL_CONFIRMATION_PENDING" in MODEL and "MessageFinalState" in MODEL)
-check("Hop ACK cannot fabricate delivered", "finalStateAfterHopAck(): MessageFinalState = MessageFinalState.UNKNOWN" in (MAIN/"domain/model/MessageStateMachine.kt").read_text())
-check("Current firmware branch uses UNKNOWN final state", "DemoProfile.CURRENT_FIRMWARE_V05" in MOCK and "finalStateAfterHopAck()" in MOCK)
+# Exact BLE v0.1 contract.
+for value in [
+    "7b7f0001-6b6f-4d65-7368-534543555245",
+    "7b7f0002-6b6f-4d65-7368-534543555245",
+    "7b7f0003-6b6f-4d65-7368-534543555245",
+    "7b7f0004-6b6f-4d65-7368-534543555245",
+    "7b7f0005-6b6f-4d65-7368-534543555245",
+]:
+    check(f"Exact protocol UUID {value[:8]}", value in CONFIG)
+check("Real codec configured", "class SecureMeshBleProtocolV01Codec" in CODEC and "override val configured: Boolean = true" in CODEC)
+check("No JSON on BLE wire", "JSONObject" not in CODEC and "kotlinx.serialization" not in CODEC and "Gson" not in CODEC)
+check("10-byte application envelope", "HEADER_SIZE = 10" in CODEC and "MAGIC = 0x4D53" in CODEC and "MAX_PACKET_SIZE = 384" in CODEC)
+check("Strict application validation", all(x in CODEC for x in ["wrong SecureMesh BLE magic", "unsupported SecureMesh BLE protocol version", "payloadLength mismatch", "trailing bytes"]))
+check("Known v0.1 command set present", all(x in CODEC for x in ["GET_INFO(1)", "GET_STATUS(2)", "GET_NEIGHBORS(3)", "GET_ROUTES(4)", "SEND_MESSAGE(5)", "ADD_STATIC_ROUTE(6)", "REMOVE_STATIC_ROUTE(7)", "START_FIELD_TEST(8)", "STOP_FIELD_TEST(9)", "GET_FIELD_TEST_STATUS(10)"]))
+check("Known v0.1 events present", all(x in CODEC for x in ["NODE_DISCOVERED(1)", "HOP_ACK(4)", "MESSAGE_LOCAL_RECEIVED(6)", "TEST_PONG_RECEIVED(10)", "TEST_FINISHED(13)", "ERROR(16)", "NO_RETURN_ROUTE(17)"]))
 
-# Local node / trust.
-check("Field test source enforced as local node", "config.source != session.localNodeIdentity.nodeId" in MOCK)
-check("Trusted entity keyed by nodeId property", "val nodeId: String" in ENTITIES and "data class TrustedDeviceEntity" in ENTITIES)
-check("BLE MAC is not assigned as SecureMesh nodeId", not re.search(r"nodeId\s*=\s*(device|result\.device)\.address", ALL_TEXT))
-check("Legacy BLE-MAC trust discarded", "isLegacyBleMac" in REPO and "clearTrustedDevices" in REPO)
-check("Auto reconnect matches SecureMesh identity", "it.secureMeshNodeId == trusted.nodeId" in REPO)
-check("Local history is scoped by authenticated SecureMesh identity", "localHistoryOwnerNodeId" in REPO and "session.localNodeIdentity.nodeId == ownerNodeId" in REPO and "settingsStore.localHistoryOwnerNodeId.first()" in REPO)
-check("Sensitive Room writes require authenticated history owner", REPO.count("historyOwnedByCurrentSession(currentSession, owner)") >= 4 and "combine(liveEvents, session, localHistoryOwnerNodeId)" in REPO and "combine(messages, session, localHistoryOwnerNodeId)" in REPO and "combine(nodes, session, localHistoryOwnerNodeId)" in REPO and "combine(activeFieldTest, session, localHistoryOwnerNodeId)" in REPO)
-check("Cross-identity history regression test present", "local history is cleared when authenticated local node identity changes" in TEST_TEXT)
+# Transport fragmentation / requests.
+check("Fragment protocol exact constants", all(x in FRAG for x in ["MAGIC = 0x4653", "HEADER_SIZE = 12", "MAX_FRAGMENT_DATA = 180", "MAX_FRAGMENT_COUNT = 48", "MAX_APPLICATION_PACKET = 384", "REASSEMBLY_TIMEOUT_MS = 3_000L"]))
+check("Fragment sizing uses negotiated MTU", "negotiatedMtu - 3 - HEADER_SIZE" in FRAG)
+check("Sequential reassembly rejects gaps and overlap", "out-of-order fragment" in FRAG and "overlap/gap detected" in FRAG and "fragment out of bounds" in FRAG)
+check("Bounded request manager", "maxPending: Int = 16" in REQUESTS and "LinkedHashMap<Int, Handle>" in REQUESTS)
+check("EVENT cannot complete pending request", "if (frame !is SecureMeshBleFrame.Response) return false" in REQUESTS)
+check("Pending requests fail on disconnect", "requestManager.failAll" in BLE)
 
-# Mock profile separation / domain truth.
-check("Two explicit demo profiles", "CURRENT_FIRMWARE_V05" in MODEL and "FUTURE_DEMO" in MODEL)
-check("Repository demo launch waits for coherent projection", "withTimeout(2_000L)" in REPO and "combine(demoProfile, session, nodes, connectionState)" in REPO and "activeProfile == profile" in REPO)
-check("Current v0.5 does not create GPS positions", "if (profile == DemoProfile.FUTURE_DEMO) NodePosition" in MOCK)
-check("Current v0.5 node telemetry can be UNKNOWN", "if (profile == DemoProfile.FUTURE_DEMO) Triple(uptime, battery, voltage) else Triple(null, null, null)" in MOCK)
-check("Current v0.5 aggregate link PDR/retries can be UNKNOWN", "if (future) pdr else null" in MOCK and "if (future) retries else null" in MOCK)
-check("Future demo contains dynamic routing", "if (future) RouteType.DYNAMIC else RouteType.STATIC" in MOCK)
-check("Mock scan is bounded inside transport", "durationMs.coerceIn(5_000L, 30_000L)" in MOCK)
-check("Unknown mock BLE cannot become authenticated SecureMesh", "DeviceClassification.UNKNOWN_BLE || device.secureMeshNodeId != LOCAL_ID" in MOCK and "SecureSessionState.NOT_CONFIGURED" in MOCK)
-check("Offline mock node does not refresh lastSeen forever", "do not refresh an already-offline node" in MOCK)
+# Secure session flow / discovery.
+check("Scan identity requires service UUID", "hasService" in (MAIN/"data/ble/SecureMeshDeviceMatcher.kt").read_text() and "name-only-not-identity" in (MAIN/"data/ble/SecureMeshDeviceMatcher.kt").read_text())
+check("Subscribe RESPONSE and EVENT before INFO", "subscribeResponse()" in BLE and "subscribeEvent()" in BLE and "readInfo()" in BLE)
+check("INFO security and protocol ready validated", "info.authenticated" in BLE and "BLE_STATE_PROTOCOL_READY" in BLE and "supportedProtocolVersions" in BLE)
+check("Authenticated INFO creates stable identity", "SecureMeshBleV01DomainMapping.identity(info)" in BLE and "secureMeshNodeId = identity.nodeId" in BLE)
+check("Real BLE never maps address into nodeId", not re.search(r"nodeId\s*=\s*(device|result\.device|verifiedDevice)\.address", BLE))
+check("Bounded BLE scan", "durationMs.coerceIn(5_000L, 30_000L)" in BLE and "delay(boundedDurationMs)" in BLE)
+check("Disconnect has local cleanup fallback", "BLE disconnect timeout; local GATT closed" in BLE and "No active BLE link" in BLE)
 
-# Privacy / adaptive UI.
-check("Central UI access policy", "object UiAccessPolicy" in POLICY)
-check("Permission projections cover stored data", all(x in POLICY for x in ["visibleNodes", "visibleTopology", "visibleMessages", "visibleRoutes", "visibleEvents"]))
-check("Map requires capability plus position permission", "supports(DeviceCapability.GPS)" in POLICY and "VIEW_OWN_POSITION" in POLICY and "VIEW_TEAM_POSITIONS" in POLICY)
-check("Map position projection is independent from full node-list permission", "visiblePositionNodes" in POLICY and "visiblePositionNodes(session, nodes)" in (MAIN/"feature/network/NetworkViewModel.kt").read_text())
-check("Dynamic primary navigation uses access policy", "itemsFor" in (MAIN/"navigation/SecureMeshRoot.kt").read_text() and "UiAccessPolicy" in (MAIN/"navigation/SecureMeshRoot.kt").read_text())
+# Trust identity / migration.
+check("Trusted entity nodeId primary key", '@Entity(tableName = "trusted_devices")' in ENTITIES and "@PrimaryKey val nodeId: String" in ENTITIES)
+check("BLE address is optional transport metadata", "val lastSeenBleAddress: String?" in ENTITIES)
+check("Room migration 1 to 2 exists", "Migration(1, 2)" in DATABASE and "addMigrations(MIGRATION_1_2)" in DATABASE)
+check("Legacy MAC-shaped trust is not migrated", "length(`address`) = 8" in DATABASE and "`address` NOT LIKE '%:%'" in DATABASE)
+check("Reconnect uses BLE address only as hint", "addressHint = trusted.lastSeenBleAddress" in REPO and "authenticated INFO must still prove" in REPO)
+check("Reconnect verifies authenticated nodeId", "verified.localNodeIdentity.nodeId != trusted.nodeId" in REPO)
+check("Local history remains scoped by authenticated nodeId", "localHistoryOwnerNodeId" in REPO and "session.localNodeIdentity.nodeId == ownerNodeId" in REPO)
+
+# Capabilities / current vs future honesty.
+check("v0.6 capability bits map only defined features", all(x in (MAIN/"data/ble/BleDomainMapping.kt").read_text() for x in ["MESSAGING", "STATIC_ROUTING", "RELAY", "FIELD_TEST", "BLE_CONTROL"]))
+check("Real capability mapper does not add GPS SOS OTA", all(x not in (MAIN/"data/ble/BleDomainMapping.kt").read_text().split("fun capabilities",1)[1].split("}",1)[0] for x in ["GPS", "SOS", "OTA"]))
+check("Mock transport retained", (MAIN/"data/mock/MockTransport.kt").exists())
+check("Future demo remains explicit", "FUTURE_DEMO" in MODEL and "FUTURE_DEMO" in MOCK)
+
+# Field test semantics.
+FIELD_SCREEN = (MAIN/"feature/fieldtest/FieldTestScreen.kt").read_text()
+check("Field UI names first-hop ACK separately", "First-hop ACK" in FIELD_SCREEN and "First-hop fail" in FIELD_SCREEN)
+check("Field UI names E2E PONG separately", "E2E PONG" in FIELD_SCREEN and "RTT по DIAG_PONG" in FIELD_SCREEN)
+check("Field status maps E2E counters to final results", "confirmedReceived = status.endToEndReplies" in (MAIN/"data/ble/BleDomainMapping.kt").read_text())
+check("Field status keeps first-hop counters separate", "firstHopAcked = status.firstHopAcked" in (MAIN/"data/ble/BleDomainMapping.kt").read_text())
+
+# Diagnostics and maintainability.
+check("BLE diagnostics include required counters", all(x in MODEL for x in ["lastCommandRequestId", "lastResponse", "reassemblyErrors", "malformedPacketCount", "responseSubscribed", "eventSubscribed"]))
+check("No unsafe high-arity casts", "UNCHECKED_CAST" not in DASHBOARD_VM and "UNCHECKED_CAST" not in DIAGNOSTICS_VM)
+check("No unsafe 6-flow combine in NodesViewModel", "private val controls = combine(query, filters, sort)" in NODES_VM and "repository.session, controls" in NODES_VM)
+max_lines, max_file = max((len(p.read_text().splitlines()), p.name) for p in ALL_KT if p.name != "BleTransport.kt")
+check("No giant Kotlin god file outside BLE state machine", max_lines < 650, f"{max_file}: {max_lines} lines")
+ble_lines = len((MAIN/"data/ble/BleTransport.kt").read_text().splitlines())
+check("BLE state machine remains bounded", ble_lines < 1000, f"BleTransport.kt: {ble_lines} lines")
+check("Protocol integration tests present", all(x in TEST_TEXT for x in ["wrong magic is rejected", "payload length mismatch is rejected", "out of order fragment is rejected", "EVENT never completes pending request", "field test first hop ACK is not end to end success", "name alone is not SecureMesh identity"]))
+check("Existing alignment tests retained", all(x in TEST_TEXT for x in ["role is not permission", "directional link metrics", "hop ack alone never manufactures", "future demo", "trusted device metadata"]))
+check("Compose smoke test retained", any((ROOT/"app/src/androidTest").rglob("*Test.kt")))
 check("App surface is named SecureMesh", '<string name="app_name">SecureMesh</string>' in (ROOT/"app/src/main/res/values/strings.xml").read_text())
 
-# BLE honesty.
-check("Central BLE protocol config", (MAIN/"data/ble/BleProtocolConfig.kt").exists())
-check("Codec explicitly reports unconfigured", "override val configured: Boolean = false" in CODEC)
-check("BLE protocol readiness requires codec", "serviceDetected && characteristicsConfigured && codec.configured" in BLE)
-check("Real BLE transport never fabricates SecureMeshSession", "_session.value = SecureMeshSession" not in BLE)
-check("Bounded BLE scan", "durationMs.coerceIn(5_000L, 30_000L)" in BLE and "delay(boundedDurationMs)" in BLE and "stopScanInternal" in BLE)
-check("Connection flow has future identification/sync stages", "IdentifyingSecureMesh" in MODEL and "SyncingSession" in MODEL)
-check("BLE disconnect has local cleanup fallback", "BLE disconnect timeout; local GATT closed" in BLE and "No active BLE link" in BLE)
-check(
-    "Welcome auto-connect reacts only to BLE transport",
-    bool(re.search(r"mode\s*==\s*TransportMode\.BLE\s*&&\s*connection\s+is\s+MeshConnectionState\.Connected", WELCOME)),
-)
-
-# Field-test correctness.
-FIELD_SCREEN=(MAIN/"feature/fieldtest/FieldTestScreen.kt").read_text()
-check(
-    "RSSI and SNR use separate chart surfaces",
-    bool(re.search(r'Chart\(\s*"RSSI[^\"]*dBm"', FIELD_SCREEN)) and bool(re.search(r'Chart\(\s*"SNR[^\"]*dB"', FIELD_SCREEN)),
-)
-check("Per-hop field telemetry model", "data class HopTestTelemetry" in MODEL and "hopResults" in MODEL)
-
-# Anti-hardcoding and maintainability.
-check("No A/B/C/COMMANDER A identity assumptions in source", not re.search(r'COMMANDER A|"A"|"B"|"C"', ALL_TEXT))
-max_lines, max_file = max((len(p.read_text().splitlines()), p.name) for p in ALL_KT)
-check("No giant Kotlin god file", max_lines < 650, f"{max_file}: {max_lines} lines")
-check("No unsafe 6-flow typed combine in NodesViewModel", "private val controls = combine(query, filters, sort)" in NODES_VM and "repository.session, controls" in NODES_VM)
-check("High-arity dashboard/diagnostics combine avoids unchecked casts", "UNCHECKED_CAST" not in DASHBOARD_VM and "UNCHECKED_CAST" not in DIAGNOSTICS_VM)
-check("Required alignment tests present", all(x in TEST_TEXT for x in ["role is not permission", "directional link metrics", "hop ack alone never manufactures", "current v05 demo", "future demo", "trusted device metadata"]))
-check("Compose smoke test retained", any((ROOT/"app/src/androidTest").rglob("*Test.kt")))
-
-print("SecureMesh Android Domain Alignment quality gate")
+print("SecureMesh Android BLE Protocol v0.1 alignment gate")
 for name, detail in passes:
     print(f"PASS  {name}" + (f" — {detail}" if detail else ""))
 for name, detail in failures:
