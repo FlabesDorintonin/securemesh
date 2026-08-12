@@ -2,16 +2,29 @@ package dev.securemesh.commander.feature.deviceui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.securemesh.commander.core.ui.*
@@ -21,7 +34,9 @@ import dev.securemesh.commander.domain.model.*
 fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var requestedInitialState by remember { mutableStateOf(false) }
+    var entered by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) { entered = true }
     LaunchedEffect(state.allowed, state.device) {
         if (state.allowed && state.device == null && !requestedInitialState) {
             requestedInitialState = true
@@ -29,37 +44,43 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
         }
     }
 
-    if (!state.allowed) {
-        MeshBackdrop(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
-                EmptyState(
-                    "Управление устройством недоступно",
-                    "Нужна защищённая SecureMesh-сессия с прошивкой, которая объявляет возможность UI OS.",
-                )
-            }
-        }
-        return
-    }
-
     MeshBackdrop(Modifier.fillMaxSize()) {
-        LazyColumn(
+        if (!state.allowed) {
+            Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+                Surface(
+                    color = SecureMeshColors.SurfaceHigh.copy(alpha = .94f),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    border = BorderStroke(1.dp, SecureMeshColors.Warning.copy(alpha = .30f)),
+                ) {
+                    Column(
+                        Modifier.padding(22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        StatusChip("OLED CONTROL", SecureMeshColors.Warning)
+                        Text("Пульт пока недоступен", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            "Нужна защищённая SecureMesh-сессия и прошивка с возможностью UI OS. После подключения этот экран станет живым пультом физического OLED.",
+                            color = SecureMeshColors.TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+            return@MeshBackdrop
+        }
+
+        androidx.compose.foundation.lazy.LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("Устройство", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-                        Text("Экран и меню физического узла SecureMesh", color = SecureMeshColors.TextSecondary)
-                    }
-                    IconButton(onClick = viewModel::refresh, enabled = !state.busy) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Обновить", tint = SecureMeshColors.CyanHot)
-                    }
+                StaggeredReveal(entered, 0) {
+                    DeviceControlHeader(
+                        state = state,
+                        onRefresh = viewModel::refresh,
+                    )
                 }
             }
 
@@ -67,43 +88,45 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
                 item {
                     Surface(
                         color = SecureMeshColors.Warning.copy(alpha = .10f),
-                        border = BorderStroke(1.dp, SecureMeshColors.Warning.copy(alpha = .30f)),
+                        border = BorderStroke(1.dp, SecureMeshColors.Warning.copy(alpha = .34f)),
                         shape = MaterialTheme.shapes.large,
                     ) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text("Команда не выполнена", fontWeight = FontWeight.Bold)
-                            Text(message, color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Команда не выполнена", fontWeight = FontWeight.Bold, color = SecureMeshColors.Warning)
+                                Text(message, color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                            }
                             TextButton(onClick = viewModel::clearError) { Text("Закрыть") }
                         }
                     }
                 }
             }
 
-            item {
-                TechnicalCard("Защищённая сессия") {
-                    DeviceValueRow("Node ID", state.session?.localNodeIdentity?.nodeId ?: "—")
-                    DeviceValueRow("Прошивка", state.session?.firmwareVersion ?: "—")
-                    DeviceValueRow("BLE Protocol", state.session?.protocolVersion?.let { "v$it" } ?: "—")
-                    DeviceValueRow("Доступ", "Аутентифицирован")
-                }
-            }
-
             val device = state.device
             if (device == null) {
                 item {
-                    TechnicalCard("Состояние OLED") {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text(
-                            "Получаю GET_UI_STATE от узла…",
-                            color = SecureMeshColors.TextSecondary,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        OutlinedButton(onClick = viewModel::refresh, enabled = !state.busy) { Text("Повторить") }
+                    StaggeredReveal(entered, 70) {
+                        OledLoadingCard(onRefresh = viewModel::refresh, busy = state.busy)
                     }
                 }
             } else {
                 item {
-                    DeviceStateCard(device)
+                    StaggeredReveal(entered, 70) {
+                        OledLivePreview(device)
+                    }
+                }
+
+                item {
+                    StaggeredReveal(entered, 115) {
+                        DeviceRemote(
+                            busy = state.busy,
+                            action = viewModel::action,
+                        )
+                    }
                 }
 
                 if (device.plannedFeature) {
@@ -114,7 +137,7 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
                             shape = MaterialTheme.shapes.large,
                         ) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Раздел ещё не активен", fontWeight = FontWeight.Bold)
+                                Text("Раздел ещё не активен", fontWeight = FontWeight.Bold, color = SecureMeshColors.Violet)
                                 Text(
                                     "Прошивка сама пометила «${device.feature.label}» как запланированную функцию. Приложение не подменяет её фиктивными действиями.",
                                     color = SecureMeshColors.TextSecondary,
@@ -126,27 +149,24 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
                 }
 
                 item {
-                    DeviceRemote(
-                        busy = state.busy,
-                        action = viewModel::action,
-                    )
-                }
-
-                item {
-                    TechnicalCard("Живые данные UI OS") {
-                        DeviceValueRow("Входящие", device.inboxCount.toString())
-                        DeviceValueRow("Непрочитанные", device.unreadCount.toString())
-                        DeviceValueRow("Соседи", device.neighborCount.toString())
-                        DeviceValueRow("Маршруты", device.routeCount.toString())
-                        DeviceValueRow("Field Test", if (device.fieldTestRunning) "Выполняется" else "Остановлен")
-                        DeviceValueRow("BLE state", device.bleState.toString())
+                    StaggeredReveal(entered, 155) {
+                        LiveTelemetryCard(device)
                     }
                 }
             }
 
             item {
+                TechnicalCard("Защищённый канал") {
+                    DeviceValueRow("Node ID", state.session?.localNodeIdentity?.nodeId ?: "—")
+                    DeviceValueRow("Прошивка", state.session?.firmwareVersion ?: "—")
+                    DeviceValueRow("BLE Protocol", state.session?.protocolVersion?.let { "v$it" } ?: "—")
+                    DeviceValueRow("Сессия", "Аутентифицирована")
+                }
+            }
+
+            item {
                 Text(
-                    "Пульт меняет только UI-состояние OLED через команды GET_UI_STATE / UI_ACTION прошивки 0.6.3. Он не создаёт радио-пакеты сам по себе.",
+                    "Пульт меняет только UI-состояние OLED через команды GET_UI_STATE / UI_ACTION прошивки 0.6.3. Радио-пакеты этим экраном не создаются.",
                     color = SecureMeshColors.Muted,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
@@ -157,90 +177,235 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
 }
 
 @Composable
-private fun DeviceStateCard(device: DeviceUiState) {
-    TechnicalCard("Экран узла") {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(device.feature.takeUnless { it == DeviceUiFeature.NONE }?.label ?: device.menu.label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                Text("${device.scene.label} · ${device.menu.label}", color = SecureMeshColors.TextSecondary)
+private fun DeviceControlHeader(state: DeviceControlUiState, onRefresh: () -> Unit) {
+    Surface(
+        color = SecureMeshColors.SurfaceHigh.copy(alpha = .90f),
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .22f)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusChip("LIVE OLED", SecureMeshColors.CyanHot)
+                    if (state.device?.oledReady == true) StatusChip("SYNC", SecureMeshColors.Healthy)
+                }
+                Text("Устройство", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                Text("Физический экран узла — прямо в телефоне", color = SecureMeshColors.TextSecondary)
             }
-            Surface(
-                shape = CircleShape,
-                color = if (device.oledReady && device.bleProtocolReady) SecureMeshColors.Healthy.copy(alpha = .14f) else SecureMeshColors.Warning.copy(alpha = .14f),
+            FilledTonalIconButton(
+                onClick = onRefresh,
+                enabled = !state.busy,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = SecureMeshColors.Cyan.copy(alpha = .12f),
+                    contentColor = SecureMeshColors.CyanHot,
+                ),
             ) {
-                Text(
-                    if (device.oledReady && device.bleProtocolReady) "SYNC" else "WAIT",
-                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                    color = if (device.oledReady && device.bleProtocolReady) SecureMeshColors.Healthy else SecureMeshColors.Warning,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                Icon(Icons.Rounded.Refresh, contentDescription = "Обновить")
             }
         }
-        HorizontalDivider(color = SecureMeshColors.Divider.copy(alpha = .6f))
-        DeviceValueRow("UI model", "v${device.modelVersion}")
-        DeviceValueRow("Позиция меню", "${device.menuIndex + 1}")
-        DeviceValueRow("Глубина", device.navigationDepth.toString())
-        AnimatedVisibility(device.toastVisible) {
-            Text("На OLED сейчас отображается уведомление", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun OledLoadingCard(onRefresh: () -> Unit, busy: Boolean) {
+    Surface(
+        color = Color(0xFF02080B),
+        shape = RoundedCornerShape(26.dp),
+        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .30f)),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                Modifier.fillMaxWidth().aspectRatio(2f).clip(RoundedCornerShape(15.dp))
+                    .background(Color.Black)
+                    .border(1.dp, SecureMeshColors.Cyan.copy(alpha = .18f), RoundedCornerShape(15.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.width(150.dp),
+                        color = SecureMeshColors.CyanHot,
+                        trackColor = SecureMeshColors.SurfaceBright,
+                    )
+                    Text("GET_UI_STATE", color = SecureMeshColors.CyanHot, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Text("Синхронизирую OLED с узлом…", color = SecureMeshColors.TextSecondary)
+            OutlinedButton(onClick = onRefresh, enabled = !busy) { Text("Повторить") }
+        }
+    }
+}
+
+@Composable
+private fun OledLivePreview(device: DeviceUiState) {
+    val title = device.feature.takeUnless { it == DeviceUiFeature.NONE }?.label ?: device.menu.label
+    val secondary = when (device.scene) {
+        DeviceUiScene.HOME -> "NODE ${device.localNodeId}"
+        DeviceUiScene.MENU -> device.menu.label.uppercase()
+        DeviceUiScene.FEATURE -> device.feature.label.uppercase()
+        DeviceUiScene.UNKNOWN -> "UI STATE ${device.rawScene}"
+    }
+
+    Surface(
+        color = Color(0xFF02080B),
+        shape = RoundedCornerShape(26.dp),
+        border = BorderStroke(1.dp, if (device.oledReady) SecureMeshColors.Healthy.copy(alpha = .35f) else SecureMeshColors.Warning.copy(alpha = .35f)),
+        shadowElevation = 10.dp,
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("OLED 128×64", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).background(if (device.oledReady) SecureMeshColors.Healthy else SecureMeshColors.Warning, CircleShape))
+                    Text(if (device.oledReady) "LIVE" else "WAIT", color = if (device.oledReady) SecureMeshColors.Healthy else SecureMeshColors.Warning, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            Box(
+                Modifier.fillMaxWidth().aspectRatio(2f)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFF001014), Color.Black, Color(0xFF00090C)),
+                        ),
+                    )
+                    .border(1.dp, SecureMeshColors.Cyan.copy(alpha = .24f), RoundedCornerShape(15.dp))
+                    .padding(13.dp),
+            ) {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("SECUREMESH", color = SecureMeshColors.CyanHot, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
+                        Text("BLE ${device.bleState}", color = if (device.bleProtocolReady) SecureMeshColors.Healthy else SecureMeshColors.Warning, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = FontFamily.Monospace)
+                        Text(secondary, color = SecureMeshColors.CyanHot.copy(alpha = .82f), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, maxLines = 1)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("N:${device.neighborCount}  R:${device.routeCount}", color = Color.White.copy(alpha = .78f), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                        Text(if (device.hasUnread) "MSG:${device.unreadCount}" else "READY", color = if (device.hasUnread) SecureMeshColors.Warning else SecureMeshColors.Healthy, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniStatus("Сцена", device.scene.label, SecureMeshColors.CyanHot, Modifier.weight(1f))
+                MiniStatus("Меню", "${device.menuIndex + 1}", SecureMeshColors.Blue, Modifier.weight(1f))
+                MiniStatus("Глубина", device.navigationDepth.toString(), SecureMeshColors.Violet, Modifier.weight(1f))
+            }
+            AnimatedVisibility(device.toastVisible) {
+                StatusChip("На OLED показано уведомление", SecureMeshColors.CyanHot)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniStatus(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = color.copy(alpha = .08f),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, color.copy(alpha = .18f)),
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+            Text(value, color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
 private fun DeviceRemote(busy: Boolean, action: (DeviceUiAction) -> Unit) {
-    TechnicalCard("Пульт OLED") {
-        Text("Управляй тем же меню, которое видно на физическом экране узла.", color = SecureMeshColors.TextSecondary)
-        Spacer(Modifier.height(3.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            RemoteButton("↑", "Вверх", busy) { action(DeviceUiAction.UP) }
-        }
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        color = SecureMeshColors.SurfaceHigh.copy(alpha = .90f),
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .20f)),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            RemoteButton("‹", "Назад", busy) { action(DeviceUiAction.BACK) }
-            RemoteButton("OK", "Выбрать", busy, emphasized = true) { action(DeviceUiAction.SELECT) }
-            RemoteButton("⌂", "Домой", busy) { action(DeviceUiAction.HOME) }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            RemoteButton("↓", "Вниз", busy) { action(DeviceUiAction.DOWN) }
-        }
-        if (busy) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("Пульт OLED", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                    Text("Управление физическим меню", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                StatusChip(if (busy) "ОТПРАВКА" else "ГОТОВ", if (busy) SecureMeshColors.Warning else SecureMeshColors.Healthy)
+            }
+
+            RemoteButton(Icons.Rounded.KeyboardArrowUp, "Вверх", busy) { action(DeviceUiAction.UP) }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RemoteButton(Icons.Rounded.ArrowBack, "Назад", busy) { action(DeviceUiAction.BACK) }
+                RemoteButton(Icons.Rounded.Check, "Выбрать", busy, emphasized = true) { action(DeviceUiAction.SELECT) }
+                RemoteButton(Icons.Rounded.Home, "Домой", busy) { action(DeviceUiAction.HOME) }
+            }
+            RemoteButton(Icons.Rounded.KeyboardArrowDown, "Вниз", busy) { action(DeviceUiAction.DOWN) }
+
+            if (busy) {
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth(),
+                    color = SecureMeshColors.CyanHot,
+                    trackColor = SecureMeshColors.Divider,
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun RemoteButton(
-    symbol: String,
+    icon: ImageVector,
     description: String,
     busy: Boolean,
     emphasized: Boolean = false,
     onClick: () -> Unit,
 ) {
-    if (emphasized) {
-        Button(
-            onClick = onClick,
-            enabled = !busy,
-            modifier = Modifier.size(width = 88.dp, height = 60.dp),
-            shape = MaterialTheme.shapes.extraLarge,
-        ) {
-            Text(symbol, fontWeight = FontWeight.ExtraBold)
+    PressScaleSurface(
+        onClick = onClick,
+        modifier = Modifier.size(if (emphasized) 76.dp else 66.dp),
+        enabled = !busy,
+        color = if (emphasized) SecureMeshColors.Cyan.copy(alpha = .18f) else SecureMeshColors.SurfaceBright.copy(alpha = .72f),
+        border = BorderStroke(1.dp, if (emphasized) SecureMeshColors.CyanHot.copy(alpha = .55f) else SecureMeshColors.Cyan.copy(alpha = .20f)),
+        shape = RoundedCornerShape(if (emphasized) 24.dp else 21.dp),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = description,
+                tint = if (emphasized) SecureMeshColors.CyanHot else SecureMeshColors.TextSecondary,
+                modifier = Modifier.size(if (emphasized) 34.dp else 30.dp),
+            )
         }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            enabled = !busy,
-            modifier = Modifier.size(width = 78.dp, height = 56.dp),
-            shape = MaterialTheme.shapes.extraLarge,
-            border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .28f)),
-            contentPadding = PaddingValues(0.dp),
-        ) {
-            Text(symbol, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+@Composable
+private fun LiveTelemetryCard(device: DeviceUiState) {
+    TechnicalCard("Живое состояние UI OS") {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetricTile("Входящие", device.inboxCount.toString(), Modifier.weight(1f), SecureMeshColors.Cyan)
+            MetricTile("Новые", device.unreadCount.toString(), Modifier.weight(1f), if (device.unreadCount > 0) SecureMeshColors.Warning else SecureMeshColors.Healthy)
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetricTile("Соседи", device.neighborCount.toString(), Modifier.weight(1f), SecureMeshColors.Blue)
+            MetricTile("Маршруты", device.routeCount.toString(), Modifier.weight(1f), SecureMeshColors.Violet)
+        }
+        DeviceValueRow("Field Test", if (device.fieldTestRunning) "Выполняется" else "Остановлен")
+        DeviceValueRow("BLE state", device.bleState.toString())
+        DeviceValueRow("UI model", "v${device.modelVersion}")
     }
 }
 
@@ -252,6 +417,6 @@ private fun DeviceValueRow(label: String, value: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, color = SecureMeshColors.Muted, modifier = Modifier.weight(1f))
-        Text(value, fontWeight = FontWeight.Medium)
+        Text(value, fontWeight = FontWeight.Medium, color = SecureMeshColors.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
