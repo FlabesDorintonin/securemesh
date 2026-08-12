@@ -19,7 +19,7 @@ import dev.securemesh.commander.domain.model.*
 fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     if (!state.allowed) {
-        EmptyState("Диагностика недоступна", "Узел должен поддерживать диагностику, а защищённая сессия — разрешать её просмотр.")
+        EmptyState("Диагностика недоступна", "Узел должен поддерживать BLE/сетевую диагностику, а защищённая сессия — разрешать её просмотр.")
         return
     }
 
@@ -30,7 +30,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
     ) {
         item {
             Text("Диагностика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Техническое состояние приложения, телефона и mesh-сети", color = SecureMeshColors.Muted)
+            Text("Техническое состояние приложения, BLE protocol и mesh-сети", color = SecureMeshColors.Muted)
         }
         item {
             TechnicalCard("Приложение") {
@@ -44,7 +44,28 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
             TechnicalCard("Телефон") {
                 DiagnosticRow("Bluetooth", phoneStateLabel(state.phoneBluetooth))
                 DiagnosticRow("Разрешение BLE", permissionStateLabel(state.blePermission))
-                Text("Если транспорт не дал актуальное наблюдение, приложение показывает «Нет данных», а не придумывает состояние.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+                Text("Неизвестные значения остаются «Нет данных» — REAL BLE не подмешивает demo telemetry.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (state.mode == TransportMode.BLE) {
+            item {
+                val ble = state.ble
+                TechnicalCard("SecureMesh BLE v0.1") {
+                    DiagnosticRow("Node ID", ble?.nodeId ?: "Нет данных")
+                    DiagnosticRow("BLE address", ble?.bleAddress ?: "Нет данных")
+                    DiagnosticRow("GATT state", ble?.gattState ?: "Нет данных")
+                    DiagnosticRow("Bonded", ble?.bonded?.let { if (it) "Да" else "Нет" } ?: "Нет данных")
+                    DiagnosticRow("Protocol version", ble?.protocolVersion?.toString() ?: "Нет данных")
+                    DiagnosticRow("Firmware", ble?.firmwareVersion ?: "Нет данных")
+                    DiagnosticRow("MTU", ble?.mtu?.toString() ?: "Нет данных")
+                    DiagnosticRow("RESPONSE subscription", if (ble?.responseSubscribed == true) "Да" else "Нет")
+                    DiagnosticRow("EVENT subscription", if (ble?.eventSubscribed == true) "Да" else "Нет")
+                    DiagnosticRow("Secure session", ble?.secureSessionState.ruLabel())
+                    DiagnosticRow("Последний requestId", ble?.lastCommandRequestId?.toString() ?: "Нет данных")
+                    DiagnosticRow("Последний RESPONSE", ble?.lastResponse ?: "Нет данных")
+                    DiagnosticRow("Ошибки reassembly", ble?.reassemblyErrors?.toString() ?: "0")
+                    DiagnosticRow("Malformed packets", ble?.malformedPacketCount?.toString() ?: "0")
+                }
             }
         }
         item {
@@ -68,40 +89,29 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
         if (state.settings.developerMode) {
             item {
                 TechnicalCard("Для разработчика") {
-                    Text("Сценарии демо", fontWeight = FontWeight.SemiBold)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        item { AssistChip({ viewModel.scenario("NORMAL") }, { Text("Норма") }) }
-                        item { AssistChip({ viewModel.scenario("WEAK LINK") }, { Text("Слабая связь") }) }
-                        item { AssistChip({ viewModel.scenario("RELAY LOST") }, { Text("Потеря relay") }) }
-                        item { AssistChip({ viewModel.scenario("GPS LOST") }, { Text("Потеря GPS") }) }
-                        item { AssistChip({ viewModel.scenario("MESSAGE RETRY") }, { Text("Повтор сообщения") }) }
-                        item { AssistChip({ viewModel.scenario("SOS") }, { Text("SOS") }) }
-                    }
-                    HorizontalDivider(color = SecureMeshColors.Divider)
-                    Text("Последние сырые события", fontWeight = FontWeight.SemiBold)
-                    if (state.events.isEmpty()) {
-                        Text("Системные события недоступны", color = SecureMeshColors.Muted)
-                    } else {
-                        state.events.take(10).forEach { event ->
-                            Text(
-                                "${clockLabel(event.timestampEpochMs)} · ${event.category.ruLabel()} · ${localizedTechnicalText(event.title)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = SecureMeshColors.TextSecondary,
-                            )
+                    if (state.mode == TransportMode.MOCK) {
+                        Text("Сценарии демо", fontWeight = FontWeight.SemiBold)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            item { AssistChip({ viewModel.scenario("NORMAL") }, { Text("Норма") }) }
+                            item { AssistChip({ viewModel.scenario("WEAK LINK") }, { Text("Слабая связь") }) }
+                            item { AssistChip({ viewModel.scenario("RELAY LOST") }, { Text("Потеря relay") }) }
+                            item { AssistChip({ viewModel.scenario("GPS LOST") }, { Text("Потеря GPS") }) }
+                            item { AssistChip({ viewModel.scenario("MESSAGE RETRY") }, { Text("Повтор сообщения") }) }
+                            item { AssistChip({ viewModel.scenario("SOS") }, { Text("SOS") }) }
                         }
+                        HorizontalDivider(color = SecureMeshColors.Divider)
                     }
-                    OutlinedButton(onClick = viewModel::clearHistory, modifier = Modifier.fillMaxWidth()) {
-                        Text("Очистить локальную историю")
+                    Text("Последние события", fontWeight = FontWeight.SemiBold)
+                    if (state.events.isEmpty()) Text("Системные события недоступны", color = SecureMeshColors.Muted)
+                    else state.events.take(10).forEach { event ->
+                        Text(
+                            "${clockLabel(event.timestampEpochMs)} · ${event.category.ruLabel()} · ${localizedTechnicalText(event.title)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SecureMeshColors.TextSecondary,
+                        )
                     }
+                    OutlinedButton(onClick = viewModel::clearHistory, modifier = Modifier.fillMaxWidth()) { Text("Очистить локальную историю") }
                 }
-            }
-        } else {
-            item {
-                Text(
-                    "Сырые BLE/debug-функции скрыты. Их можно включить в «Настройки → Для разработчика».",
-                    color = SecureMeshColors.Muted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
         }
     }
@@ -109,11 +119,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
 
 @Composable
 private fun DiagnosticRow(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = SecureMeshColors.Muted, modifier = Modifier.weight(1f))
         Text(value, fontWeight = FontWeight.Medium)
     }
@@ -134,8 +140,13 @@ private fun permissionStateLabel(value: String): String = when (value.uppercase(
 }
 
 private fun connectionLabel(state: MeshConnectionState): String = when (state) {
-    is MeshConnectionState.Connected -> if (state.secureSession == SecureSessionState.ESTABLISHED) "Защищённая сессия" else "Только BLE"
+    is MeshConnectionState.Connected -> if (state.secureSession == SecureSessionState.ESTABLISHED) "PROTOCOL_READY" else "Только GATT"
     is MeshConnectionState.Connecting -> "Подключение"
+    is MeshConnectionState.PairingRequired -> "Системное pairing"
+    is MeshConnectionState.Authenticating -> "Аутентификация"
+    is MeshConnectionState.DiscoveringServices -> "Service discovery"
+    is MeshConnectionState.IdentifyingSecureMesh -> "INFO handshake"
+    is MeshConnectionState.SyncingSession -> "Session sync"
     is MeshConnectionState.Scanning, is MeshConnectionState.DeviceFound -> "Поиск устройств"
     is MeshConnectionState.Reconnecting -> "Переподключение"
     is MeshConnectionState.Error -> "Ошибка"
