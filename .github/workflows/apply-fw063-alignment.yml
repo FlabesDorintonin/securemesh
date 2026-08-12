@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
           : > /tmp/fw063.tar.gz
           for payload in $(find tools -maxdepth 1 -type f -name '.fw063_payload_*' | sort); do
-            base64 -d "$payload" >> /tmp/fw063.tar.gz
+            base64 -d -i "$payload" >> /tmp/fw063.tar.gz
           done
           echo "5bf72a24135180ae9df52da2a3fc366df3976ee299f355884116753a33e821a4  /tmp/fw063.tar.gz" | sha256sum -c -
           tar -xzf /tmp/fw063.tar.gz
