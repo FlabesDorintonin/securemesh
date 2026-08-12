@@ -19,30 +19,18 @@ data class DeviceMatch(
 class SecureMeshDeviceMatcher(private val config: BleProtocolConfig) {
     fun match(snapshot: AdvertisementSnapshot): DeviceMatch {
         val reasons = linkedSetOf<String>()
-        var protocolEvidence = false
+        val hasService = config.serviceUuid in snapshot.serviceUuids
+        if (hasService) reasons += "service-uuid"
 
-        config.serviceUuid?.let { uuid ->
-            if (uuid in snapshot.serviceUuids) {
-                protocolEvidence = true
-                reasons += "service-uuid"
-            }
-        }
-        config.manufacturerId?.let { id ->
-            if (snapshot.manufacturerData.containsKey(id)) {
-                protocolEvidence = true
-                reasons += "manufacturer-data"
-            }
-        }
-        val developmentNameMatch = snapshot.advertisedName?.let { name ->
-            config.developmentNamePrefixes.any { prefix -> name.startsWith(prefix, ignoreCase = true) }
-        } == true
-        if (developmentNameMatch) reasons += "development-name-only"
+        val nameLooksLikeSecureMesh = snapshot.advertisedName?.startsWith("SecureMesh", ignoreCase = true) == true
+        if (nameLooksLikeSecureMesh) reasons += "name-only-not-identity"
 
-        // Name is intentionally weak evidence. KNOWN/TRUSTED require persisted identity or protocol handshake later.
-        return when {
-            protocolEvidence -> DeviceMatch(DeviceClassification.SECUREMESH_CANDIDATE, reasons = reasons)
-            developmentNameMatch -> DeviceMatch(DeviceClassification.SECUREMESH_CANDIDATE, reasons = reasons)
-            else -> DeviceMatch(DeviceClassification.UNKNOWN_BLE)
+        // Protocol v0.1 explicitly defines the advertised Service UUID as the discovery marker.
+        // The device name is deliberately not sufficient evidence of SecureMesh identity.
+        return if (hasService) {
+            DeviceMatch(DeviceClassification.SECUREMESH_CANDIDATE, reasons = reasons)
+        } else {
+            DeviceMatch(DeviceClassification.UNKNOWN_BLE, reasons = reasons)
         }
     }
 }
