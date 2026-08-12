@@ -10,6 +10,7 @@ MOCK = (MAIN / "data/mock/MockTransport.kt").read_text(encoding="utf-8")
 REPO = (MAIN / "data/repository/SecureMeshRepositoryImpl.kt").read_text(encoding="utf-8")
 POLICY = (MAIN / "domain/service/UiAccessPolicy.kt").read_text(encoding="utf-8")
 BLE = (MAIN / "data/ble/BleTransport.kt").read_text(encoding="utf-8")
+BLE_DISCOVERY = (MAIN / "data/ble/BleDiscoveryParityTransport.kt").read_text(encoding="utf-8")
 CODEC = (MAIN / "data/ble/SecureMeshBleCodec.kt").read_text(encoding="utf-8")
 CONFIG = (MAIN / "data/ble/BleProtocolConfig.kt").read_text(encoding="utf-8")
 FRAG = (MAIN / "data/ble/BleFragmentation.kt").read_text(encoding="utf-8")
@@ -87,7 +88,16 @@ check("Subscribe RESPONSE and EVENT before INFO", "subscribeResponse()" in BLE a
 check("INFO security and protocol ready validated", "info.authenticated" in BLE and "BLE_STATE_PROTOCOL_READY" in BLE and "supportedProtocolVersions" in BLE)
 check("Authenticated INFO creates stable identity", "SecureMeshBleV01DomainMapping.identity(info)" in BLE and "secureMeshNodeId = identity.nodeId" in BLE)
 check("Real BLE never maps address into nodeId", not re.search(r"nodeId\s*=\s*(device|result\.device|verifiedDevice)\.address", BLE))
-check("Bounded BLE scan", "durationMs.coerceIn(5_000L, 30_000L)" in BLE and "delay(boundedDurationMs)" in BLE)
+check("Bounded BLE scan", "durationMs.coerceIn(5_000L, 30_000L)" in BLE_DISCOVERY and "delay(boundedDuration)" in BLE_DISCOVERY)
+check(
+    "Hardware-proven discovery uses default unfiltered Android scan",
+    "scanner.startScan(scanCallback)" in BLE_DISCOVERY
+    and "ScanSettings.Builder" not in BLE_DISCOVERY
+    and "startScan(null" not in BLE_DISCOVERY
+    and "BleDiscoveryParityTransport(context)" in (MAIN / "AppContainer.kt").read_text(encoding="utf-8"),
+)
+MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+check("Android 12+ scan permission matches proven app", 'android:usesPermissionFlags="neverForLocation"' in MANIFEST)
 check("Disconnect has local cleanup fallback", "BLE disconnect timeout; local GATT closed" in BLE and "No active BLE link" in BLE)
 
 check("Trusted entity nodeId primary key", '@Entity(tableName = "trusted_devices")' in ENTITIES and "@PrimaryKey val nodeId: String" in ENTITIES)
