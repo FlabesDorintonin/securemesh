@@ -12,15 +12,28 @@ data class DiscoveryUiState(
     val connection: MeshConnectionState = MeshConnectionState.Idle,
     val session: SecureMeshSession? = null,
     val filter: DiscoveryFilter = DiscoveryFilter(),
-    val showUnknown: Boolean = false,
 )
 
 class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewModel() {
     private val filter = MutableStateFlow(DiscoveryFilter())
-    val uiState = combine(repository.discoveredDevices, repository.connectionState, repository.session, filter, repository.settings) { devices, connection, session, f, settings ->
-        val canShowUnknown = settings.developerMode && settings.showUnknownBle
-        val allowed = if (canShowUnknown) devices else devices.filter { it.classification != DeviceClassification.UNKNOWN_BLE }
-        DiscoveryUiState(filterDevices(allowed, f), connection, session, f, canShowUnknown)
+
+    /** Raw scanner health is intentionally visible during the first hardware integration tests. */
+    val diagnostics = repository.bleDiagnostics
+
+    val uiState = combine(
+        repository.discoveredDevices,
+        repository.connectionState,
+        repository.session,
+        filter,
+    ) { devices, connection, session, f ->
+        // Discovery is observability, not authentication. The default list receives every real
+        // ScanResult. Only the explicit user-controlled "Только SecureMesh" filter narrows it.
+        DiscoveryUiState(
+            devices = filterDevices(devices, f),
+            connection = connection,
+            session = session,
+            filter = f,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoveryUiState())
 
     fun setQuery(value: String) { filter.value = filter.value.copy(query = value) }
