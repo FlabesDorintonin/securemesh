@@ -11,11 +11,15 @@ data class DiscoveryFilter(
     val sort: DeviceSort = DeviceSort.RSSI,
 )
 
+/**
+ * Discovery relevance is deliberately weaker than identity.
+ * A name hint only helps the optional UI filter; it never establishes trust/session identity.
+ */
 fun isSecureMeshDiscoveryRelevant(device: DiscoveredDevice): Boolean =
     device.classification != DeviceClassification.UNKNOWN_BLE || "name-only-not-identity" in device.matchReasons
 
-fun isVisibleDuringDiscovery(device: DiscoveredDevice, canShowUnknown: Boolean): Boolean =
-    canShowUnknown || isSecureMeshDiscoveryRelevant(device)
+/** Default discovery must never hide a real Android ScanResult. */
+fun isVisibleDuringDiscovery(device: DiscoveredDevice, canShowUnknown: Boolean): Boolean = true
 
 fun filterDevices(devices: List<DiscoveredDevice>, filter: DiscoveryFilter): List<DiscoveredDevice> {
     val q = filter.query.trim().lowercase()
