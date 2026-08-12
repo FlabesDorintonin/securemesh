@@ -27,22 +27,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply firmware-initiated pairing hotfix
-        run: python3 tools/apply_pairing_hotfix.py
+      - name: Apply firmware hotfixes
+        run: |
+          python3 tools/apply_pairing_hotfix.py
+          python3 tools/apply_version_gate_hotfix.py
 
-      - name: Persist pairing hotfix source
+      - name: Persist hotfix source
         shell: bash
         run: |
           set -euo pipefail
           if ! git diff --quiet -- \
             app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt \
-            app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt; then
+            app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt \
+            tools/domain_alignment_gate.py; then
             git config user.name "FlabesDorintonin"
             git config user.email "valiukevich.mirek@gmail.com"
             git add \
               app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt \
-              app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
-            git commit -m "fix: align Android pairing with firmware security initiator"
+              app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt \
+              tools/domain_alignment_gate.py
+            git commit -m "fix: finalize pairing and OLED visibility hotfix"
             git push origin HEAD:firmware/0.6.3-alignment
           fi
 
