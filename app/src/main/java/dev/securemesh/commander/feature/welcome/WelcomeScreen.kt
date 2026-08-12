@@ -1,6 +1,7 @@
 package dev.securemesh.commander.feature.welcome
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -25,7 +26,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -113,13 +116,13 @@ fun WelcomeContent(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            "Связь без интернета.",
+                            "Связь вне инфраструктуры.",
                             style = MaterialTheme.typography.displaySmall,
                             fontWeight = FontWeight.ExtraBold,
                             color = SecureMeshColors.Text,
                         )
                         Text(
-                            "Подключи локальный узел по Bluetooth. После проверки pairing, протокола и nodeId приложение откроет чаты, узлы, маршруты и полевые инструменты.",
+                            "Подключи локальный узел по Bluetooth. После проверки pairing, протокола и nodeId приложение откроет чаты, сеть, маршруты и полевые инструменты.",
                             color = SecureMeshColors.TextSecondary,
                             style = MaterialTheme.typography.bodyLarge,
                         )
@@ -191,49 +194,88 @@ fun WelcomeContent(
 
 @Composable
 private fun BrandPulse() {
-    val transition = rememberInfiniteTransition(label = "brand-pulse")
-    val phase by transition.animateFloat(
+    val transition = rememberInfiniteTransition(label = "brand-mesh")
+    val phase = transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1800), repeatMode = RepeatMode.Restart),
-        label = "brand-pulse-phase",
+        animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing)),
+        label = "brand-mesh-phase",
     )
-    val float by transition.animateFloat(
-        initialValue = -.02f,
-        targetValue = .02f,
+    val breathe = transition.animateFloat(
+        initialValue = .90f,
+        targetValue = 1.10f,
         animationSpec = infiniteRepeatable(tween(1500), repeatMode = RepeatMode.Reverse),
-        label = "brand-float",
+        label = "brand-mesh-breathe",
+    )
+    val float = transition.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1700), repeatMode = RepeatMode.Reverse),
+        label = "brand-mesh-float",
     )
 
     Box(
-        Modifier.size(76.dp).graphicsLayer { translationY = 3.dp.toPx() * float * 50f },
+        Modifier
+            .size(104.dp)
+            .graphicsLayer { translationY = float.value * 2.6f },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val radius = size.minDimension / 2f
+            val center = Offset(size.width * .5f, size.height * .5f)
+            val points = listOf(
+                Offset(size.width * .18f, size.height * .28f),
+                Offset(size.width * .82f, size.height * .22f),
+                Offset(size.width * .85f, size.height * .76f),
+                Offset(size.width * .20f, size.height * .80f),
+            )
+
             drawCircle(
-                color = SecureMeshColors.Cyan.copy(alpha = (1f - phase) * .20f),
-                radius = radius * (.42f + phase * .50f),
-                style = Stroke(width = 2f),
+                SecureMeshColors.Cyan.copy(alpha = .035f),
+                radius = size.minDimension * .46f * breathe.value,
+                center = center,
             )
             drawCircle(
-                color = SecureMeshColors.Blue.copy(alpha = .16f),
-                radius = radius * .62f,
-                style = Stroke(width = 2f),
+                SecureMeshColors.Blue.copy(alpha = .12f),
+                radius = size.minDimension * .34f,
+                center = center,
+                style = Stroke(width = 1.4.dp.toPx()),
             )
+
+            points.forEachIndexed { index, p ->
+                drawLine(
+                    SecureMeshColors.Cyan.copy(alpha = .30f),
+                    center,
+                    p,
+                    strokeWidth = 1.5.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+                val t = (phase.value + index * .21f) % 1f
+                val pulse = Offset(center.x + (p.x - center.x) * t, center.y + (p.y - center.y) * t)
+                drawCircle(SecureMeshColors.Cyan.copy(alpha = .10f), 8.dp.toPx(), pulse)
+                drawCircle(SecureMeshColors.CyanHot.copy(alpha = .55f), 3.5.dp.toPx(), pulse)
+                drawCircle(SecureMeshColors.Text, 1.2.dp.toPx(), pulse)
+
+                drawCircle(SecureMeshColors.Blue.copy(alpha = .10f), 10.dp.toPx(), p)
+                drawCircle(if (index % 2 == 0) SecureMeshColors.Cyan else SecureMeshColors.Violet, 4.2.dp.toPx(), p)
+            }
+
+            drawCircle(SecureMeshColors.Cyan.copy(alpha = .14f), 18.dp.toPx() * breathe.value, center)
+            drawCircle(SecureMeshColors.GraphiteSoft, 12.dp.toPx(), center)
+            drawCircle(SecureMeshColors.CyanHot, 6.5.dp.toPx(), center)
+            drawCircle(SecureMeshColors.Text, 2.dp.toPx(), center)
         }
+
         Surface(
-            modifier = Modifier.size(46.dp),
+            modifier = Modifier.size(38.dp),
             shape = CircleShape,
-            color = SecureMeshColors.Cyan.copy(alpha = .17f),
-            border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .38f)),
+            color = Color.Transparent,
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    Icons.Rounded.BluetoothSearching,
+                    Icons.Rounded.Hub,
                     contentDescription = null,
-                    tint = SecureMeshColors.CyanHot,
-                    modifier = Modifier.size(25.dp),
+                    tint = SecureMeshColors.CyanHot.copy(alpha = .90f),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
