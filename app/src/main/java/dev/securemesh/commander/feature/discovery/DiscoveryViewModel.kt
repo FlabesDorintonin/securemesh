@@ -12,14 +12,12 @@ data class DiscoveryUiState(
     val connection: MeshConnectionState = MeshConnectionState.Idle,
     val session: SecureMeshSession? = null,
     val filter: DiscoveryFilter = DiscoveryFilter(),
-    /** Discovery intentionally exposes every ScanResult. Identity is verified only after GATT/INFO. */
-    val showUnknown: Boolean = true,
 )
 
 class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewModel() {
     private val filter = MutableStateFlow(DiscoveryFilter())
 
-    /** Hardware-test visibility: callbacks/unique devices are published by the BLE transport here. */
+    /** Raw scanner health is intentionally visible during the first hardware integration tests. */
     val diagnostics = repository.bleDiagnostics
 
     val uiState = combine(
@@ -27,17 +25,14 @@ class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewMod
         repository.connectionState,
         repository.session,
         filter,
-        repository.settings,
-    ) { devices, connection, session, f, _ ->
-        // Discovery is observability, not authentication. Never hide a real Android ScanResult
-        // because one advertisement callback did not carry a SecureMesh identity marker.
-        // Exact service/characteristics + authenticated INFO/nodeId remain mandatory after connect.
+    ) { devices, connection, session, f ->
+        // Discovery is observability, not authentication. The default list receives every real
+        // ScanResult. Only the explicit user-controlled "Только SecureMesh" filter narrows it.
         DiscoveryUiState(
             devices = filterDevices(devices, f),
             connection = connection,
             session = session,
             filter = f,
-            showUnknown = true,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoveryUiState())
 
