@@ -19,6 +19,7 @@ fun isSecureMeshDiscoveryRelevant(device: DiscoveredDevice): Boolean =
     device.classification != DeviceClassification.UNKNOWN_BLE || "name-only-not-identity" in device.matchReasons
 
 /** Default discovery must never hide a real Android ScanResult. */
+@Suppress("UNUSED_PARAMETER")
 fun isVisibleDuringDiscovery(device: DiscoveredDevice, canShowUnknown: Boolean): Boolean = true
 
 fun filterDevices(devices: List<DiscoveredDevice>, filter: DiscoveryFilter): List<DiscoveredDevice> {
