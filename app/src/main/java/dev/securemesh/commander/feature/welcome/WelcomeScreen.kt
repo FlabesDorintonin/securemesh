@@ -163,7 +163,7 @@ fun WelcomeContent(
                             border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .30f)),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = SecureMeshColors.Text),
                         ) {
-                            Text("Открыть демо текущей прошивки v0.5", fontWeight = FontWeight.SemiBold)
+                            Text("Открыть демо текущей прошивки v0.6", fontWeight = FontWeight.SemiBold)
                         }
 
                         TextButton(onClick = onFutureDemo, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -182,7 +182,7 @@ fun WelcomeContent(
                         border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .65f)),
                     ) {
                         Text(
-                            "В демо v0.5 приложение не выдумывает GPS, SOS, динамическую маршрутизацию или сквозное подтверждение доставки, если их ещё нет в прошивке.",
+                            "В демо v0.6 приложение не выдумывает GPS, SOS, динамическую маршрутизацию или обычное сквозное подтверждение доставки, если их нет в прошивке.",
                             modifier = Modifier.padding(14.dp),
                             color = SecureMeshColors.Muted,
                             style = MaterialTheme.typography.bodySmall,
