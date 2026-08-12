@@ -103,9 +103,9 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
         else items(history, key = { it.id }) { test ->
             TechnicalCard("${test.config.source} → ${test.config.target}") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Metric("Проб", test.sent.toString(), Modifier.weight(1f))
+                    Metric("Запрошено", test.config.packetCount.toString(), Modifier.weight(1f))
+                    Metric("Отправлено", test.sent.toString(), Modifier.weight(1f))
                     Metric("PDR E2E", test.pdr?.let(::percent) ?: "—", Modifier.weight(1f))
-                    Metric("Retry timeout", test.retries.toString(), Modifier.weight(1f))
                 }
                 Text("${test.config.mode.ruLabel()} · ${if (test.running) "идёт сейчас" else "завершён"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
             }
@@ -131,15 +131,18 @@ private fun TargetSelector(value: String, nodes: List<MeshNode>, set: (String) -
 private fun LiveTelemetry(test: FieldTestSession) {
     TechnicalCard(if (test.running) "Тест идёт" else "Последний результат") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetricTile("Запрошено", test.config.packetCount.toString(), Modifier.weight(1f), SecureMeshColors.Violet)
             MetricTile("Отправлено", test.sent.toString(), Modifier.weight(1f), SecureMeshColors.Cyan)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricTile("E2E PONG", test.confirmedReceived?.toString() ?: "—", Modifier.weight(1f), SecureMeshColors.Healthy)
+            MetricTile("E2E loss", test.confirmedLost?.toString() ?: "—", Modifier.weight(1f), SecureMeshColors.Warning)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricTile("First-hop ACK", test.firstHopAcked?.toString() ?: "—", Modifier.weight(1f), SecureMeshColors.Blue)
             MetricTile("First-hop fail", test.firstHopFailures?.toString() ?: "—", Modifier.weight(1f), if ((test.firstHopFailures ?: 0) > 0) SecureMeshColors.Warning else SecureMeshColors.Muted)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Metric("E2E loss", test.confirmedLost?.toString() ?: "—")
             Metric("PDR E2E", test.pdr?.let(::percent) ?: "—")
             Metric("Retry timeout", test.retries.toString())
         }
