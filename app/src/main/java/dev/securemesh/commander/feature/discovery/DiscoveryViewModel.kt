@@ -19,7 +19,9 @@ class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewMod
     private val filter = MutableStateFlow(DiscoveryFilter())
     val uiState = combine(repository.discoveredDevices, repository.connectionState, repository.session, filter, repository.settings) { devices, connection, session, f, settings ->
         val canShowUnknown = settings.developerMode && settings.showUnknownBle
-        val allowed = if (canShowUnknown) devices else devices.filter { it.classification != DeviceClassification.UNKNOWN_BLE }
+        // A SecureMesh-looking name is display-only discovery evidence, never identity/trust.
+        // Exact SecureMesh service + authenticated INFO/nodeId are still mandatory after connect.
+        val allowed = devices.filter { isVisibleDuringDiscovery(it, canShowUnknown) }
         DiscoveryUiState(filterDevices(allowed, f), connection, session, f, canShowUnknown)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoveryUiState())
 
