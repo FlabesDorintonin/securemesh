@@ -57,7 +57,7 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
         }
     }
     val systemItems = listOf(
-        MoreDestination("Настройки", "Bluetooth, локальные данные, карта и режим разработчика", "settings", Icons.Rounded.Settings, SecureMeshColors.TextSecondary),
+        MoreDestination("Настройки", "Безопасность, Bluetooth и локальные данные", "settings", Icons.Rounded.Settings, SecureMeshColors.TextSecondary),
     )
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
@@ -134,20 +134,6 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
                 DestinationRow(destination) { open(destination.route) }
             }
 
-            item {
-                Surface(
-                    color = SecureMeshColors.SurfaceHigh.copy(alpha = .70f),
-                    shape = MaterialTheme.shapes.large,
-                    border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .70f)),
-                ) {
-                    Text(
-                        "Разделы сети появляются только когда текущая защищённая сессия реально даёт соответствующие права. Карта доступна всегда: без GPS она показывает локальную координатную сцену, а точки добавятся автоматически после появления координат.",
-                        color = SecureMeshColors.Muted,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(13.dp),
-                    )
-                }
-            }
             item { Spacer(Modifier.height(8.dp)) }
         }
     }

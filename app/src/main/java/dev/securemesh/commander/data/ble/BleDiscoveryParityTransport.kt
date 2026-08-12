@@ -267,14 +267,33 @@ class BleDiscoveryParityTransport(
     }
 
     private fun environmentState(): MeshConnectionState {
-        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) return MeshConnectionState.BluetoothUnavailable
-        val currentAdapter = adapter ?: return MeshConnectionState.BluetoothUnavailable
-        if (!currentAdapter.isEnabled) return MeshConnectionState.BluetoothDisabled
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            return MeshConnectionState.BluetoothUnavailable
+        }
+
+        // Permission-first ordering is intentional. On Android 12+ some OEM Bluetooth
+        // stacks throw SecurityException from adapter state access before Nearby devices
+        // has been granted. Never touch isEnabled/scanner until the permission contract
+        // is satisfied.
         val missing = requiredPermissions().filter {
             ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isNotEmpty()) return MeshConnectionState.PermissionRequired(missing)
-        return MeshConnectionState.Idle
+
+        val currentAdapter = adapter ?: return MeshConnectionState.BluetoothUnavailable
+        return try {
+            if (currentAdapter.isEnabled) MeshConnectionState.Idle else MeshConnectionState.BluetoothDisabled
+        } catch (_: SecurityException) {
+            MeshConnectionState.PermissionRequired(requiredPermissions())
+        } catch (t: Throwable) {
+            MeshConnectionState.Error(
+                MeshError(
+                    MeshErrorCode.BLUETOOTH_UNAVAILABLE,
+                    "Bluetooth adapter state failed: ${t.message ?: t::class.java.simpleName}",
+                    "Не удалось проверить состояние Bluetooth",
+                )
+            )
+        }
     }
 
     private fun requiredPermissions(): List<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

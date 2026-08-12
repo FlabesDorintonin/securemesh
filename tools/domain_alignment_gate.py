@@ -26,6 +26,12 @@ FEATURE_TEXT = "\n".join(p.read_text(encoding="utf-8") for p in FEATURE.rglob("*
 BUILD_TEXT = (ROOT / "app/build.gradle.kts").read_text() + "\n" + (ROOT / "gradle/libs.versions.toml").read_text()
 TEST_TEXT = "\n".join(p.read_text(encoding="utf-8") for p in (ROOT / "app/src/test").rglob("*.kt"))
 BLE_SURFACE = "\n".join([BLE, CODEC, CONFIG, PAIRING])
+MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+DISCOVERY_PARITY = (MAIN / "data/ble/BleDiscoveryParityTransport.kt").read_text(encoding="utf-8")
+WELCOME_SCREEN = (MAIN / "feature/welcome/WelcomeScreen.kt").read_text(encoding="utf-8")
+DISCOVERY_VM = (MAIN / "feature/discovery/DiscoveryViewModel.kt").read_text(encoding="utf-8")
+BACKUP_RULES = (ROOT / "app/src/main/res/xml/backup_rules.xml").read_text(encoding="utf-8")
+DATA_EXTRACTION_RULES = (ROOT / "app/src/main/res/xml/data_extraction_rules.xml").read_text(encoding="utf-8")
 
 passes=[]; failures=[]
 def check(name, ok, detail=""):
@@ -98,6 +104,13 @@ check(
 )
 MANIFEST = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 check("Android 12+ scan permission matches proven app", 'android:usesPermissionFlags="neverForLocation"' in MANIFEST)
+check("Bluetooth environment checks permission before adapter state", BLE.index("val missing = requiredPermissions()") < BLE.index("if (a.isEnabled)"))
+check("Discovery parity checks permission before adapter state", DISCOVERY_PARITY.index("val missing = requiredPermissions()") < DISCOVERY_PARITY.index("if (currentAdapter.isEnabled)"))
+check("Permission result is handled explicitly", "permissionResultGranted" in DISCOVERY_VM and "permissionDenied" in DISCOVERY_VM)
+check("Sensitive backup and device transfer excluded", 'android:allowBackup="false"' in MANIFEST and 'android:dataExtractionRules="@xml/data_extraction_rules"' in MANIFEST and '<exclude domain="database"' in BACKUP_RULES and '<exclude domain="sharedpref"' in DATA_EXTRACTION_RULES)
+check("Cleartext network traffic disabled", 'android:usesCleartextTraffic="false"' in MANIFEST)
+check("Welcome surface has no demo controls", "onDemo" not in WELCOME_SCREEN and "Открыть демо" not in WELCOME_SCREEN and "будущие возможности" not in WELCOME_SCREEN.lower())
+check("Product hardening version is stamped", 'versionName = "0.8.0-product-hardening"' in (ROOT / "app/build.gradle.kts").read_text())
 check("Disconnect has local cleanup fallback", "BLE disconnect timeout; local GATT closed" in BLE and "No active BLE link" in BLE)
 
 check("Trusted entity nodeId primary key", '@Entity(tableName = "trusted_devices")' in ENTITIES and "@PrimaryKey val nodeId: String" in ENTITIES)

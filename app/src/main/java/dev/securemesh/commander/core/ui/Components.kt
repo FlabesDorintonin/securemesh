@@ -333,7 +333,7 @@ fun ConnectionBanner(state: MeshConnectionState, modifier: Modifier = Modifier) 
         is MeshConnectionState.Disconnected -> Triple("Отключено", localizedTechnicalText(state.reason), SecureMeshColors.Muted)
         is MeshConnectionState.Scanning -> Triple("Идёт поиск узлов", "Сканирование BLE ограничено по времени", SecureMeshColors.Cyan)
         is MeshConnectionState.DeviceFound -> Triple("Устройства найдены", "Выбери узел для подключения", SecureMeshColors.Cyan)
-        else -> Triple("Не подключено", "Подключи локальный узел или запусти демо", SecureMeshColors.Muted)
+        else -> Triple("Не подключено", "Подключи локальный узел SecureMesh", SecureMeshColors.Muted)
     }
     val active = state is MeshConnectionState.Connected || state is MeshConnectionState.Connecting ||
         state is MeshConnectionState.Scanning || state is MeshConnectionState.Reconnecting

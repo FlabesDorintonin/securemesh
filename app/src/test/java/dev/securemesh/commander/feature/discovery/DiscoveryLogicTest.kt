@@ -49,4 +49,16 @@ class DiscoveryLogicTest {
         assertEquals(1,filterDevices(input,DiscoveryFilter(query="alpha")).size)
         assertEquals("CC:DD",filterDevices(input,DiscoveryFilter(query="cc:dd")).single().address)
     }
+    @Test fun `permission result requires every requested permission`() {
+        assertEquals(
+            true,
+            permissionResultGranted(mapOf("android.permission.BLUETOOTH_SCAN" to true, "android.permission.BLUETOOTH_CONNECT" to true)),
+        )
+        assertEquals(
+            false,
+            permissionResultGranted(mapOf("android.permission.BLUETOOTH_SCAN" to true, "android.permission.BLUETOOTH_CONNECT" to false)),
+        )
+        assertEquals(false, permissionResultGranted(emptyMap()))
+    }
+
 }

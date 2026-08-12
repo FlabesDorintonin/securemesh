@@ -366,6 +366,7 @@ data class AppSettings(
     val scanDurationSec: Int = 12,
     val showUnknownBle: Boolean = true,
     val rememberTrustedNode: Boolean = true,
+    val secureScreen: Boolean = true,
     val positionHistory: Boolean = true,
     val storeEvents: Boolean = true,
     val retentionDays: Int = 30,
