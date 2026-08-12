@@ -15,6 +15,7 @@ data class DiagnosticsUiState(
     val mode: TransportMode = TransportMode.BLE,
     val phoneBluetooth: String = "UNKNOWN",
     val blePermission: String = "UNKNOWN",
+    val ble: BleDiagnostics? = null,
     val nodes: Int = 0,
     val links: Int = 0,
     val routes: Int = 0,
@@ -30,6 +31,7 @@ private data class DiagnosticsContext(
     val profile: DemoProfile?,
     val mode: TransportMode,
     val settings: AppSettings,
+    val ble: BleDiagnostics? = null,
 )
 
 private data class DiagnosticsMesh(
@@ -41,7 +43,7 @@ private data class DiagnosticsMesh(
 )
 
 class DiagnosticsViewModel(private val repository: SecureMeshRepository) : ViewModel() {
-    private val context = combine(
+    private val baseContext = combine(
         repository.connectionState,
         repository.session,
         repository.demoProfile,
@@ -50,6 +52,7 @@ class DiagnosticsViewModel(private val repository: SecureMeshRepository) : ViewM
     ) { connection, session, profile, mode, settings ->
         DiagnosticsContext(connection, session, profile, mode, settings)
     }
+    private val context = combine(baseContext, repository.bleDiagnostics) { base, ble -> base.copy(ble = ble) }
 
     private val mesh = combine(
         repository.nodes,
@@ -99,6 +102,7 @@ class DiagnosticsViewModel(private val repository: SecureMeshRepository) : ViewM
             mode = context.mode,
             phoneBluetooth = bluetooth,
             blePermission = permission,
+            ble = context.ble,
             nodes = UiAccessPolicy.visibleNodes(session, mesh.nodes).size,
             links = visibleTopology.links.size,
             routes = UiAccessPolicy.visibleRoutes(session, mesh.routes).size,

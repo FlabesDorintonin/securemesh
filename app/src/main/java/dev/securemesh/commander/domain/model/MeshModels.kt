@@ -22,7 +22,7 @@ data class DiscoveredDevice(
     val lastSeenEpochMs: Long,
     val classification: DeviceClassification,
     val bondStatus: BondStatus,
-    /** SecureMesh identity is populated only from advertisement metadata/handshake, never inferred from BLE MAC. */
+    /** SecureMesh identity is populated only from authenticated INFO, never inferred from BLE MAC. */
     val secureMeshNodeId: NodeId? = null,
     val protocolVersion: Int? = null,
     val deviceType: String? = null,
@@ -44,7 +44,6 @@ sealed interface MeshConnectionState {
     data class PairingRequired(val device: DiscoveredDevice, val expiresAtEpochMs: Long) : MeshConnectionState
     data class Authenticating(val device: DiscoveredDevice) : MeshConnectionState
     data class DiscoveringServices(val device: DiscoveredDevice) : MeshConnectionState
-    /** Future handshake stage: GATT exists, but SecureMesh identity has not yet been cryptographically/protocol-confirmed. */
     data class IdentifyingSecureMesh(val device: DiscoveredDevice) : MeshConnectionState
     data class SyncingSession(val identity: NodeIdentity) : MeshConnectionState
     data class Connected(
@@ -73,7 +72,7 @@ data class MeshError(
     val recoverable: Boolean = true,
 )
 
-enum class NodeRole { MEMBER, RELAY, TEAM_LEADER, OPERATOR, COMMANDER, ADMIN }
+enum class NodeRole { MEMBER, RELAY, TEAM_LEADER, OPERATOR, COMMANDER, ADMIN, DEVELOPMENT, UNKNOWN }
 
 enum class DeviceCapability {
     MESSAGING,
@@ -82,6 +81,8 @@ enum class DeviceCapability {
     SOS,
     FIELD_TEST,
     ROUTING,
+    STATIC_ROUTING,
+    BLE_CONTROL,
     NETWORK_DIAGNOSTICS,
     OTA,
     SENSORS,
@@ -117,9 +118,7 @@ data class NodeIdentity(
 
 /**
  * Authenticated SecureMesh context for the ESP32 node directly attached to this phone.
- *
- * SECURITY INVARIANT: UI visibility is convenience only, never authorization. Firmware must validate
- * every privileged command independently even when the Android session advertises a permission.
+ * UI visibility is convenience only, never authorization; firmware validates privileged commands.
  */
 data class SecureMeshSession(
     val localNodeIdentity: NodeIdentity,
@@ -209,7 +208,6 @@ data class MeshRoute(
 )
 
 data class MeshTopology(
-    /** Pure network identity. Screen coordinates belong to the Compose layout layer. */
     val nodes: List<NodeId>,
     /** Directional links: A→B and B→A are independent observations. */
     val links: List<MeshLink>,
@@ -232,14 +230,7 @@ data class TransmissionHop(
 )
 
 enum class MessageDeliveryState {
-    QUEUED,
-    ROUTING,
-    SENDING,
-    HOP_PROGRESS,
-    FINAL_CONFIRMATION_PENDING,
-    DELIVERED,
-    FAILED,
-    EXPIRED,
+    QUEUED, ROUTING, SENDING, HOP_PROGRESS, FINAL_CONFIRMATION_PENDING, DELIVERED, FAILED, EXPIRED,
 }
 
 enum class MessageFinalState { PENDING, DELIVERED, FAILED, EXPIRED, UNKNOWN }
@@ -261,10 +252,7 @@ data class MeshMessage(
 ) {
     fun observedRoute(): List<NodeId> {
         if (hopTrace.isEmpty()) return listOf(origin, destination).distinct()
-        return buildList {
-            add(hopTrace.first().from)
-            hopTrace.forEach { add(it.to) }
-        }
+        return buildList { add(hopTrace.first().from); hopTrace.forEach { add(it.to) } }
     }
     fun totalRetries(): Int? = hopTrace.mapNotNull { it.retries }.takeIf { it.isNotEmpty() }?.sum()
     fun deliveryTimeMs(): Long? = deliveredAtEpochMs?.minus(createdAtEpochMs)
@@ -328,21 +316,28 @@ data class FieldTestSession(
     val startedAtEpochMs: Long,
     val finishedAtEpochMs: Long? = null,
     val sent: Int = 0,
-    /** Null means the firmware did not provide end-to-end confirmation semantics. */
     val confirmedReceived: Int? = null,
     val confirmedLost: Int? = null,
     val retries: Int = 0,
     val route: List<NodeId> = emptyList(),
     val points: List<TelemetryPoint> = emptyList(),
     val running: Boolean = true,
+    val firstHopAcked: Int? = null,
+    val firstHopFailures: Int? = null,
+    val rttAverageMs: Long? = null,
+    val rttMinimumMs: Long? = null,
+    val rttMaximumMs: Long? = null,
+    val currentNextHop: NodeId? = null,
+    val averageFirstHopRssiDbm: Double? = null,
+    val averageFirstHopSnrDb: Double? = null,
 ) {
     val pdr: Double? get() = if (sent == 0 || confirmedReceived == null) null else confirmedReceived.toDouble() / sent.toDouble()
     private fun rssiValues() = points.flatMap { it.rssiSamples() }
     private fun snrValues() = points.flatMap { it.snrSamples() }
-    fun averageRssi(): Double? = rssiValues().takeIf { it.isNotEmpty() }?.average()
+    fun averageRssi(): Double? = averageFirstHopRssiDbm ?: rssiValues().takeIf { it.isNotEmpty() }?.average()
     fun minRssi(): Int? = rssiValues().minOrNull()
     fun maxRssi(): Int? = rssiValues().maxOrNull()
-    fun averageSnr(): Double? = snrValues().takeIf { it.isNotEmpty() }?.average()
+    fun averageSnr(): Double? = averageFirstHopSnrDb ?: snrValues().takeIf { it.isNotEmpty() }?.average()
     fun minSnr(): Double? = snrValues().minOrNull()
     fun maxSnr(): Double? = snrValues().maxOrNull()
 }
@@ -386,4 +381,23 @@ data class TrustedDeviceMetadata(
     val displayName: String?,
     val trustedAtEpochMs: Long,
     val protocolVersion: Int?,
+    val lastSeenBleAddress: String? = null,
+    val firmwareVersion: String? = null,
+)
+
+data class BleDiagnostics(
+    val nodeId: NodeId? = null,
+    val bleAddress: String? = null,
+    val gattState: String = "IDLE",
+    val bonded: Boolean? = null,
+    val protocolVersion: Int? = null,
+    val firmwareVersion: String? = null,
+    val mtu: Int = 23,
+    val responseSubscribed: Boolean = false,
+    val eventSubscribed: Boolean = false,
+    val secureSessionState: SecureSessionState = SecureSessionState.NOT_CONFIGURED,
+    val lastCommandRequestId: Int? = null,
+    val lastResponse: String? = null,
+    val reassemblyErrors: Int = 0,
+    val malformedPacketCount: Int = 0,
 )

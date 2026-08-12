@@ -2,8 +2,7 @@ package dev.securemesh.commander.feature.discovery
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.securemesh.commander.domain.model.DiscoveredDevice
-import dev.securemesh.commander.domain.model.MeshConnectionState
+import dev.securemesh.commander.domain.model.*
 import dev.securemesh.commander.domain.repository.SecureMeshRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -11,15 +10,17 @@ import kotlinx.coroutines.launch
 data class DiscoveryUiState(
     val devices: List<DiscoveredDevice> = emptyList(),
     val connection: MeshConnectionState = MeshConnectionState.Idle,
+    val session: SecureMeshSession? = null,
     val filter: DiscoveryFilter = DiscoveryFilter(),
-    val showUnknown: Boolean = true,
+    val showUnknown: Boolean = false,
 )
 
 class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewModel() {
     private val filter = MutableStateFlow(DiscoveryFilter())
-    val uiState = combine(repository.discoveredDevices, repository.connectionState, filter, repository.settings) { devices, connection, f, settings ->
-        val allowed = if (settings.showUnknownBle) devices else devices.filter { it.classification != dev.securemesh.commander.domain.model.DeviceClassification.UNKNOWN_BLE }
-        DiscoveryUiState(filterDevices(allowed, f), connection, f, settings.showUnknownBle)
+    val uiState = combine(repository.discoveredDevices, repository.connectionState, repository.session, filter, repository.settings) { devices, connection, session, f, settings ->
+        val canShowUnknown = settings.developerMode && settings.showUnknownBle
+        val allowed = if (canShowUnknown) devices else devices.filter { it.classification != DeviceClassification.UNKNOWN_BLE }
+        DiscoveryUiState(filterDevices(allowed, f), connection, session, f, canShowUnknown)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoveryUiState())
 
     fun setQuery(value: String) { filter.value = filter.value.copy(query = value) }

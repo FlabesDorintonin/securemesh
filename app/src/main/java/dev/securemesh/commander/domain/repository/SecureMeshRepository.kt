@@ -16,6 +16,7 @@ interface SecureMeshRepository {
     val routes: StateFlow<List<MeshRoute>>
     val activeFieldTest: StateFlow<FieldTestSession?>
     val activeSos: StateFlow<SosAlert?>
+    val bleDiagnostics: StateFlow<BleDiagnostics?>
     val settings: StateFlow<AppSettings>
 
     fun observeEvents(): Flow<List<MeshEvent>>

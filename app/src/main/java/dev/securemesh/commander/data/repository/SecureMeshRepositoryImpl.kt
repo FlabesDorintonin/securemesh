@@ -37,6 +37,7 @@ class SecureMeshRepositoryImpl(
     override val routes = activeFlow { it.routes }.stateIn(scope, SharingStarted.Eagerly, emptyList())
     override val activeFieldTest = activeFlow { it.activeFieldTest }.stateIn(scope, SharingStarted.Eagerly, null)
     override val activeSos = activeFlow { it.activeSos }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val bleDiagnostics = activeFlow { it.bleDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
     override val settings = settingsStore.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
     private val localHistoryOwnerNodeId = settingsStore.localHistoryOwnerNodeId.stateIn(scope, SharingStarted.Eagerly, null)
     private val liveEvents = activeFlow { it.events }
@@ -87,14 +88,25 @@ class SecureMeshRepositoryImpl(
                 if (secureSession.authenticationState != AuthenticationState.AUTHENTICATED) return@collect
                 val identity = secureSession.localNodeIdentity
                 val previousHistoryOwner = settingsStore.localHistoryOwnerNodeId.first()
-                if (previousHistoryOwner != null && previousHistoryOwner != identity.nodeId) {
-                    clearSessionSensitiveHistory()
-                }
-                if (previousHistoryOwner != identity.nodeId) {
-                    settingsStore.setLocalHistoryOwnerNodeId(identity.nodeId)
-                }
+                if (previousHistoryOwner != null && previousHistoryOwner != identity.nodeId) clearSessionSensitiveHistory()
+                if (previousHistoryOwner != identity.nodeId) settingsStore.setLocalHistoryOwnerNodeId(identity.nodeId)
+
                 if (transportMode.value == TransportMode.BLE && settings.value.rememberTrustedNode) {
-                    dao.upsertTrustedDevice(TrustedDeviceEntity(identity.nodeId, identity.displayName, now(), identity.protocolVersion))
+                    // BleTransport publishes the authenticated session immediately after INFO validation. Diagnostics already
+                    // knows the transport address before that, so use it as the stable source of optional transport metadata.
+                    val diagnosticAddress = bleDiagnostics.value?.bleAddress
+                    val connected = connectionState.value as? MeshConnectionState.Connected
+                    val connectedAddress = connected?.device?.takeIf { it.secureMeshNodeId == identity.nodeId }?.address
+                    dao.upsertTrustedDevice(
+                        TrustedDeviceEntity(
+                            nodeId = identity.nodeId,
+                            displayName = identity.displayName,
+                            lastSeenBleAddress = diagnosticAddress ?: connectedAddress,
+                            trustedAtEpochMs = now(),
+                            firmwareVersion = identity.firmwareVersion,
+                            protocolVersion = identity.protocolVersion,
+                        )
+                    )
                 }
             }
         }
@@ -118,8 +130,6 @@ class SecureMeshRepositoryImpl(
     override suspend fun launchDemo(profile: DemoProfile) {
         router.switchTo(TransportMode.MOCK)
         mockTransport.launchDemo(profile)
-        // Public API contract: when launchDemo returns, repository projections are already on the new
-        // authenticated mock session. This prevents a one-frame/null race after TransportRouter switches.
         withTimeout(2_000L) {
             combine(demoProfile, session, nodes, connectionState) { activeProfile, activeSession, activeNodes, state ->
                 activeProfile == profile &&
@@ -142,12 +152,9 @@ class SecureMeshRepositoryImpl(
     override suspend fun attemptAutoReconnect() {
         if (!settings.value.autoReconnect) return
         val trusted = dao.latestTrustedDevice() ?: return
-        // v1 stored BLE MAC as trust identity. That value cannot be safely upgraded into SecureMesh identity,
-        // so legacy rows are discarded rather than silently reinterpreted as nodeId.
-        if (trusted.nodeId.isLegacyBleMac()) {
-            dao.clearTrustedDevices()
-            return
-        }
+        // The protocol intentionally does not advertise nodeId. A remembered BLE address is only a transport hint;
+        // authenticated INFO must still prove the stable nodeId after every reconnect.
+        val addressHint = trusted.lastSeenBleAddress ?: return
         router.switchTo(TransportMode.BLE)
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
@@ -156,11 +163,27 @@ class SecureMeshRepositoryImpl(
                 delay(backoff)
                 reconnectOverride.value = MeshConnectionState.Reconnecting(trusted.nodeId, index + 1, backoff)
                 router.ble.startScan(5_000)
-                val found = withTimeoutOrNull(5_500) {
-                    router.ble.discoveredDevices.map { devices -> devices.firstOrNull { it.secureMeshNodeId == trusted.nodeId } }.filterNotNull().first()
+                val found = withTimeoutOrNull(5_500L) {
+                    router.ble.discoveredDevices
+                        .map { devices -> devices.firstOrNull { it.address.equals(addressHint, ignoreCase = true) && it.classification != DeviceClassification.UNKNOWN_BLE } }
+                        .filterNotNull().first()
                 }
                 router.ble.stopScan()
-                if (found != null) { reconnectOverride.value = null; router.ble.connect(found); return@launch }
+                if (found == null) continue
+
+                reconnectOverride.value = null
+                router.ble.connect(found)
+                val verified = withTimeoutOrNull(18_000L) {
+                    router.ble.session.filterNotNull().first { it.authenticationState == AuthenticationState.AUTHENTICATED }
+                }
+                if (verified?.localNodeIdentity?.nodeId == trusted.nodeId) return@launch
+                if (verified != null && verified.localNodeIdentity.nodeId != trusted.nodeId) {
+                    // Address reuse/rotation can happen; never transfer trust to the different authenticated node.
+                    dao.upsertTrustedDevice(trusted.copy(lastSeenBleAddress = null))
+                    router.ble.disconnect()
+                    return@launch
+                }
+                router.ble.disconnect()
             }
             reconnectOverride.value = null
         }
@@ -196,5 +219,3 @@ private fun NodePosition.toEntity() = PositionEntity("$nodeId:$timestampEpochMs"
 private fun PositionEntity.toDomain() = NodePosition(nodeId,latitude,longitude,timestampEpochMs,satellites.takeIf { it >= 0 },hdop,speedMps,valid)
 private fun FieldTestSession.toEntity() = FieldTestEntity(id,config.source,config.target,config.mode.name,config.packetCount,config.intervalMs,config.payloadBytes,startedAtEpochMs,finishedAtEpochMs,sent,confirmedReceived ?: -1,confirmedLost ?: -1,retries,route.joinToString(">"))
 private fun FieldTestEntity.toDomain() = FieldTestSession(id,FieldTestConfig(source,target,FieldTestMode.valueOf(mode),packetCount,intervalMs,payloadBytes),startedAtEpochMs,finishedAtEpochMs,sent,received.takeIf { it >= 0 },lost.takeIf { it >= 0 },retries,route.split(">").filter(String::isNotBlank),emptyList(),finishedAtEpochMs==null)
-
-private fun String.isLegacyBleMac(): Boolean = matches(Regex("(?i)^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$"))

@@ -40,7 +40,6 @@ class SecureMeshRepositoryImplTest {
         }
     }
 
-
     @Test fun `local history is cleared when authenticated local node identity changes`() = runBlocking {
         val mock = MockTransport()
         val ble = MockTransport()
@@ -61,11 +60,20 @@ class SecureMeshRepositoryImplTest {
         }
     }
 
-    @Test fun `trusted record uses SecureMesh node identity`() = runBlocking {
+    @Test fun `trusted record uses SecureMesh node identity and BLE address is metadata`() = runBlocking {
         val dao = FakeDao()
-        val trusted = TrustedDeviceEntity("SM-IDENTITY-77", "Node 77", 10L, 1)
+        val trusted = TrustedDeviceEntity(
+            nodeId = "A1B2C3D4",
+            displayName = "Node A1B2C3D4",
+            lastSeenBleAddress = "AA:BB:CC:DD:EE:FF",
+            trustedAtEpochMs = 10L,
+            firmwareVersion = "0.6.1",
+            protocolVersion = 1,
+        )
         dao.upsertTrustedDevice(trusted)
-        assertEquals("SM-IDENTITY-77", dao.latestTrustedDevice()?.nodeId)
+        assertEquals("A1B2C3D4", dao.latestTrustedDevice()?.nodeId)
+        assertEquals("AA:BB:CC:DD:EE:FF", dao.trustedDevice("A1B2C3D4")?.lastSeenBleAddress)
+        assertNull(dao.trustedDevice("AA:BB:CC:DD:EE:FF"))
     }
 }
 
@@ -86,7 +94,7 @@ private class FakeDao : SecureMeshDao {
     private val messages = MutableStateFlow<List<MessageEntity>>(emptyList())
     private val tests = MutableStateFlow<List<FieldTestEntity>>(emptyList())
     private val positions = MutableStateFlow<List<PositionEntity>>(emptyList())
-    private var trusted: TrustedDeviceEntity? = null
+    private val trusted = linkedMapOf<String, TrustedDeviceEntity>()
     override suspend fun upsertEvents(items: List<EventEntity>) {
         if (!historyClearedAtLeastOnce && events.value.isNotEmpty()) eventWritesBeforeFirstClear++
         events.value = (items + events.value).distinctBy { it.id }
@@ -99,9 +107,10 @@ private class FakeDao : SecureMeshDao {
     override fun observeFieldTests(limit: Int): Flow<List<FieldTestEntity>> = tests.map { it.take(limit) }
     override suspend fun upsertPositions(items: List<PositionEntity>) { positions.value = (items + positions.value).distinctBy { it.key } }
     override fun observePositions(nodeId: String?, limit: Int): Flow<List<PositionEntity>> = positions.map { list -> list.filter { nodeId == null || it.nodeId == nodeId }.take(limit) }
-    override suspend fun upsertTrustedDevice(item: TrustedDeviceEntity) { trusted = item }
-    override suspend fun latestTrustedDevice(): TrustedDeviceEntity? = trusted
-    override suspend fun clearTrustedDevices() { trusted = null }
+    override suspend fun upsertTrustedDevice(item: TrustedDeviceEntity) { trusted[item.nodeId] = item }
+    override suspend fun latestTrustedDevice(): TrustedDeviceEntity? = trusted.values.maxByOrNull { it.trustedAtEpochMs }
+    override suspend fun trustedDevice(nodeId: String): TrustedDeviceEntity? = trusted[nodeId]
+    override suspend fun clearTrustedDevices() { trusted.clear() }
     override suspend fun deleteEventsBefore(cutoff: Long) { events.value = events.value.filter { it.timestampEpochMs >= cutoff } }
     override suspend fun deletePositionsBefore(cutoff: Long) { positions.value = positions.value.filter { it.timestampEpochMs >= cutoff } }
     override suspend fun clearEvents() { historyClearedAtLeastOnce = true; events.value = emptyList() }

@@ -55,22 +55,13 @@ private object RootRoute {
     const val MAIN = "main"
 }
 
-private data class NavItem(
-    val route: String,
-    val label: String,
-    val icon: ImageVector,
-)
+private data class NavItem(val route: String, val label: String, val icon: ImageVector)
 
 private fun itemsFor(session: SecureMeshSession?): List<NavItem> = buildList {
     add(NavItem("home", "Главная", Icons.Rounded.Home))
-    if (UiAccessPolicy.canShowMessages(session)) {
-        add(NavItem("messages", "Чаты", Icons.Rounded.ChatBubble))
-    }
-    if (UiAccessPolicy.canShowNodes(session)) {
-        add(NavItem("nodes", "Узлы", Icons.Rounded.People))
-    } else {
-        session?.let { add(NavItem("node/${it.localNodeIdentity.nodeId}", "Мой узел", Icons.Rounded.People)) }
-    }
+    if (UiAccessPolicy.canShowMessages(session)) add(NavItem("messages", "Чаты", Icons.Rounded.ChatBubble))
+    if (UiAccessPolicy.canShowNodes(session)) add(NavItem("nodes", "Узлы", Icons.Rounded.People))
+    else session?.let { add(NavItem("node/${it.localNodeIdentity.nodeId}", "Мой узел", Icons.Rounded.People)) }
     add(NavItem("map", "Карта", Icons.Rounded.Map))
     add(NavItem("more", "Ещё", Icons.Rounded.MoreHoriz))
 }
@@ -81,22 +72,10 @@ fun SecureMeshRoot(repository: SecureMeshRepository) {
     NavHost(
         navController = nav,
         startDestination = RootRoute.WELCOME,
-        enterTransition = {
-            fadeIn(tween(190)) + slideInHorizontally(
-                animationSpec = spring(dampingRatio = .92f, stiffness = 520f),
-            ) { it / 10 }
-        },
-        exitTransition = {
-            fadeOut(tween(130)) + slideOutHorizontally(tween(180)) { -it / 20 }
-        },
-        popEnterTransition = {
-            fadeIn(tween(180)) + slideInHorizontally(
-                animationSpec = spring(dampingRatio = .92f, stiffness = 520f),
-            ) { -it / 11 }
-        },
-        popExitTransition = {
-            fadeOut(tween(120)) + slideOutHorizontally(tween(170)) { it / 20 }
-        },
+        enterTransition = { fadeIn(tween(190)) + slideInHorizontally(animationSpec = spring(dampingRatio = .92f, stiffness = 520f)) { it / 10 } },
+        exitTransition = { fadeOut(tween(130)) + slideOutHorizontally(tween(180)) { -it / 20 } },
+        popEnterTransition = { fadeIn(tween(180)) + slideInHorizontally(animationSpec = spring(dampingRatio = .92f, stiffness = 520f)) { -it / 11 } },
+        popExitTransition = { fadeOut(tween(120)) + slideOutHorizontally(tween(170)) { it / 20 } },
     ) {
         composable(RootRoute.WELCOME) {
             val vm: WelcomeViewModel = viewModel(factory = viewModelFactory { WelcomeViewModel(repository) })
@@ -109,7 +88,11 @@ fun SecureMeshRoot(repository: SecureMeshRepository) {
         }
         composable(RootRoute.DISCOVERY) {
             val vm: DiscoveryViewModel = viewModel(factory = viewModelFactory { DiscoveryViewModel(repository) })
-            DiscoveryScreen(vm, { nav.popBackStack() }, { nav.navigate(RootRoute.PROTOCOL) })
+            DiscoveryScreen(vm, { nav.popBackStack() }) { secure ->
+                nav.navigate(if (secure) RootRoute.MAIN else RootRoute.PROTOCOL) {
+                    if (secure) popUpTo(RootRoute.WELCOME) { inclusive = true }
+                }
+            }
         }
         composable(RootRoute.PROTOCOL) {
             val vm: DiscoveryViewModel = viewModel(factory = viewModelFactory { DiscoveryViewModel(repository) })
@@ -145,10 +128,7 @@ private fun MainShell(repository: SecureMeshRepository) {
                     Box(Modifier.weight(1f)) { MainNavHost(nav, repository, session) }
                 }
             } else {
-                Scaffold(
-                    containerColor = Color.Transparent,
-                    bottomBar = { PrimaryBar(nav, items) },
-                ) { padding ->
+                Scaffold(containerColor = Color.Transparent, bottomBar = { PrimaryBar(nav, items) }) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) { MainNavHost(nav, repository, session) }
                 }
             }
@@ -157,15 +137,7 @@ private fun MainShell(repository: SecureMeshRepository) {
                 val canMap = UiAccessPolicy.canShowMap(session)
                 val canNode = UiAccessPolicy.canShowNodes(session) || alert.nodeId == session?.localNodeIdentity?.nodeId
                 val canAck = session?.can(SessionPermission.ACKNOWLEDGE_SOS) == true
-                SosOverlay(
-                    alert,
-                    canMap,
-                    canNode,
-                    canAck,
-                    { nav.navigate("map") },
-                    { nav.navigate("node/${alert.nodeId}") },
-                    { vm.acknowledge(alert.id) },
-                )
+                SosOverlay(alert, canMap, canNode, canAck, { nav.navigate("map") }, { nav.navigate("node/${alert.nodeId}") }, { vm.acknowledge(alert.id) })
             }
         }
     }
@@ -177,30 +149,17 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
         navController = nav,
         startDestination = "home",
         modifier = Modifier.fillMaxSize(),
-        enterTransition = {
-            fadeIn(tween(170)) + slideInVertically(
-                animationSpec = spring(dampingRatio = .94f, stiffness = 600f),
-            ) { it / 22 }
-        },
-        exitTransition = {
-            fadeOut(tween(115)) + slideOutVertically(tween(150)) { -it / 32 }
-        },
-        popEnterTransition = {
-            fadeIn(tween(160)) + slideInVertically(
-                animationSpec = spring(dampingRatio = .94f, stiffness = 600f),
-            ) { -it / 24 }
-        },
-        popExitTransition = {
-            fadeOut(tween(110)) + slideOutVertically(tween(145)) { it / 32 }
-        },
+        enterTransition = { fadeIn(tween(170)) + slideInVertically(animationSpec = spring(dampingRatio = .94f, stiffness = 600f)) { it / 22 } },
+        exitTransition = { fadeOut(tween(115)) + slideOutVertically(tween(150)) { -it / 32 } },
+        popEnterTransition = { fadeIn(tween(160)) + slideInVertically(animationSpec = spring(dampingRatio = .94f, stiffness = 600f)) { -it / 24 } },
+        popExitTransition = { fadeOut(tween(110)) + slideOutVertically(tween(145)) { it / 32 } },
     ) {
         composable("home") {
             val vm: DashboardViewModel = viewModel(factory = viewModelFactory { DashboardViewModel(repository) })
             DashboardScreen(
                 viewModel = vm,
                 onNodes = {
-                    val target = if (UiAccessPolicy.canShowNodes(session)) "nodes"
-                    else session?.let { "node/${it.localNodeIdentity.nodeId}" } ?: "home"
+                    val target = if (UiAccessPolicy.canShowNodes(session)) "nodes" else session?.let { "node/${it.localNodeIdentity.nodeId}" } ?: "home"
                     nav.navigate(target)
                 },
                 onMessages = { if (UiAccessPolicy.canShowMessages(session)) nav.navigate("messages") },
@@ -230,9 +189,7 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
     }
 }
 
-private fun isMoreRoute(route: String?): Boolean = route in setOf(
-    "more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search",
-)
+private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search")
 
 private fun isSelected(current: String?, item: NavItem): Boolean = when {
     item.route == "more" -> isMoreRoute(current)
@@ -251,23 +208,14 @@ private fun navigateTopLevel(nav: NavHostController, route: String) {
 @Composable
 private fun PrimaryBar(nav: NavHostController, items: List<NavItem>) {
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-    ) {
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 7.dp)) {
         Surface(
             color = SecureMeshColors.Navigation.copy(alpha = .96f),
             shadowElevation = 18.dp,
             shape = RoundedCornerShape(30.dp),
             border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .14f)),
         ) {
-            NavigationBar(
-                containerColor = Color.Transparent,
-                tonalElevation = 0.dp,
-                windowInsets = WindowInsets(0, 0, 0, 0),
-            ) {
+            NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
                 items.forEach { item ->
                     val selected = isSelected(current, item)
                     val iconScale by androidx.compose.animation.core.animateFloatAsState(
@@ -278,16 +226,7 @@ private fun PrimaryBar(nav: NavHostController, items: List<NavItem>) {
                     NavigationBarItem(
                         selected = selected,
                         onClick = { navigateTopLevel(nav, item.route) },
-                        icon = {
-                            Icon(
-                                item.icon,
-                                contentDescription = item.label,
-                                modifier = Modifier.graphicsLayer {
-                                    scaleX = iconScale
-                                    scaleY = iconScale
-                                },
-                            )
-                        },
+                        icon = { Icon(item.icon, contentDescription = item.label, modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale }) },
                         label = { Text(item.label) },
                         alwaysShowLabel = true,
                         colors = NavigationBarItemDefaults.colors(

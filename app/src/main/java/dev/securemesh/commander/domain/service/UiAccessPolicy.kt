@@ -18,11 +18,14 @@ object UiAccessPolicy {
     fun canShowTopology(session: SecureMeshSession?): Boolean =
         session?.can(SessionPermission.VIEW_NETWORK_TOPOLOGY) == true
 
+    private fun supportsRouting(session: SecureMeshSession?): Boolean =
+        session?.supports(DeviceCapability.STATIC_ROUTING) == true || session?.supports(DeviceCapability.ROUTING) == true
+
     fun canShowRoutes(session: SecureMeshSession?): Boolean =
-        session?.supports(DeviceCapability.ROUTING) == true && session.can(SessionPermission.VIEW_ROUTES)
+        supportsRouting(session) && session?.can(SessionPermission.VIEW_ROUTES) == true
 
     fun canManageRoutes(session: SecureMeshSession?): Boolean =
-        session?.supports(DeviceCapability.ROUTING) == true && session.can(SessionPermission.MANAGE_ROUTES)
+        supportsRouting(session) && session?.can(SessionPermission.MANAGE_ROUTES) == true
 
     fun canRunFieldTest(session: SecureMeshSession?): Boolean =
         session?.supports(DeviceCapability.FIELD_TEST) == true && session.can(SessionPermission.RUN_FIELD_TEST)
@@ -33,14 +36,13 @@ object UiAccessPolicy {
         session?.supports(DeviceCapability.SOS) == true && session.can(SessionPermission.VIEW_SOS)
 
     fun canShowDiagnostics(session: SecureMeshSession?): Boolean =
-        session?.supports(DeviceCapability.NETWORK_DIAGNOSTICS) == true && session.can(SessionPermission.VIEW_NETWORK_DIAGNOSTICS)
+        (session?.supports(DeviceCapability.BLE_CONTROL) == true || session?.supports(DeviceCapability.NETWORK_DIAGNOSTICS) == true) &&
+            session?.can(SessionPermission.VIEW_NETWORK_DIAGNOSTICS) == true
 
     fun canShowMap(session: SecureMeshSession?): Boolean =
         session?.supports(DeviceCapability.GPS) == true &&
             (session.can(SessionPermission.VIEW_OWN_POSITION) || session.can(SessionPermission.VIEW_TEAM_POSITIONS))
 
-    /** Projection helpers prevent screens/search from accidentally exposing data that the session did not grant.
-     * Transport/firmware must still enforce the same or stricter rules; this is defense-in-depth for presentation. */
     fun visibleNodes(session: SecureMeshSession?, nodes: List<MeshNode>): List<MeshNode> {
         session ?: return emptyList()
         if (canShowNodes(session)) return nodes
@@ -68,8 +70,7 @@ object UiAccessPolicy {
     fun visibleEvents(session: SecureMeshSession?, events: List<MeshEvent>): List<MeshEvent> =
         if (canShowSystemLog(session)) events else emptyList()
 
-    /** Position visibility is intentionally independent from VIEW_NODES. A session may be allowed to
-     * render authorized team markers without receiving the full node-management/list surface. */
+    /** Position visibility is independent from VIEW_NODES. */
     fun visiblePositionNodes(session: SecureMeshSession?, nodes: List<MeshNode>): List<MeshNode> =
         nodes.filter { canViewPosition(session, it.id) }
 
