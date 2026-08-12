@@ -92,13 +92,16 @@ class SecureMeshRepositoryImpl(
                 if (previousHistoryOwner != identity.nodeId) settingsStore.setLocalHistoryOwnerNodeId(identity.nodeId)
 
                 if (transportMode.value == TransportMode.BLE && settings.value.rememberTrustedNode) {
+                    // BleTransport publishes the authenticated session immediately after INFO validation. Diagnostics already
+                    // knows the transport address before that, so use it as the stable source of optional transport metadata.
+                    val diagnosticAddress = bleDiagnostics.value?.bleAddress
                     val connected = connectionState.value as? MeshConnectionState.Connected
-                    val address = connected?.device?.takeIf { it.secureMeshNodeId == identity.nodeId }?.address
+                    val connectedAddress = connected?.device?.takeIf { it.secureMeshNodeId == identity.nodeId }?.address
                     dao.upsertTrustedDevice(
                         TrustedDeviceEntity(
                             nodeId = identity.nodeId,
                             displayName = identity.displayName,
-                            lastSeenBleAddress = address,
+                            lastSeenBleAddress = diagnosticAddress ?: connectedAddress,
                             trustedAtEpochMs = now(),
                             firmwareVersion = identity.firmwareVersion,
                             protocolVersion = identity.protocolVersion,
