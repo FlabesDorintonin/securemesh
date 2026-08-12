@@ -1,0 +1,35 @@
+name: Apply firmware 0.6.3 alignment
+
+on:
+  push:
+    branches:
+      - firmware/0.6.3-alignment
+
+permissions:
+  contents: write
+
+jobs:
+  apply-reviewed-source:
+    if: github.actor == 'FlabesDorintonin'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct reviewed 0.6.3 alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tools/.fw063_payload_* | base64 -d > /tmp/fw063.tar.gz
+          echo "5bf72a24135180ae9df52da2a3fc366df3976ee299f355884116753a33e821a4  /tmp/fw063.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/fw063.tar.gz
+          git rm tools/.fw063_payload_*
+          git rm .github/workflows/apply-fw063-alignment.yml
+          git config user.name "FlabesDorintonin"
+          git config user.email "valiukevich.mirek@gmail.com"
+          git add -A
+          git commit -m "Firmware 0.6.3: align Android BLE UI OS contract"
+          git push origin HEAD:firmware/0.6.3-alignment
