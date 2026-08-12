@@ -7,13 +7,12 @@ on:
       - main
       - master
       - product/0.8.0-hardening
-      - firmware/0.6.3-alignment
   pull_request:
     branches:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-debug-apk:
@@ -24,23 +23,6 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Apply Delight UI syntax guard
-        run: python3 tools/apply_delight_ui_syntax_fix.py
-
-      - name: Persist Delight UI syntax guard
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! git diff --quiet -- app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt; then
-            git config user.name "FlabesDorintonin"
-            git config user.email "valiukevich.mirek@gmail.com"
-            git add app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt
-            git commit -m "fix: keep Delight UI LazyColumn DSL compile-safe"
-            git push origin HEAD:firmware/0.6.3-alignment
-          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -133,7 +115,7 @@ jobs:
       - name: Upload SecureMesh APK
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-delight-ui-apk-${{ github.run_number }}
+          name: SecureMesh-debug-apk-${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
