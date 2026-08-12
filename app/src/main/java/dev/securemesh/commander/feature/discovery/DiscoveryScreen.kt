@@ -114,6 +114,8 @@ private fun AuthenticationHint() {
 @Composable
 private fun DeviceDiscoveryContent(state: DiscoveryUiState, diagnostics: BleDiagnostics?, viewModel: DiscoveryViewModel) {
     val scanning = state.connection is MeshConnectionState.Scanning || state.connection is MeshConnectionState.DeviceFound
+    val scanHealth = diagnostics?.lastResponse ?: "ожидаем первый ScanResult"
+
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
             value = state.filter.query,
@@ -149,33 +151,32 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, diagnostics: BleDiag
             OutlinedIconButton(onClick = viewModel::refresh) { Icon(Icons.Rounded.Refresh, contentDescription = "Обновить") }
         }
         AnimatedVisibility(visible = scanning) { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = SecureMeshColors.Cyan) }
+
         Surface(
             color = SecureMeshColors.Surface.copy(alpha = .72f),
             shape = MaterialTheme.shapes.medium,
             border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .7f)),
         ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    "Сканер: Android default · без фильтров · ${BuildConfig.VERSION_NAME}",
+                    "Сканер: Android default · без фильтров",
                     color = SecureMeshColors.CyanHot,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
+                Text("Версия: ${BuildConfig.VERSION_NAME}", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
+                Text("RAW: $scanHealth", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
                 Text(
-                    "В списке: ${state.devices.size} · ${diagnostics?.lastResponse ?: "ожидаем первый ScanResult"}",
-                    color = SecureMeshColors.Muted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    "Discovery показывает сырой BLE; SecureMesh identity подтверждается только после GATT + INFO.",
+                    "В списке сейчас: ${state.devices.size}. Identity проверяется только после GATT + INFO.",
                     color = SecureMeshColors.Muted,
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
         }
+
         if (state.devices.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                EmptyState("Устройства пока не найдены", "Оставь узел включённым рядом с телефоном и запусти поиск ещё раз.")
+                EmptyState("Устройства пока не найдены", "Смотри строку RAW выше: она показывает, получает ли Android ScanResult вообще.")
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
