@@ -1,6 +1,5 @@
 package dev.securemesh.commander.core.database
 
-import androidx.room3.ColumnInfo
 import androidx.room3.Entity
 import androidx.room3.PrimaryKey
 
@@ -22,7 +21,7 @@ data class MessageEntity(
     val payload: String,
     val createdAtEpochMs: Long,
     val state: String,
-    /** Legacy column now stores observed hop path only; it is never treated as an authoritative route. */
+    /** Legacy column stores observed hop path only; it is never treated as an authoritative route. */
     val route: String,
     val hops: Int,
     val retries: Int,
@@ -74,14 +73,13 @@ data class PositionEntity(
     val valid: Boolean,
 )
 
-/**
- * Table/column names remain compatible with the v1 development database, but identity semantics changed:
- * the primary key is now SecureMesh nodeId, never BLE MAC. BLE address is intentionally not trusted identity.
- */
-@Entity(tableName = "trusted_commanders")
+/** SecureMesh nodeId is trust identity. BLE address is transport metadata only. */
+@Entity(tableName = "trusted_devices")
 data class TrustedDeviceEntity(
-    @PrimaryKey @ColumnInfo(name = "address") val nodeId: String,
+    @PrimaryKey val nodeId: String,
     val displayName: String?,
+    val lastSeenBleAddress: String?,
     val trustedAtEpochMs: Long,
+    val firmwareVersion: String?,
     val protocolVersion: Int?,
 )
