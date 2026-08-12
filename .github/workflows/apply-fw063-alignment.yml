@@ -23,10 +23,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : > /tmp/fw063.tar.gz
-          for payload in $(find tools -maxdepth 1 -type f -name '.fw063_payload_*' | sort); do
-            base64 -d -i "$payload" >> /tmp/fw063.tar.gz
-          done
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+
+          output = bytearray()
+          alphabet = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+          for path in sorted(Path("tools").glob(".fw063_payload_*")):
+              text = ''.join(ch for ch in path.read_text(encoding="utf-8") if ch in alphabet)
+              segment = []
+              for ch in text:
+                  segment.append(ch)
+                  if ch == '=' and len(segment) % 4 == 0:
+                      output.extend(base64.b64decode(''.join(segment), validate=False))
+                      segment.clear()
+              if segment:
+                  raw = ''.join(segment)
+                  raw += '=' * ((4 - len(raw) % 4) % 4)
+                  output.extend(base64.b64decode(raw, validate=False))
+          Path('/tmp/fw063.tar.gz').write_bytes(output)
+          PY
           echo "5bf72a24135180ae9df52da2a3fc366df3976ee299f355884116753a33e821a4  /tmp/fw063.tar.gz" | sha256sum -c -
           tar -xzf /tmp/fw063.tar.gz
           git rm tools/.fw063_payload_*
