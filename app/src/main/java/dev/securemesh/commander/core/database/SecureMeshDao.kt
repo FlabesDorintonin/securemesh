@@ -30,9 +30,11 @@ interface SecureMeshDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTrustedDevice(item: TrustedDeviceEntity)
-    @Query("SELECT * FROM trusted_commanders ORDER BY trustedAtEpochMs DESC LIMIT 1")
+    @Query("SELECT * FROM trusted_devices ORDER BY trustedAtEpochMs DESC LIMIT 1")
     suspend fun latestTrustedDevice(): TrustedDeviceEntity?
-    @Query("DELETE FROM trusted_commanders")
+    @Query("SELECT * FROM trusted_devices WHERE nodeId = :nodeId LIMIT 1")
+    suspend fun trustedDevice(nodeId: String): TrustedDeviceEntity?
+    @Query("DELETE FROM trusted_devices")
     suspend fun clearTrustedDevices()
 
     @Query("DELETE FROM events WHERE timestampEpochMs < :cutoff") suspend fun deleteEventsBefore(cutoff: Long)
