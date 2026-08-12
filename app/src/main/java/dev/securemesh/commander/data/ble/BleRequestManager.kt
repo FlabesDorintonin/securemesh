@@ -53,6 +53,11 @@ class BleRequestManager(
         Result.failure(IllegalStateException("SecureMesh BLE command timeout (requestId=${handle.requestId})"))
     }
 
+    fun cancel(handle: Handle, cause: Throwable) {
+        val removed = synchronized(lock) { pending.remove(handle.requestId) }
+        if (removed != null) removed.deferred.complete(Result.failure(cause))
+    }
+
     fun failAll(cause: Throwable) {
         val copy = synchronized(lock) {
             val values = pending.values.toList()
