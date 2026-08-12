@@ -1,7 +1,13 @@
 package dev.securemesh.commander.data.transport
 
 import dev.securemesh.commander.domain.model.*
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+private object NoBleDiagnostics {
+    val flow: StateFlow<BleDiagnostics?> = MutableStateFlow<BleDiagnostics?>(null).asStateFlow()
+}
 
 interface MeshTransport {
     val connectionState: StateFlow<MeshConnectionState>
@@ -16,7 +22,7 @@ interface MeshTransport {
     val events: StateFlow<List<MeshEvent>>
     val activeFieldTest: StateFlow<FieldTestSession?>
     val activeSos: StateFlow<SosAlert?>
-    val bleDiagnostics: StateFlow<BleDiagnostics?>
+    val bleDiagnostics: StateFlow<BleDiagnostics?> get() = NoBleDiagnostics.flow
 
     suspend fun start()
     suspend fun stop()
