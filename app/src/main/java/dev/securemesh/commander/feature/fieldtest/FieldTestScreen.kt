@@ -36,6 +36,9 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
     var target by remember(remotes) { mutableStateOf(remotes.firstOrNull()?.id.orEmpty()) }
     var mode by remember { mutableStateOf(FieldTestMode.AUTO) }
     val active = state.active
+    val activePoints = active?.points.orEmpty()
+    val rssiPoints = remember(activePoints) { activePoints.flatMap { point -> point.rssiSamples().map(Int::toDouble) } }
+    val snrPoints = remember(activePoints) { activePoints.flatMap { point -> point.snrSamples() } }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -74,8 +77,6 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
         }
 
         active?.let { test ->
-            val rssiPoints = remember(test.points) { test.points.flatMap { point -> point.rssiSamples().map(Int::toDouble) } }
-            val snrPoints = remember(test.points) { test.points.flatMap { point -> point.snrSamples() } }
             if (rssiPoints.size >= 2 || snrPoints.size >= 2) item { SectionHeader("Графики радио") }
             if (rssiPoints.size >= 2) item { Chart("RSSI · dBm", rssiPoints, -120.0, -35.0, SecureMeshColors.Cyan) }
             if (snrPoints.size >= 2) item { Chart("SNR · dB", snrPoints, -15.0, 15.0, SecureMeshColors.Warning) }
