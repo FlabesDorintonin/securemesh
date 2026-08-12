@@ -163,10 +163,11 @@ private fun LiveTelemetry(test: FieldTestSession, onStop: (() -> Unit)?) {
         }
         Text("Первый radio hop", color = SecureMeshColors.TextSecondary, fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OsStat("ACK", test.firstHopAcked?.toString() ?: "—", SecureMeshColors.Blue, Modifier.weight(1f))
-            OsStat("Fail", test.firstHopFailures?.toString() ?: "—", if ((test.firstHopFailures ?: 0) > 0) SecureMeshColors.Warning else SecureMeshColors.Muted, Modifier.weight(1f))
-            OsStat("Retry", test.retries.toString(), SecureMeshColors.Cyan, Modifier.weight(1f))
+            OsStat("ACK 1-го хопа", test.firstHopAcked?.toString() ?: "—", SecureMeshColors.Blue, Modifier.weight(1f))
+            OsStat("Сбой 1-го", test.firstHopFailures?.toString() ?: "—", if ((test.firstHopFailures ?: 0) > 0) SecureMeshColors.Warning else SecureMeshColors.Muted, Modifier.weight(1f))
+            OsStat("Повторы", test.retries.toString(), SecureMeshColors.Cyan, Modifier.weight(1f))
         }
+        Text("First-hop ACK / First-hop fail — служебные метрики ближайшего radio hop, не финальная доставка.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
         Text("RTT по DIAG_PONG", color = SecureMeshColors.TextSecondary, fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OsStat("min", test.rttMinimumMs?.let { "$it мс" } ?: "—", SecureMeshColors.Cyan, Modifier.weight(1f))
