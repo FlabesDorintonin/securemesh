@@ -18,7 +18,7 @@ enum class BlePacketType(val wire: Int) {
 enum class BleOpcode(val wire: Int) {
     GET_INFO(1), GET_STATUS(2), GET_NEIGHBORS(3), GET_ROUTES(4), SEND_MESSAGE(5),
     ADD_STATIC_ROUTE(6), REMOVE_STATIC_ROUTE(7), START_FIELD_TEST(8), STOP_FIELD_TEST(9),
-    GET_FIELD_TEST_STATUS(10), PING_LOCAL(11), CLEAR_STATS(12);
+    GET_FIELD_TEST_STATUS(10), PING_LOCAL(11), CLEAR_STATS(12), GET_UI_STATE(13), UI_ACTION(14);
 
     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
 }
@@ -35,7 +35,7 @@ enum class BleEventType(val wire: Int) {
     NODE_DISCOVERED(1), NODE_STALE(2), MESSAGE_QUEUED(3), HOP_ACK(4), RETRY(5),
     MESSAGE_LOCAL_RECEIVED(6), ROUTE_CHANGED(7), TEST_STARTED(8), TEST_PACKET_SENT(9),
     TEST_PONG_RECEIVED(10), TEST_PACKET_TIMEOUT(11), TEST_PROGRESS(12), TEST_FINISHED(13),
-    RADIO_RECOVERY(14), BLE_STATE(15), ERROR(16), NO_RETURN_ROUTE(17);
+    RADIO_RECOVERY(14), BLE_STATE(15), ERROR(16), NO_RETURN_ROUTE(17), UI_CHANGED(18);
 
     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
 }
@@ -82,6 +82,8 @@ sealed interface SecureMeshBleCommand {
     data object GetFieldTestStatus : SecureMeshBleCommand { override val opcode = BleOpcode.GET_FIELD_TEST_STATUS }
     data object PingLocal : SecureMeshBleCommand { override val opcode = BleOpcode.PING_LOCAL }
     data object ClearStats : SecureMeshBleCommand { override val opcode = BleOpcode.CLEAR_STATS }
+    data object GetUiState : SecureMeshBleCommand { override val opcode = BleOpcode.GET_UI_STATE }
+    data class UiAction(val action: Int) : SecureMeshBleCommand { override val opcode = BleOpcode.UI_ACTION }
 }
 
 data class BleInfoPayload(
@@ -163,6 +165,29 @@ data class BleFieldTestStatusPayload(
     val averageFirstHopSnrDb: Double,
 )
 
+data class BleUiStatePayload(
+    val modelVersion: Int,
+    val scene: Int,
+    val menu: Int,
+    val menuIndex: Int,
+    val menuScroll: Int,
+    val navigationDepth: Int,
+    val feature: Int,
+    val flags: Int,
+    val inboxCount: Int,
+    val unreadCount: Int,
+    val neighborCount: Int,
+    val routeCount: Int,
+    val fieldTestState: Int,
+    val bleState: Int,
+    val messageIndex: Int,
+    val neighborIndex: Int,
+    val routeIndex: Int,
+    val localNodeId: NodeId,
+    val fieldTestId: Long,
+    val fieldTestTarget: NodeId,
+)
+
 sealed interface BleDecodedEvent {
     val type: BleEventType
     data class Node(override val type: BleEventType, val nodeId: NodeId) : BleDecodedEvent
@@ -181,6 +206,7 @@ sealed interface BleDecodedEvent {
     data class BleState(val state: Int) : BleDecodedEvent { override val type = BleEventType.BLE_STATE }
     data class Error(val context: Int, val status: BleCommandStatus?, val rawStatus: Int, val relatedId: Long) : BleDecodedEvent { override val type = BleEventType.ERROR }
     data class NoReturnRoute(val origin: NodeId, val testId: Long, val sequence: Long) : BleDecodedEvent { override val type = BleEventType.NO_RETURN_ROUTE }
+    data class UiChanged(val state: BleUiStatePayload) : BleDecodedEvent { override val type = BleEventType.UI_CHANGED }
 }
 
 class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
@@ -298,6 +324,38 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             )
         }
 
+    fun parseUiState(
+        frame: SecureMeshBleFrame.Response,
+        expected: BleOpcode = BleOpcode.GET_UI_STATE,
+    ): Result<BleUiStatePayload> = parseOk(frame, expected) { bytes -> parseUiStatePayload(bytes) }
+
+    private fun parseUiStatePayload(bytes: ByteArray): BleUiStatePayload {
+        requireSize(bytes, 29)
+        val r = Reader(bytes)
+        return BleUiStatePayload(
+            modelVersion = r.u8(),
+            scene = r.u8(),
+            menu = r.u8(),
+            menuIndex = r.u8(),
+            menuScroll = r.u8(),
+            navigationDepth = r.u8(),
+            feature = r.u8(),
+            flags = r.u8(),
+            inboxCount = r.u8(),
+            unreadCount = r.u8(),
+            neighborCount = r.u8(),
+            routeCount = r.u8(),
+            fieldTestState = r.u8(),
+            bleState = r.u8(),
+            messageIndex = r.u8(),
+            neighborIndex = r.u8(),
+            routeIndex = r.u8(),
+            localNodeId = nodeId(r.u32()),
+            fieldTestId = r.u32(),
+            fieldTestTarget = nodeId(r.u32()),
+        ).also { require(r.remaining == 0) { "UI state trailing bytes" } }
+    }
+
     fun parseEvent(frame: SecureMeshBleFrame.Event): Result<BleDecodedEvent?> = runCatching {
         val type = frame.eventType ?: return@runCatching null
         val r = Reader(frame.payload)
@@ -324,6 +382,7 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             BleEventType.BLE_STATE -> { requireSize(frame.payload, 1); BleDecodedEvent.BleState(r.u8()) }
             BleEventType.ERROR -> { requireSize(frame.payload, 6); val context=r.u8(); val raw=r.u8(); BleDecodedEvent.Error(context, BleCommandStatus.fromWire(raw), raw, r.u32()) }
             BleEventType.NO_RETURN_ROUTE -> { requireSize(frame.payload, 12); BleDecodedEvent.NoReturnRoute(nodeId(r.u32()), r.u32(), r.u32()) }
+            BleEventType.UI_CHANGED -> BleDecodedEvent.UiChanged(parseUiStatePayload(r.bytes(r.remaining)))
         }
         require(r.remaining == 0) { "event trailing bytes" }
         decoded
@@ -332,7 +391,7 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
     private fun encodePayload(command: SecureMeshBleCommand): ByteArray = when (command) {
         SecureMeshBleCommand.GetInfo, SecureMeshBleCommand.GetStatus, SecureMeshBleCommand.GetNeighbors,
         SecureMeshBleCommand.GetRoutes, SecureMeshBleCommand.StopFieldTest, SecureMeshBleCommand.GetFieldTestStatus,
-        SecureMeshBleCommand.PingLocal, SecureMeshBleCommand.ClearStats -> byteArrayOf()
+        SecureMeshBleCommand.PingLocal, SecureMeshBleCommand.ClearStats, SecureMeshBleCommand.GetUiState -> byteArrayOf()
 
         is SecureMeshBleCommand.SendMessage -> {
             require(command.bytes.size in 1..70) { "SEND_MESSAGE length must be 1..70" }
@@ -347,6 +406,10 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             Writer(12).apply {
                 u32(nodeIdValue(command.target)); u16(command.count); u32(command.intervalMs); u8(command.size); u8(if (command.directOnly) 1 else 0)
             }.toByteArray()
+        }
+        is SecureMeshBleCommand.UiAction -> {
+            require(command.action in 1..5) { "UI_ACTION must be one of 1..5" }
+            Writer(1).apply { u8(command.action) }.toByteArray()
         }
     }
 

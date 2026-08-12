@@ -38,6 +38,7 @@ class SecureMeshRepositoryImpl(
     override val activeFieldTest = activeFlow { it.activeFieldTest }.stateIn(scope, SharingStarted.Eagerly, null)
     override val activeSos = activeFlow { it.activeSos }.stateIn(scope, SharingStarted.Eagerly, null)
     override val bleDiagnostics = activeFlow { it.bleDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val deviceUiState = activeFlow { it.deviceUiState }.stateIn(scope, SharingStarted.Eagerly, null)
     override val settings = settingsStore.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
     private val localHistoryOwnerNodeId = settingsStore.localHistoryOwnerNodeId.stateIn(scope, SharingStarted.Eagerly, null)
     private val liveEvents = activeFlow { it.events }
@@ -209,6 +210,8 @@ class SecureMeshRepositoryImpl(
     override suspend fun startFieldTest(config: FieldTestConfig) = router.current().startFieldTest(config)
     override suspend fun stopFieldTest() = router.current().stopFieldTest()
     override suspend fun acknowledgeSos(id: String) = router.current().acknowledgeSos(id)
+    override suspend fun refreshDeviceUiState() = router.current().refreshDeviceUiState()
+    override suspend fun sendDeviceUiAction(action: DeviceUiAction) = router.current().sendDeviceUiAction(action)
     override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.write(transform(settings.value))
     private suspend fun clearSessionSensitiveHistory() {
         dao.clearEvents(); dao.clearMessages(); dao.clearKnownNodes(); dao.clearFieldTests(); dao.clearPositions()

@@ -37,6 +37,7 @@ private data class MoreDestination(
 @Composable
 fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
     val canMapPoints = UiAccessPolicy.canShowMap(session)
+    val canControlDevice = UiAccessPolicy.canControlDeviceUi(session)
     val networkItems = buildList {
         if (UiAccessPolicy.canShowTopology(session)) {
             add(MoreDestination("Схема сети", "Кто с кем связан и в каком направлении идёт радио-линк", "topology", Icons.Rounded.Hub, SecureMeshColors.Cyan))
@@ -46,6 +47,17 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
         }
     }
     val toolItems = buildList {
+        // ВАЖНО: пункт управления физическим OLED всегда видим. Авторизация
+        // проверяется уже внутри DeviceControlScreen, а не скрывает функцию из UI.
+        add(
+            MoreDestination(
+                "Устройство · OLED",
+                if (canControlDevice) "Живое состояние OLED и пульт меню узла" else "Пульт OLED — откроется после защищённого подключения",
+                "device-ui",
+                Icons.Rounded.Settings,
+                SecureMeshColors.CyanHot,
+            )
+        )
         if (UiAccessPolicy.canRunFieldTest(session)) {
             add(MoreDestination("Полевой тест", "Проверка реальной связи, RSSI, SNR, PDR и повторов", "fieldtest", Icons.Rounded.Science, SecureMeshColors.Violet))
         }
@@ -114,15 +126,13 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
                 }
             }
 
-            if (toolItems.isNotEmpty()) {
-                item {
-                    StaggeredReveal(entered, 155) {
-                        MenuSectionHeader("Инструменты", "Проверка, наблюдение и техническая работа", SecureMeshColors.Violet)
-                    }
+            item {
+                StaggeredReveal(entered, 155) {
+                    MenuSectionHeader("Инструменты", "Проверка, управление OLED и техническая работа", SecureMeshColors.Violet)
                 }
-                items(toolItems, key = { it.route }) { destination ->
-                    DestinationRow(destination) { open(destination.route) }
-                }
+            }
+            items(toolItems, key = { it.route }) { destination ->
+                DestinationRow(destination) { open(destination.route) }
             }
 
             item {

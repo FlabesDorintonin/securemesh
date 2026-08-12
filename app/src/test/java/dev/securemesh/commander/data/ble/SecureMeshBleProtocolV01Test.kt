@@ -2,6 +2,7 @@ package dev.securemesh.commander.data.ble
 
 import dev.securemesh.commander.domain.model.DeviceCapability
 import dev.securemesh.commander.domain.model.DeviceClassification
+import dev.securemesh.commander.domain.model.DeviceUiAction
 import dev.securemesh.commander.domain.model.FieldTestConfig
 import dev.securemesh.commander.domain.model.FieldTestMode
 import kotlinx.coroutines.async
@@ -54,10 +55,10 @@ class SecureMeshBleProtocolV01Test {
         payload[2] = 2
         payload[3] = 0
         payload[4] = 6
-        payload[5] = 1
+        payload[5] = 3
         putU32(payload, 6, 0xA1B2C3D4L)
         payload[10] = 1
-        putU32(payload, 11, 0b1_1111)
+        putU32(payload, 11, 0b11_1111)
         putU16(payload, 15, 0x1234)
         payload[17] = 5
         payload[18] = 0b111
@@ -65,13 +66,66 @@ class SecureMeshBleProtocolV01Test {
         val frame = codec.decodeApplicationPacket(response(0, BleOpcode.GET_INFO, payload)).getOrThrow() as SecureMeshBleFrame.Response
         val info = codec.parseInfo(frame).getOrThrow()
         assertEquals("A1B2C3D4", info.localNodeId)
-        assertEquals("0.6.1", info.firmwareVersion)
+        assertEquals("0.6.3", info.firmwareVersion)
         assertTrue(info.authenticated)
         assertTrue(info.bonded)
-        assertEquals(5, SecureMeshBleV01DomainMapping.capabilities(info.capabilityMask).size)
+        assertEquals(6, SecureMeshBleV01DomainMapping.capabilities(info.capabilityMask).size)
+        assertTrue(DeviceCapability.UI_OS in SecureMeshBleV01DomainMapping.capabilities(info.capabilityMask))
         assertFalse(DeviceCapability.GPS in SecureMeshBleV01DomainMapping.capabilities(info.capabilityMask))
         assertFalse(DeviceCapability.SOS in SecureMeshBleV01DomainMapping.capabilities(info.capabilityMask))
         assertFalse(DeviceCapability.OTA in SecureMeshBleV01DomainMapping.capabilities(info.capabilityMask))
+    }
+
+    @Test fun `GET_UI_STATE command matches firmware 0_6_3 wire contract`() {
+        val packet = codec.encodeCommand(0x1234, SecureMeshBleCommand.GetUiState).getOrThrow()
+        assertArrayEquals(
+            byteArrayOf(0x53, 0x4D, 0x01, 0x01, 0x34, 0x12, 0x0D, 0x00, 0x00, 0x00),
+            packet,
+        )
+    }
+
+    @Test fun `UI_ACTION SELECT carries exactly one action byte`() {
+        val packet = codec.encodeCommand(0x1234, SecureMeshBleCommand.UiAction(DeviceUiAction.SELECT.wire)).getOrThrow()
+        assertArrayEquals(
+            byteArrayOf(0x53, 0x4D, 0x01, 0x01, 0x34, 0x12, 0x0E, 0x00, 0x01, 0x00, 0x03),
+            packet,
+        )
+        assertTrue(codec.encodeCommand(1, SecureMeshBleCommand.UiAction(0)).isFailure)
+        assertTrue(codec.encodeCommand(1, SecureMeshBleCommand.UiAction(6)).isFailure)
+    }
+
+    @Test fun `UI state parses exact 29 byte firmware payload`() {
+        val payload = uiStatePayload()
+        val frame = codec.decodeApplicationPacket(response(7, BleOpcode.GET_UI_STATE, payload)).getOrThrow() as SecureMeshBleFrame.Response
+        val ui = codec.parseUiState(frame).getOrThrow()
+        assertEquals(2, ui.modelVersion)
+        assertEquals(2, ui.scene)
+        assertEquals(7, ui.menu)
+        assertEquals(39, ui.feature)
+        assertEquals(0b10_1111, ui.flags)
+        assertEquals(3, ui.inboxCount)
+        assertEquals(2, ui.unreadCount)
+        assertEquals("A1B2C3D4", ui.localNodeId)
+        assertEquals(0x01020304L, ui.fieldTestId)
+        assertEquals("11223344", ui.fieldTestTarget)
+
+        val mapped = SecureMeshBleV01DomainMapping.deviceUiState(ui, 1234L)
+        assertEquals(dev.securemesh.commander.domain.model.DeviceUiScene.FEATURE, mapped.scene)
+        assertEquals(dev.securemesh.commander.domain.model.DeviceUiMenu.DIAGNOSTICS, mapped.menu)
+        assertEquals(dev.securemesh.commander.domain.model.DeviceUiFeature.FIELD_TEST, mapped.feature)
+        assertTrue(mapped.oledReady)
+        assertTrue(mapped.bleProtocolReady)
+        assertTrue(mapped.fieldTestRunning)
+        assertTrue(mapped.toastVisible)
+        assertFalse(mapped.plannedFeature)
+        assertTrue(mapped.hasUnread)
+    }
+
+    @Test fun `UI_CHANGED event carries same UI state model`() {
+        val frame = codec.decodeApplicationPacket(event(BleEventType.UI_CHANGED, uiStatePayload())).getOrThrow() as SecureMeshBleFrame.Event
+        val decoded = codec.parseEvent(frame).getOrThrow() as BleDecodedEvent.UiChanged
+        assertEquals("A1B2C3D4", decoded.state.localNodeId)
+        assertEquals(39, decoded.state.feature)
     }
 
     @Test fun `name alone is not SecureMesh identity`() {
@@ -113,7 +167,6 @@ class SecureMeshBleProtocolV01Test {
     @Test fun `overlap or impossible fragment bounds are rejected`() {
         val packet = codec.encodeCommand(1, SecureMeshBleCommand.GetInfo).getOrThrow()
         val fragment = SecureMeshBleFragmentation.fragment(packet, 185, 2).getOrThrow().single().clone()
-        // offset = totalLength, while fragmentLength is still non-zero.
         fragment[9] = 10
         fragment[10] = 0
         val result = SecureMeshBleFragmentation.Reassembler().accept(fragment, 0)
@@ -167,6 +220,40 @@ class SecureMeshBleProtocolV01Test {
     }
 
     private fun response(requestId: Int, opcode: BleOpcode, payload: ByteArray, status: Int = 0) = responseRaw(requestId, opcode.wire, status, payload)
+
+    private fun uiStatePayload(): ByteArray = ByteArray(29).also { out ->
+        out[0] = 2
+        out[1] = 2
+        out[2] = 7
+        out[3] = 1
+        out[4] = 0
+        out[5] = 2
+        out[6] = 39
+        out[7] = 0b10_1111
+        out[8] = 3
+        out[9] = 2
+        out[10] = 4
+        out[11] = 1
+        out[12] = 1
+        out[13] = 5
+        out[14] = 0
+        out[15] = 1
+        out[16] = 0
+        putU32(out, 17, 0xA1B2C3D4L)
+        putU32(out, 21, 0x01020304L)
+        putU32(out, 25, 0x11223344L)
+    }
+
+    private fun event(type: BleEventType, payload: ByteArray): ByteArray = ByteArray(10 + payload.size).also { out ->
+        putU16(out, 0, 0x4D53)
+        out[2] = 1
+        out[3] = 3
+        putU16(out, 4, 0)
+        out[6] = type.wire.toByte()
+        out[7] = 0
+        putU16(out, 8, payload.size)
+        payload.copyInto(out, 10)
+    }
 
     private fun responseRaw(requestId: Int, opcode: Int, status: Int, payload: ByteArray): ByteArray = ByteArray(10 + payload.size).also { out ->
         putU16(out, 0, 0x4D53)

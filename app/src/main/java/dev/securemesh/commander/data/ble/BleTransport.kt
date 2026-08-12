@@ -89,6 +89,8 @@ class BleTransport(
     override val activeSos = _activeSos.asStateFlow()
     private val _bleDiagnostics = MutableStateFlow<BleDiagnostics?>(BleDiagnostics())
     override val bleDiagnostics = _bleDiagnostics.asStateFlow()
+    private val _deviceUiState = MutableStateFlow<DeviceUiState?>(null)
+    override val deviceUiState = _deviceUiState.asStateFlow()
 
     override suspend fun start() {
         _connectionState.value = environmentState()
@@ -102,6 +104,7 @@ class BleTransport(
         closeGatt()
         connectingDevice = null
         _session.value = null
+        _deviceUiState.value = null
         _demoProfile.value = null
         _connectionState.value = environmentState()
     }
@@ -154,6 +157,7 @@ class BleTransport(
         closeGatt()
         connectingDevice = device
         _session.value = null
+        _deviceUiState.value = null
         _connectionState.value = MeshConnectionState.Connecting(device)
         updateDiagnostics {
             BleDiagnostics(
@@ -302,6 +306,24 @@ class BleTransport(
         // Protocol v0.1 has no SOS command/capability.
     }
 
+    override suspend fun refreshDeviceUiState(): Result<DeviceUiState> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.UI_OS)) { "Firmware does not advertise UI_OS capability" }
+        val response = command(SecureMeshBleCommand.GetUiState).getOrThrow()
+        val payload = codec.parseUiState(response).getOrThrow()
+        require(payload.localNodeId == session.localNodeIdentity.nodeId) { "GET_UI_STATE local node mismatch" }
+        SecureMeshBleV01DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
+    }
+
+    override suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.UI_OS)) { "Firmware does not advertise UI_OS capability" }
+        val response = command(SecureMeshBleCommand.UiAction(action.wire)).getOrThrow()
+        val payload = codec.parseUiState(response, BleOpcode.UI_ACTION).getOrThrow()
+        require(payload.localNodeId == session.localNodeIdentity.nodeId) { "UI_ACTION local node mismatch" }
+        SecureMeshBleV01DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
+    }
+
     private suspend fun command(command: SecureMeshBleCommand): Result<SecureMeshBleFrame.Response> {
         requireReadySession()
         val characteristic = commandCharacteristic ?: return Result.failure(IllegalStateException("COMMAND characteristic unavailable"))
@@ -414,7 +436,7 @@ class BleTransport(
 
     private val bondReceiver = object : BroadcastReceiver() {
         override fun onReceive(receiverContext: Context?, intent: Intent?) {
-            if (intent?.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+            val action = intent?.action ?: return
             val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
             } else {
@@ -422,6 +444,15 @@ class BleTransport(
                 intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE) as? BluetoothDevice
             } ?: return
             if (device.address != connectingDevice?.address) return
+
+            if (action == BluetoothDevice.ACTION_PAIRING_REQUEST) {
+                val variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1)
+                updateDiagnostics { it.copy(gattState = "PAIRING_REQUEST", lastResponse = "Android pairing request variant=$variant") }
+                connectingDevice?.let { _connectionState.value = MeshConnectionState.PairingRequired(it, now() + 45_000L) }
+                return
+            }
+            if (action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+
             val newState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
             val previous = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR)
             updateDiagnostics { it.copy(bonded = newState == BluetoothDevice.BOND_BONDED) }
@@ -436,7 +467,11 @@ class BleTransport(
                 }
                 BluetoothDevice.BOND_NONE -> if (previous == BluetoothDevice.BOND_BONDING) {
                     pairingTimeoutJob?.cancel()
-                    failAndClose(MeshErrorCode.PAIRING_FAILED, "System BLE bonding failed", "Сопряжение SecureMesh не подтверждено")
+                    failAndClose(
+                        MeshErrorCode.PAIRING_FAILED,
+                        "System BLE bonding failed",
+                        "Сопряжение SecureMesh не подтверждено. Если устройство уже было сохранено в Bluetooth — забудь его и повтори подключение",
+                    )
                 }
             }
         }
@@ -559,9 +594,28 @@ class BleTransport(
             BluetoothDevice.BOND_BONDED -> continueAfterBond()
             BluetoothDevice.BOND_BONDING -> waitForBond(uiDevice)
             else -> {
+                // Firmware 0.6.3 is the primary SMP initiator. It enters Pairing and calls
+                // NimBLEDevice::startSecurity(connHandle). Give the peripheral Security
+                // Request time to open Android's native passkey dialog before createBond().
+                // Starting both sides at once races SMP on some OEM Bluetooth stacks.
                 waitForBond(uiDevice)
+                delay(1_200L)
+                if (handshakePhase != HandshakePhase.WAITING_BOND) return
+                val bondState = try { device.bondState } catch (_: SecurityException) { BluetoothDevice.BOND_NONE }
+                if (bondState == BluetoothDevice.BOND_BONDED) {
+                    pairingTimeoutJob?.cancel()
+                    continueAfterBond()
+                    return
+                }
+                if (bondState == BluetoothDevice.BOND_BONDING) return
+
+                // Fallback only when the peripheral Security Request was not surfaced.
                 val started = try { device.createBond() } catch (_: SecurityException) { false }
-                if (!started) failAndClose(MeshErrorCode.PAIRING_FAILED, "BluetoothDevice.createBond returned false", "Android не смог начать системное сопряжение")
+                if (!started) failAndClose(
+                    MeshErrorCode.PAIRING_FAILED,
+                    "Peripheral SMP request was not surfaced and BluetoothDevice.createBond returned false",
+                    "Android не открыл ввод кода. Удали старую пару SecureMesh в системном Bluetooth и подключись снова",
+                )
             }
         }
     }
@@ -660,10 +714,16 @@ class BleTransport(
     private fun handleCharacteristicRead(uuid: UUID, value: ByteArray, status: Int) {
         if (uuid != config.infoCharacteristicUuid) return
         if (status != BluetoothGatt.GATT_SUCCESS) {
+            val securityFailure = status == BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION || status == BluetoothGatt.GATT_INSUFFICIENT_ENCRYPTION
+            val staleBond = securityFailure && connectingDevice?.bondStatus == BondStatus.BONDED
             failAndClose(
-                if (status == BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION || status == BluetoothGatt.GATT_INSUFFICIENT_ENCRYPTION) MeshErrorCode.PAIRING_FAILED else MeshErrorCode.PROTOCOL_MISMATCH,
+                if (securityFailure) MeshErrorCode.PAIRING_FAILED else MeshErrorCode.PROTOCOL_MISMATCH,
                 "INFO GATT read status $status",
-                "SecureMesh INFO недоступен после сопряжения",
+                if (staleBond) {
+                    "Сохранённые BLE-ключи не совпали. Забудь SecureMesh в настройках Bluetooth и выполни на ESP32: ble bonds clear"
+                } else {
+                    "SecureMesh INFO недоступен после сопряжения"
+                },
             )
             return
         }
@@ -763,12 +823,14 @@ class BleTransport(
         syncNeighborsUnlocked()
         syncRoutesUnlocked()
         syncFieldTestStatusUnlocked()
+        if (_session.value?.supports(DeviceCapability.UI_OS) == true) syncDeviceUiStateUnlocked()
     }
 
     private suspend fun syncStatus() = syncMutex.withLock { syncStatusUnlocked() }
     private suspend fun syncNeighbors() = syncMutex.withLock { syncNeighborsUnlocked() }
     private suspend fun syncRoutes() = syncMutex.withLock { syncRoutesUnlocked() }
     private suspend fun syncFieldTestStatus() = syncMutex.withLock { syncFieldTestStatusUnlocked() }
+    private suspend fun syncDeviceUiState() = syncMutex.withLock { syncDeviceUiStateUnlocked() }
 
     private suspend fun syncStatusUnlocked() {
         val response = command(SecureMeshBleCommand.GetStatus).getOrNull() ?: return
@@ -808,6 +870,21 @@ class BleTransport(
         val status = codec.parseFieldTestStatus(response).getOrNull() ?: return
         val localId = _session.value?.localNodeIdentity?.nodeId ?: return
         _activeFieldTest.value = SecureMeshBleV01DomainMapping.fieldTest(status, localId, _activeFieldTest.value, now())
+    }
+
+    private suspend fun syncDeviceUiStateUnlocked() {
+        val session = _session.value ?: return
+        if (!session.supports(DeviceCapability.UI_OS)) {
+            _deviceUiState.value = null
+            return
+        }
+        val response = command(SecureMeshBleCommand.GetUiState).getOrNull() ?: return
+        val payload = codec.parseUiState(response).getOrNull() ?: return
+        if (payload.localNodeId != session.localNodeIdentity.nodeId) {
+            incrementMalformed("GET_UI_STATE local node mismatch")
+            return
+        }
+        _deviceUiState.value = SecureMeshBleV01DomainMapping.deviceUiState(payload, now())
     }
 
     private fun handleNotification(uuid: UUID, fragment: ByteArray) {
@@ -946,6 +1023,14 @@ class BleTransport(
             }
             is BleDecodedEvent.Error -> addEvent(EventCategory.SYSTEM, "ERROR", "context=${event.context} status=${event.status ?: event.rawStatus} related=${event.relatedId}")
             is BleDecodedEvent.NoReturnRoute -> addEvent(EventCategory.ROUTING, "NO_RETURN_ROUTE", "origin=${event.origin} test=${event.testId} seq=${event.sequence}", event.origin)
+            is BleDecodedEvent.UiChanged -> {
+                val session = _session.value
+                if (session == null || event.state.localNodeId != session.localNodeIdentity.nodeId) {
+                    incrementMalformed("UI_CHANGED local node mismatch")
+                } else {
+                    _deviceUiState.value = SecureMeshBleV01DomainMapping.deviceUiState(event.state, now())
+                }
+            }
         }
     }
 
@@ -1036,7 +1121,10 @@ class BleTransport(
 
     private fun ensureBondReceiver() {
         if (bondReceiverRegistered) return
-        val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) context.registerReceiver(bondReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         else {
             @Suppress("DEPRECATION")
@@ -1053,6 +1141,7 @@ class BleTransport(
     }
 
     private fun resetProtocolState() {
+        _deviceUiState.value = null
         handshakePhase = HandshakePhase.IDLE
         secureService = null
         infoCharacteristic = null

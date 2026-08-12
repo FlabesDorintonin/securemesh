@@ -32,6 +32,8 @@ WELCOME_SCREEN = (MAIN / "feature/welcome/WelcomeScreen.kt").read_text(encoding=
 DISCOVERY_VM = (MAIN / "feature/discovery/DiscoveryViewModel.kt").read_text(encoding="utf-8")
 BACKUP_RULES = (ROOT / "app/src/main/res/xml/backup_rules.xml").read_text(encoding="utf-8")
 DATA_EXTRACTION_RULES = (ROOT / "app/src/main/res/xml/data_extraction_rules.xml").read_text(encoding="utf-8")
+DEVICE_UI_MODEL = (MAIN / "domain/model/DeviceUiModels.kt").read_text(encoding="utf-8")
+DEVICE_UI_SCREEN = (MAIN / "feature/deviceui/DeviceControlScreen.kt").read_text(encoding="utf-8")
 
 passes=[]; failures=[]
 def check(name, ok, detail=""):
@@ -80,6 +82,10 @@ check("10-byte application envelope", "HEADER_SIZE = 10" in CODEC and "MAGIC = 0
 check("Strict application validation", all(x in CODEC for x in ["wrong SecureMesh BLE magic", "unsupported SecureMesh BLE protocol version", "payloadLength mismatch", "trailing bytes"]))
 check("Known v0.1 command set present", all(x in CODEC for x in ["GET_INFO(1)", "GET_STATUS(2)", "GET_NEIGHBORS(3)", "GET_ROUTES(4)", "SEND_MESSAGE(5)", "ADD_STATIC_ROUTE(6)", "REMOVE_STATIC_ROUTE(7)", "START_FIELD_TEST(8)", "STOP_FIELD_TEST(9)", "GET_FIELD_TEST_STATUS(10)"]))
 check("Known v0.1 events present", all(x in CODEC for x in ["NODE_DISCOVERED(1)", "HOP_ACK(4)", "MESSAGE_LOCAL_RECEIVED(6)", "TEST_PONG_RECEIVED(10)", "TEST_FINISHED(13)", "ERROR(16)", "NO_RETURN_ROUTE(17)"]))
+check("Firmware 0.6.3 UI OS opcodes present", all(x in CODEC for x in ["GET_UI_STATE(13)", "UI_ACTION(14)", "UI_CHANGED(18)"]))
+check("Firmware 0.6.3 UI state has exact 29-byte decoder", "requireSize(bytes, 29)" in CODEC and "parseUiStatePayload" in CODEC and all(x in CODEC for x in ["modelVersion = r.u8()", "localNodeId = nodeId(r.u32())", "fieldTestId = r.u32()", "fieldTestTarget = nodeId(r.u32())"]))
+check("UI action wire value is bounded to firmware actions 1..5", 'require(command.action in 1..5)' in CODEC and 'Writer(1).apply { u8(command.action) }' in CODEC)
+check("UI_CHANGED event is consumed as full UI state", "BleEventType.UI_CHANGED -> BleDecodedEvent.UiChanged(parseUiStatePayload(r.bytes(r.remaining)))" in CODEC)
 
 check("Fragment protocol exact constants", all(x in FRAG for x in ["MAGIC = 0x4653", "HEADER_SIZE = 12", "MAX_FRAGMENT_DATA = 180", "MAX_FRAGMENT_COUNT = 48", "MAX_APPLICATION_PACKET = 384", "REASSEMBLY_TIMEOUT_MS = 3_000L"]))
 check("Fragment sizing uses negotiated MTU", "negotiatedMtu - 3 - HEADER_SIZE" in FRAG)
@@ -110,7 +116,7 @@ check("Permission result is handled explicitly", "permissionResultGranted" in DI
 check("Sensitive backup and device transfer excluded", 'android:allowBackup="false"' in MANIFEST and 'android:dataExtractionRules="@xml/data_extraction_rules"' in MANIFEST and '<exclude domain="database"' in BACKUP_RULES and '<exclude domain="sharedpref"' in DATA_EXTRACTION_RULES)
 check("Cleartext network traffic disabled", 'android:usesCleartextTraffic="false"' in MANIFEST)
 check("Welcome surface has no demo controls", "onDemo" not in WELCOME_SCREEN and "Открыть демо" not in WELCOME_SCREEN and "будущие возможности" not in WELCOME_SCREEN.lower())
-check("Product hardening version is stamped", 'versionName = "0.8.0-product-hardening"' in (ROOT / "app/build.gradle.kts").read_text())
+check("Firmware-aligned product version is stamped", 'versionName = "0.8.2-firmware-0.6.3-pairing-fix"' in (ROOT / "app/build.gradle.kts").read_text() and "versionCode = 14" in (ROOT / "app/build.gradle.kts").read_text())
 check("Disconnect has local cleanup fallback", "BLE disconnect timeout; local GATT closed" in BLE and "No active BLE link" in BLE)
 
 check("Trusted entity nodeId primary key", '@Entity(tableName = "trusted_devices")' in ENTITIES and "@PrimaryKey val nodeId: String" in ENTITIES)
@@ -122,9 +128,17 @@ check("Reconnect verifies authenticated nodeId", "verified.localNodeIdentity.nod
 check("Local history remains scoped by authenticated nodeId", "localHistoryOwnerNodeId" in REPO and "session.localNodeIdentity.nodeId == ownerNodeId" in REPO)
 
 MAPPING = (MAIN/"data/ble/BleDomainMapping.kt").read_text()
-check("v0.6 capability bits map only defined features", all(x in MAPPING for x in ["MESSAGING", "STATIC_ROUTING", "RELAY", "FIELD_TEST", "BLE_CONTROL"]))
+check("v0.6.3 capability bits map only defined live features", all(x in MAPPING for x in ["MESSAGING", "STATIC_ROUTING", "RELAY", "FIELD_TEST", "BLE_CONTROL", "UI_OS"]))
 capability_body = MAPPING.split("fun capabilities",1)[1].split("fun permissions",1)[0]
 check("Real capability mapper does not add GPS SOS OTA", all(x not in capability_body for x in ["GPS", "SOS", "OTA"]))
+check("UI OS capability is firmware bit 5", "1L shl 5" in MAPPING and "DeviceCapability.UI_OS" in MAPPING)
+check("UI OS model mirrors firmware scene menu feature and action enums", all(x in DEVICE_UI_MODEL for x in ["HOME(0", "MENU(1", "FEATURE(2", "ROOT(0", "SYSTEM(8", "FIELD_TEST(39", "ABOUT(50", "UP(1)", "DOWN(2)", "SELECT(3)", "BACK(4)", "HOME(5)"]))
+check("Device UI state retains raw firmware identifiers", all(x in DEVICE_UI_MODEL for x in ["rawScene", "rawMenu", "rawFeature", "localNodeId", "fieldTestId", "fieldTestTarget"]))
+check("Authenticated BLE session synchronizes firmware UI OS", "syncDeviceUiStateUnlocked()" in BLE and "session.supports(DeviceCapability.UI_OS)" in BLE)
+check("Device UI command response verifies authenticated node identity", BLE.count('payload.localNodeId == session.localNodeIdentity.nodeId') >= 2)
+check("UI_CHANGED rejects identity mismatch", "UI_CHANGED local node mismatch" in BLE)
+check("Product exposes real firmware OLED controller", all(x in DEVICE_UI_SCREEN for x in ["Пульт OLED", "DeviceUiAction.UP", "DeviceUiAction.DOWN", "DeviceUiAction.SELECT", "DeviceUiAction.BACK", "DeviceUiAction.HOME", "GET_UI_STATE / UI_ACTION"]))
+check("Planned firmware UI features are not presented as live backend actions", "plannedFeature" in DEVICE_UI_SCREEN and "не подменяет её фиктивными действиями" in DEVICE_UI_SCREEN)
 check("Mock transport retained", (MAIN/"data/mock/MockTransport.kt").exists())
 check("Future demo remains explicit", "FUTURE_DEMO" in MODEL and "FUTURE_DEMO" in MOCK)
 
@@ -137,7 +151,7 @@ check("Field status keeps first-hop counters separate", "firstHopAcked = status.
 check("BLE diagnostics include required counters", all(x in MODEL for x in ["lastCommandRequestId", "lastResponse", "reassemblyErrors", "malformedPacketCount", "responseSubscribed", "eventSubscribed"]))
 check("No unsafe high-arity casts", "UNCHECKED_CAST" not in DASHBOARD_VM and "UNCHECKED_CAST" not in DIAGNOSTICS_VM)
 check("No unsafe 6-flow combine in NodesViewModel", "private val controls = combine(query, filters, sort)" in NODES_VM and "repository.session, controls" in NODES_VM)
-check("Protocol integration tests present", all(x in TEST_TEXT for x in ["wrong magic is rejected", "payload length mismatch is rejected", "out of order fragment is rejected", "EVENT never completes pending request", "field test first hop ACK is not end to end success", "name alone is not SecureMesh identity"]))
+check("Protocol integration tests present", all(x in TEST_TEXT for x in ["wrong magic is rejected", "payload length mismatch is rejected", "out of order fragment is rejected", "EVENT never completes pending request", "field test first hop ACK is not end to end success", "name alone is not SecureMesh identity", "GET_UI_STATE command matches firmware 0_6_3 wire contract", "UI_ACTION SELECT carries exactly one action byte", "UI_CHANGED event carries same UI state model"]))
 check("Core regression tests retained", all(x in TEST_TEXT for x in ["role is not permission", "directional link metrics", "hop ack alone never manufactures", "future demo", "trusted record uses SecureMesh node identity"]))
 check("Compose smoke test retained", any((ROOT/"app/src/androidTest").rglob("*Test.kt")))
 check("App surface is named SecureMesh", '<string name="app_name">SecureMesh</string>' in (ROOT/"app/src/main/res/values/strings.xml").read_text())

@@ -9,6 +9,10 @@ private object NoBleDiagnostics {
     val flow: StateFlow<BleDiagnostics?> = MutableStateFlow<BleDiagnostics?>(null).asStateFlow()
 }
 
+private object NoDeviceUiState {
+    val flow: StateFlow<DeviceUiState?> = MutableStateFlow<DeviceUiState?>(null).asStateFlow()
+}
+
 interface MeshTransport {
     val connectionState: StateFlow<MeshConnectionState>
     /** Non-null after SecureMesh identity is known; ESTABLISHED only after authenticated permission sync. */
@@ -23,6 +27,7 @@ interface MeshTransport {
     val activeFieldTest: StateFlow<FieldTestSession?>
     val activeSos: StateFlow<SosAlert?>
     val bleDiagnostics: StateFlow<BleDiagnostics?> get() = NoBleDiagnostics.flow
+    val deviceUiState: StateFlow<DeviceUiState?> get() = NoDeviceUiState.flow
 
     suspend fun start()
     suspend fun stop()
@@ -36,4 +41,8 @@ interface MeshTransport {
     suspend fun startFieldTest(config: FieldTestConfig): Result<String>
     suspend fun stopFieldTest()
     suspend fun acknowledgeSos(id: String)
+    suspend fun refreshDeviceUiState(): Result<DeviceUiState> =
+        Result.failure(UnsupportedOperationException("Device UI OS is not supported by this transport"))
+    suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState> =
+        Result.failure(UnsupportedOperationException("Device UI OS is not supported by this transport"))
 }
