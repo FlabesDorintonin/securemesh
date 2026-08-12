@@ -29,15 +29,11 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Scanner compatibility layer derived from the hardware-proven SecureMesh BLE Debug app.
+ * Discovery compatibility layer derived from the hardware-proven SecureMesh BLE Debug app.
  *
- * It changes discovery only. Every GATT, pairing, protocol-v0.1, command, request and event
- * operation is still handled by the existing [BleTransport]. In particular, seeing a BLE
- * advertisement never creates identity/trust: exact GATT service + authenticated INFO/nodeId
- * remain mandatory inside [BleTransport].
- *
- * The important compatibility rule is intentionally boring: Android's default unfiltered
- * `BluetoothLeScanner.startScan(scanCallback)` API, with no ScanFilter and no custom ScanSettings.
+ * It changes discovery only. Every GATT, pairing, Protocol v0.1, command, request and event
+ * operation is still handled by the existing [BleTransport]. Seeing an advertisement never
+ * creates identity/trust: exact GATT service + authenticated INFO/nodeId remain mandatory.
  */
 class BleDiscoveryParityTransport(
     private val context: Context,
@@ -77,17 +73,14 @@ class BleDiscoveryParityTransport(
             delegate.discoveredDevices.collect { devices ->
                 if (scanning) return@collect
                 devices.forEach { device -> scanResults[device.address] = device }
-                if (devices.isNotEmpty()) {
-                    _discoveredDevices.value = scanResults.values.sortedByDescending { it.rssi }
-                }
+                if (devices.isNotEmpty()) _discoveredDevices.value = scanResults.values.sortedByDescending { it.rssi }
             }
         }
         scope.launch {
             delegate.bleDiagnostics.collect { diagnostics ->
                 if (scanning) return@collect
                 _bleDiagnostics.value = diagnostics?.let { current ->
-                    if (current.lastResponse == null && lastScanSummary != null) current.copy(lastResponse = lastScanSummary)
-                    else current
+                    if (current.lastResponse == null && lastScanSummary != null) current.copy(lastResponse = lastScanSummary) else current
                 }
             }
         }
@@ -116,12 +109,15 @@ class BleDiscoveryParityTransport(
             }
         }
 
-        stopOwnScan(updateState = false)
+        // Match the known-good debug app: obtain the current scanner and call the simplest
+        // unfiltered startScan(callback) overload. Do not inject ScanSettings or ScanFilter.
+        if (scanning) stopOwnScan(updateState = false)
         val scanner = adapter?.bluetoothLeScanner
         if (scanner == null) {
             scanning = false
-            val error = MeshError(MeshErrorCode.SCAN_FAILED, "BluetoothLeScanner unavailable", "BLE-сканер недоступен")
-            _connectionState.value = MeshConnectionState.Error(error)
+            _connectionState.value = MeshConnectionState.Error(
+                MeshError(MeshErrorCode.SCAN_FAILED, "BluetoothLeScanner unavailable", "BLE-сканер недоступен")
+            )
             return
         }
 
@@ -138,7 +134,6 @@ class BleDiscoveryParityTransport(
         updateScanDiagnostics("callbacks=0 · unique=0 · parseErrors=0")
 
         try {
-            // EXACT scan entry point used by the known-good debug APK.
             scanner.startScan(scanCallback)
             scanTimeoutJob = scope.launch {
                 delay(boundedDuration)
@@ -194,7 +189,7 @@ class BleDiscoveryParityTransport(
     private fun handleScanResult(result: ScanResult) {
         try {
             val device = result.device
-            val address = device.address ?: return
+            val address = device.address
             val previous = scanResults[address]
             val record = result.scanRecord
             val name = record?.deviceName ?: device.name ?: previous?.advertisedName
@@ -205,11 +200,10 @@ class BleDiscoveryParityTransport(
             }
             val currentMatch = matcher.match(AdvertisementSnapshot(name, services, manufacturer))
 
-            // Advertisement and scan-response may arrive as separate callbacks on Android/OEM stacks.
-            // Never downgrade an already observed SecureMesh service marker because a later callback
-            // contains only the local name (or vice versa).
-            val previousReasons = previous?.matchReasons.orEmpty()
-            val reasons = previousReasons + currentMatch.reasons
+            // Advertising packet and scan response may arrive separately. Preserve all evidence
+            // seen for the same transport address instead of letting a later partial callback
+            // downgrade a previously observed SecureMesh Service UUID.
+            val reasons = previous?.matchReasons.orEmpty() + currentMatch.reasons
             val classification = when {
                 previous?.classification == DeviceClassification.TRUSTED_SECUREMESH -> DeviceClassification.TRUSTED_SECUREMESH
                 previous?.classification == DeviceClassification.KNOWN_SECUREMESH -> DeviceClassification.KNOWN_SECUREMESH
@@ -232,31 +226,36 @@ class BleDiscoveryParityTransport(
             )
             _discoveredDevices.value = scanResults.values.sortedByDescending { it.rssi }
             _connectionState.value = MeshConnectionState.DeviceFound(_discoveredDevices.value.size, scanEndsAtEpochMs)
-            updateScanDiagnostics("callbacks=$rawCallbackCount · unique=${scanResults.size} · parseErrors=$callbackParseErrors · last=${name ?: "Unknown"} $address ${result.rssi}dBm")
+            updateScanDiagnostics(
+                "callbacks=$rawCallbackCount · unique=${scanResults.size} · parseErrors=$callbackParseErrors · last=${name ?: "Unknown"} $address ${result.rssi}dBm"
+            )
         } catch (_: SecurityException) {
             scanning = false
             _connectionState.value = MeshConnectionState.PermissionRequired(requiredPermissions())
             updateScanDiagnostics("permission rejected inside scan callback")
         } catch (t: Throwable) {
-            // One malformed/vendor-specific advertisement must never kill the whole scan loop.
             callbackParseErrors++
-            updateScanDiagnostics("callbacks=$rawCallbackCount · unique=${scanResults.size} · parseErrors=$callbackParseErrors · ${t::class.java.simpleName}")
+            updateScanDiagnostics(
+                "callbacks=$rawCallbackCount · unique=${scanResults.size} · parseErrors=$callbackParseErrors · ${t::class.java.simpleName}"
+            )
         }
     }
 
     private fun stopOwnScan(updateState: Boolean) {
         scanTimeoutJob?.cancel()
         scanTimeoutJob = null
-        try {
-            adapter?.bluetoothLeScanner?.stopScan(scanCallback)
-        } catch (_: SecurityException) {
-            scanning = false
-            if (updateState) _connectionState.value = MeshConnectionState.PermissionRequired(requiredPermissions())
-            return
-        } catch (_: Throwable) {
-            // stopScan is cleanup; the completed scan summary remains authoritative.
-        }
         val wasScanning = scanning
+        if (wasScanning) {
+            try {
+                adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+            } catch (_: SecurityException) {
+                scanning = false
+                if (updateState) _connectionState.value = MeshConnectionState.PermissionRequired(requiredPermissions())
+                return
+            } catch (_: Throwable) {
+                // stopScan is cleanup; keep the scan summary visible.
+            }
+        }
         scanning = false
         if (wasScanning) {
             lastScanSummary = "scan complete · callbacks=$rawCallbackCount · unique=${scanResults.size} · parseErrors=$callbackParseErrors"
@@ -268,9 +267,7 @@ class BleDiscoveryParityTransport(
     }
 
     private fun environmentState(): MeshConnectionState {
-        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
-            return MeshConnectionState.BluetoothUnavailable
-        }
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) return MeshConnectionState.BluetoothUnavailable
         val currentAdapter = adapter ?: return MeshConnectionState.BluetoothUnavailable
         if (!currentAdapter.isEnabled) return MeshConnectionState.BluetoothDisabled
         val missing = requiredPermissions().filter {
