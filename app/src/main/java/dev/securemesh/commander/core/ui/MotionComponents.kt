@@ -31,16 +31,17 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Motion language shared by the presentation layer.
- * Springs are deliberately restrained: the UI should feel physical, not bouncy or toy-like.
+ * The goal is controlled physicality: fast response, soft settling and no arcade-like bounce.
  */
 object SecureMeshMotion {
-    const val Fast = 150
-    const val Medium = 240
-    const val Slow = 380
+    const val Instant = 110
+    const val Fast = 160
+    const val Medium = 260
+    const val Slow = 420
 
-    const val PressScale = 0.975f
-    const val GentleDamping = 0.88f
-    const val GentleStiffness = 520f
+    const val PressScale = 0.968f
+    const val GentleDamping = 0.84f
+    const val GentleStiffness = 540f
 }
 
 @Composable
@@ -64,9 +65,14 @@ fun PressScaleSurface(
         label = "press-scale",
     )
     val elevation by animateDpAsState(
-        targetValue = if (pressed && enabled) 1.dp else 5.dp,
-        animationSpec = spring(dampingRatio = .9f, stiffness = 600f),
+        targetValue = if (pressed && enabled) 1.dp else 8.dp,
+        animationSpec = spring(dampingRatio = .92f, stiffness = 620f),
         label = "press-elevation",
+    )
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (pressed && enabled) .94f else 1f,
+        animationSpec = tween(SecureMeshMotion.Instant),
+        label = "press-alpha",
     )
 
     Surface(
@@ -76,6 +82,8 @@ fun PressScaleSurface(
         modifier = modifier.graphicsLayer {
             scaleX = scale
             scaleY = scale
+            alpha = contentAlpha
+            translationY = (1f - scale) * 74f
         },
         color = color,
         shape = shape,
@@ -97,11 +105,11 @@ fun StaggeredReveal(
         visible = visible,
         modifier = modifier,
         enter = fadeIn(tween(SecureMeshMotion.Medium, delayMillis = delayMillis)) +
-            slideInVertically(tween(SecureMeshMotion.Slow, delayMillis = delayMillis)) { it / 8 } +
-            scaleIn(tween(SecureMeshMotion.Slow, delayMillis = delayMillis), initialScale = .985f),
+            slideInVertically(tween(SecureMeshMotion.Slow, delayMillis = delayMillis)) { it / 9 } +
+            scaleIn(tween(SecureMeshMotion.Slow, delayMillis = delayMillis), initialScale = .972f),
         exit = fadeOut(tween(SecureMeshMotion.Fast)) +
-            slideOutVertically(tween(SecureMeshMotion.Fast)) { -it / 12 } +
-            scaleOut(tween(SecureMeshMotion.Fast), targetScale = .99f),
+            slideOutVertically(tween(SecureMeshMotion.Fast)) { -it / 14 } +
+            scaleOut(tween(SecureMeshMotion.Fast), targetScale = .992f),
     ) {
         content()
     }
@@ -118,6 +126,7 @@ fun SoftGlowSurface(
         color = accent.copy(alpha = .08f),
         shape = CircleShape,
         border = BorderStroke(1.dp, accent.copy(alpha = .18f)),
+        shadowElevation = 6.dp,
     ) {
         Box(Modifier.alpha(.98f), content = content)
     }
