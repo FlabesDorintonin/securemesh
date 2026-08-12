@@ -23,13 +23,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat tools/.fw063_payload_* | base64 -d > /tmp/fw063.tar.gz
+          shopt -s nullglob
+          payloads=(tools/.fw063_payload_*)
+          if [ ${#payloads[@]} -eq 0 ]; then
+            echo "Firmware alignment payload already applied."
+            exit 0
+          fi
+          cat "${payloads[@]}" | base64 -d > /tmp/fw063.tar.gz
           echo "5e3dce4adcee333ed506d40edeb7b1c39c012113dfebe36989005bd11ace769a  /tmp/fw063.tar.gz" | sha256sum -c -
           tar -xzf /tmp/fw063.tar.gz
+          # Workflow files are intentionally not mutated by the Actions token.
+          git checkout HEAD -- .github/workflows/blank.yml
           git rm tools/.fw063_payload_*
-          git rm .github/workflows/apply-fw063-alignment.yml
           git config user.name "FlabesDorintonin"
           git config user.email "valiukevich.mirek@gmail.com"
           git add -A
+          git reset .github/workflows/apply-fw063-alignment.yml .github/workflows/blank.yml || true
           git commit -m "Firmware 0.6.3: align Android BLE UI OS contract"
           git push origin HEAD:firmware/0.6.3-alignment
