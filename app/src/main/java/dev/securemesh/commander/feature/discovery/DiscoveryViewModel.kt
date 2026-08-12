@@ -19,6 +19,9 @@ data class DiscoveryUiState(
 class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewModel() {
     private val filter = MutableStateFlow(DiscoveryFilter())
 
+    /** Hardware-test visibility: callbacks/unique devices are published by the BLE transport here. */
+    val diagnostics = repository.bleDiagnostics
+
     val uiState = combine(
         repository.discoveredDevices,
         repository.connectionState,
@@ -26,11 +29,9 @@ class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewMod
         filter,
         repository.settings,
     ) { devices, connection, session, f, _ ->
-        // Match the proven debug-scanner behavior: discovery is observability, not authentication.
-        // Never hide a real Android ScanResult merely because the current advertisement callback
-        // did not contain the SecureMesh Service UUID/name. The optional "Только SecureMesh"
-        // filter is applied explicitly by filterDevices(). Exact service/characteristics plus
-        // authenticated INFO/nodeId remain mandatory before a SecureMesh session is established.
+        // Discovery is observability, not authentication. Never hide a real Android ScanResult
+        // because one advertisement callback did not carry a SecureMesh identity marker.
+        // Exact service/characteristics + authenticated INFO/nodeId remain mandatory after connect.
         DiscoveryUiState(
             devices = filterDevices(devices, f),
             connection = connection,
