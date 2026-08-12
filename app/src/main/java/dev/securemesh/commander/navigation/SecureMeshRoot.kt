@@ -164,6 +164,7 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
                 },
                 onMessages = { if (UiAccessPolicy.canShowMessages(session)) nav.navigate("messages") },
                 onEvents = { if (UiAccessPolicy.canShowSystemLog(session)) nav.navigate("events") },
+                onDeviceUi = { nav.navigate("device-ui") },
                 onMore = { nav.navigate("more") },
             )
         }
