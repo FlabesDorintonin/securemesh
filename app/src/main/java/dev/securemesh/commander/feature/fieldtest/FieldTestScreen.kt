@@ -27,67 +27,64 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
     val history by viewModel.history.collectAsStateWithLifecycle()
 
     if (!state.canRun) {
-        EmptyState("Полевой тест недоступен", "Узел должен поддерживать тестирование, а сессия — разрешать его запуск.")
+        EmptyState("Тест связи недоступен", "Узел должен поддерживать FIELD_TEST, а текущая сессия — разрешать его запуск.")
         return
     }
 
-    val local = state.localNodeId ?: return EmptyState("Нет локального узла", "Сначала нужна установленная сессия SecureMesh.")
-    val remotes = state.nodes.filter { it.id != local }
+    val local = state.localNodeId ?: return EmptyState("Нет локального узла", "Сначала подключись к SecureMesh.")
+    val remotes = remember(state.nodes, local) { state.nodes.filter { it.id != local } }
     var target by remember(remotes) { mutableStateOf(remotes.firstOrNull()?.id.orEmpty()) }
     var mode by remember { mutableStateOf(FieldTestMode.AUTO) }
     val active = state.active
+    val activePoints = active?.points.orEmpty()
+    val rssiPoints = remember(activePoints) { activePoints.flatMap { point -> point.rssiSamples().map(Int::toDouble) } }
+    val snrPoints = remember(activePoints) { activePoints.flatMap { point -> point.snrSamples() } }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 15.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
-            Text("Полевой тест", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("First-hop ACK показывает локальную радионадёжность; E2E PONG подтверждает полный путь до цели и обратно.", color = SecureMeshColors.Muted)
-        }
+        item { OsScreenHeader("Тест связи", "Проверка реального маршрута без подмены hop-ACK финальной доставкой") }
 
-        item {
-            TechnicalCard("Параметры") {
-                Metric("Источник", local)
-                TargetSelector(target, remotes) { target = it }
-                Text("Режим", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelLarge)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    items(FieldTestMode.entries, key = { it.name }) { candidate ->
-                        FilterChip(mode == candidate, { mode = candidate }, { Text(candidate.ruLabel()) })
+        if (active?.running == true) {
+            item { LiveTelemetry(active, onStop = viewModel::stop) }
+        } else {
+            item {
+                OsHeroCard(
+                    eyebrow = "Диагностика",
+                    title = "Проверить связь до узла",
+                    subtitle = "DIAG_PING идёт обычным routing path. E2E PONG подтверждает полный путь туда и обратно.",
+                    accent = SecureMeshColors.Cyan,
+                ) {
+                    TargetSelector(target, remotes) { target = it }
+                    Text("Режим маршрута", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelLarge)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        items(FieldTestMode.entries, key = { it.name }) { candidate ->
+                            FilterChip(selected = mode == candidate, onClick = { mode = candidate }, label = { Text(candidate.ruLabel()) })
+                        }
                     }
-                }
-                if (active?.running == true) {
-                    Button(onClick = viewModel::stop, colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Critical)) {
-                        Icon(Icons.Rounded.Stop, contentDescription = null)
-                        Spacer(Modifier.width(7.dp))
-                        Text("Остановить тест")
-                    }
-                } else {
-                    Button(
+                    VibrantPrimaryButton(
+                        text = "Запустить тест · 100 пакетов",
                         onClick = { viewModel.start(FieldTestConfig(local, target, mode, 100, 1000, 32)) },
-                        enabled = target.isNotBlank(),
                         modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(7.dp))
-                        Text("Запустить 100 пакетов")
-                    }
+                        icon = Icons.Rounded.PlayArrow,
+                        enabled = target.isNotBlank(),
+                    )
                 }
             }
+            active?.let { item { LiveTelemetry(it, onStop = null) } }
         }
 
-        if (active != null) {
-            item { LiveTelemetry(active) }
-            val rssiPoints = active.points.flatMap { point -> point.rssiSamples().map(Int::toDouble) }
-            val snrPoints = active.points.flatMap { it.snrSamples() }
+        active?.let { test ->
+            if (rssiPoints.size >= 2 || snrPoints.size >= 2) item { SectionHeader("Графики радио") }
             if (rssiPoints.size >= 2) item { Chart("RSSI · dBm", rssiPoints, -120.0, -35.0, SecureMeshColors.Cyan) }
             if (snrPoints.size >= 2) item { Chart("SNR · dB", snrPoints, -15.0, 15.0, SecureMeshColors.Warning) }
-            if (active.points.isNotEmpty()) {
+
+            val latest = test.points.lastOrNull()?.hopResults.orEmpty()
+            if (latest.isNotEmpty()) {
                 item {
-                    TechnicalCard("Последний пакет по hop") {
-                        val latest = active.points.lastOrNull()?.hopResults.orEmpty()
-                        if (latest.isEmpty()) Text("Hop-телеметрия недоступна", color = SecureMeshColors.Muted)
+                    TechnicalCard("Последний radio hop") {
                         latest.forEachIndexed { index, hop ->
                             if (index > 0) HorizontalDivider(color = SecureMeshColors.Divider)
                             Text("${hop.from} → ${hop.to}", fontWeight = FontWeight.SemiBold)
@@ -98,16 +95,21 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
             }
         }
 
-        item { SectionHeader("История тестов") }
+        item { SectionHeader("История") }
         if (history.isEmpty()) item { Text("Завершённых тестов пока нет", color = SecureMeshColors.Muted) }
         else items(history, key = { it.id }) { test ->
-            TechnicalCard("${test.config.source} → ${test.config.target}") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Metric("Запрошено", test.config.packetCount.toString(), Modifier.weight(1f))
-                    Metric("Отправлено", test.sent.toString(), Modifier.weight(1f))
-                    Metric("PDR E2E", test.pdr?.let(::percent) ?: "—", Modifier.weight(1f))
+            Surface(color = SecureMeshColors.SurfaceHigh, shape = MaterialTheme.shapes.large, border = androidx.compose.foundation.BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .72f))) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("${test.config.source} → ${test.config.target}", fontWeight = FontWeight.Bold)
+                        StatusChip(test.pdr?.let(::percent) ?: "нет E2E", if ((test.pdr ?: 0.0) >= .9) SecureMeshColors.Healthy else SecureMeshColors.Warning)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OsStat("Отправлено", test.sent.toString(), SecureMeshColors.Cyan, Modifier.weight(1f))
+                        OsStat("PDR E2E", test.pdr?.let(::percent) ?: "—", SecureMeshColors.Healthy, Modifier.weight(1f))
+                    }
+                    Text("${test.config.mode.ruLabel()} · ${if (test.running) "идёт сейчас" else "завершён"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
                 }
-                Text("${test.config.mode.ruLabel()} · ${if (test.running) "идёт сейчас" else "завершён"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
             }
         }
         item { Spacer(Modifier.height(8.dp)) }
@@ -117,64 +119,89 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
 @Composable
 private fun TargetSelector(value: String, nodes: List<MeshNode>, set: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
+    val selected = nodes.firstOrNull { it.id == value }
     Box {
-        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("Цель: ${nodes.firstOrNull { it.id == value }?.let { deviceDisplayName(it.name) } ?: "выбрать узел"}")
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = MaterialTheme.shapes.large) {
+            Column(Modifier.weight(1f)) {
+                Text(selected?.let { deviceDisplayName(it.name) } ?: "Выбрать узел", fontWeight = FontWeight.SemiBold)
+                if (selected != null) Text(selected.id, color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+            }
+            Text("›", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.titleLarge)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            nodes.forEach { node -> DropdownMenuItem(text = { Text("${deviceDisplayName(node.name)} · ${node.id}") }, onClick = { set(node.id); open = false }) }
+            nodes.forEach { node ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(deviceDisplayName(node.name), fontWeight = FontWeight.SemiBold)
+                            Text(node.id, color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+                        }
+                    },
+                    onClick = { set(node.id); open = false },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun LiveTelemetry(test: FieldTestSession) {
-    TechnicalCard(if (test.running) "Тест идёт" else "Последний результат") {
+private fun LiveTelemetry(test: FieldTestSession, onStop: (() -> Unit)?) {
+    val requested = test.config.packetCount.coerceAtLeast(1)
+    val progress = (test.sent.toFloat() / requested.toFloat()).coerceIn(0f, 1f)
+    val pdr = test.pdr
+    OsHeroCard(
+        eyebrow = if (test.running) "Тест идёт" else "Последний результат",
+        title = "${deviceDisplayName(test.config.target)} · ${test.sent}/$requested",
+        subtitle = if (test.running) "Пакеты отправляются без блокировки интерфейса" else "Сохранённый результат последнего запуска",
+        accent = if (test.running) SecureMeshColors.Cyan else SecureMeshColors.Healthy,
+        status = if (test.running) "RUNNING" else "ГОТОВО",
+    ) {
+        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(7.dp), color = SecureMeshColors.Cyan, trackColor = SecureMeshColors.Divider)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetricTile("Запрошено", test.config.packetCount.toString(), Modifier.weight(1f), SecureMeshColors.Violet)
-            MetricTile("Отправлено", test.sent.toString(), Modifier.weight(1f), SecureMeshColors.Cyan)
+            OsStat("E2E PDR", pdr?.let(::percent) ?: "—", if ((pdr ?: 0.0) >= .9) SecureMeshColors.Healthy else SecureMeshColors.Warning, Modifier.weight(1f))
+            OsStat("PONG", test.confirmedReceived?.toString() ?: "—", SecureMeshColors.Healthy, Modifier.weight(1f))
+            OsStat("Потери", test.confirmedLost?.toString() ?: "—", SecureMeshColors.Warning, Modifier.weight(1f))
         }
+        Text("Первый radio hop", color = SecureMeshColors.TextSecondary, fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetricTile("E2E PONG", test.confirmedReceived?.toString() ?: "—", Modifier.weight(1f), SecureMeshColors.Healthy)
-            MetricTile("E2E loss", test.confirmedLost?.toString() ?: "—", Modifier.weight(1f), SecureMeshColors.Warning)
+            OsStat("ACK 1-го хопа", test.firstHopAcked?.toString() ?: "—", SecureMeshColors.Blue, Modifier.weight(1f))
+            OsStat("Сбой 1-го", test.firstHopFailures?.toString() ?: "—", if ((test.firstHopFailures ?: 0) > 0) SecureMeshColors.Warning else SecureMeshColors.Muted, Modifier.weight(1f))
+            OsStat("Повторы", test.retries.toString(), SecureMeshColors.Cyan, Modifier.weight(1f))
         }
+        Text("First-hop ACK / First-hop fail — служебные метрики ближайшего radio hop, не финальная доставка.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+        Text("RTT по DIAG_PONG", color = SecureMeshColors.TextSecondary, fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetricTile("First-hop ACK", test.firstHopAcked?.toString() ?: "—", Modifier.weight(1f), SecureMeshColors.Blue)
-            MetricTile("First-hop fail", test.firstHopFailures?.toString() ?: "—", Modifier.weight(1f), if ((test.firstHopFailures ?: 0) > 0) SecureMeshColors.Warning else SecureMeshColors.Muted)
+            OsStat("min", test.rttMinimumMs?.let { "$it мс" } ?: "—", SecureMeshColors.Cyan, Modifier.weight(1f))
+            OsStat("avg", test.rttAverageMs?.let { "$it мс" } ?: "—", SecureMeshColors.Healthy, Modifier.weight(1f))
+            OsStat("max", test.rttMaximumMs?.let { "$it мс" } ?: "—", SecureMeshColors.Warning, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Metric("PDR E2E", test.pdr?.let(::percent) ?: "—")
-            Metric("Retry timeout", test.retries.toString())
+            Text("1-hop RSSI: ${test.averageRssi()?.let { "%.1f dBm".format(it) } ?: "—"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+            Text("SNR: ${test.averageSnr()?.let { "%.1f dB".format(it) } ?: "—"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
         }
-        HorizontalDivider(color = SecureMeshColors.Divider)
-        Text("RTT по DIAG_PONG", fontWeight = FontWeight.SemiBold)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Metric("min", test.rttMinimumMs?.let { "$it мс" } ?: "—")
-            Metric("avg", test.rttAverageMs?.let { "$it мс" } ?: "—")
-            Metric("max", test.rttMaximumMs?.let { "$it мс" } ?: "—")
+        Text("nextHop: ${test.currentNextHop ?: "нет данных"} · это не полный path trace", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+        if (onStop != null) {
+            OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = SecureMeshColors.Critical)) {
+                Icon(Icons.Rounded.Stop, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("Остановить тест", fontWeight = FontWeight.Bold)
+            }
         }
-        HorizontalDivider(color = SecureMeshColors.Divider)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Metric("1-hop RSSI", test.averageRssi()?.let { "%.1f dBm".format(it) } ?: "—")
-            Metric("1-hop SNR", test.averageSnr()?.let { "%.1f dB".format(it) } ?: "—")
-        }
-        Text("Цель: ${test.config.target}", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-        Text("Текущий nextHop: ${test.currentNextHop ?: "нет данных"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
 private fun Chart(title: String, values: List<Double>, min: Double, max: Double, color: Color) {
     TechnicalCard(title) {
-        Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(112.dp)) {
             val path = Path()
             values.forEachIndexed { index, value ->
                 val x = index.toFloat() / (values.size - 1) * size.width
                 val y = (size.height - ((value - min) / (max - min)).toFloat() * size.height).coerceIn(0f, size.height)
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawLine(SecureMeshColors.Muted.copy(alpha = .18f), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 1f)
-            drawPath(path, color, style = Stroke(3.5f))
+            drawLine(SecureMeshColors.Muted.copy(alpha = .15f), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 1f)
+            drawPath(path, color, style = Stroke(3f))
         }
     }
 }

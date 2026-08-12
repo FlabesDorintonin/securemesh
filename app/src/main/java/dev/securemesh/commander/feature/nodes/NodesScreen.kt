@@ -25,15 +25,19 @@ import dev.securemesh.commander.domain.model.*
 fun NodesScreen(viewModel: NodesViewModel, onNode: (String) -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showFilters by remember { mutableStateOf(false) }
+    val onlineCount = remember(state.nodes) { state.nodes.count { it.node.online } }
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(horizontal = 15.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
+        item { OsScreenHeader("Узлы", "Устройства, которые доступны текущей защищённой сессии") }
         item {
-            Text("Узлы", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Люди и ретрансляторы, которые видит текущая защищённая сессия", color = SecureMeshColors.Muted)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OsStat("Показано", state.nodes.size.toString(), SecureMeshColors.Cyan, Modifier.weight(1f))
+                OsStat("В сети", onlineCount.toString(), SecureMeshColors.Healthy, Modifier.weight(1f))
+            }
         }
         item {
             OutlinedTextField(
@@ -47,7 +51,7 @@ fun NodesScreen(viewModel: NodesViewModel, onNode: (String) -> Unit) {
             )
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(
                     selected = showFilters,
                     onClick = { showFilters = !showFilters },
@@ -57,18 +61,12 @@ fun NodesScreen(viewModel: NodesViewModel, onNode: (String) -> Unit) {
                 NodeSortMenu(state.sort, viewModel::sort)
             }
         }
-        item {
-            AnimatedVisibility(visible = showFilters) {
-                NodeFilterRow(state.filters, viewModel::filters)
-            }
-        }
+        item { AnimatedVisibility(visible = showFilters) { NodeFilterRow(state.filters, viewModel::filters) } }
 
         if (state.nodes.isEmpty()) {
-            item { EmptyState("Ничего не найдено", "Попробуй изменить поиск или фильтры.") }
+            item { EmptyState("Ничего не найдено", "Измени поиск или фильтры. Если список пуст без фильтров — проверь BLE-сессию и neighbor table.") }
         } else {
-            items(state.nodes, key = { it.node.id }) { item ->
-                NodeContactRow(item) { onNode(item.node.id) }
-            }
+            items(state.nodes, key = { it.node.id }) { item -> NodeContactRow(item) { onNode(item.node.id) } }
         }
         item { Spacer(Modifier.height(8.dp)) }
     }
@@ -96,12 +94,7 @@ private fun NodeSortMenu(sort: NodeSort, set: (NodeSort) -> Unit) {
             label = { Text(sortLabel(sort)) },
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            NodeSort.entries.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(sortLabel(option)) },
-                    onClick = { set(option); open = false },
-                )
-            }
+            NodeSort.entries.forEach { option -> DropdownMenuItem(text = { Text(sortLabel(option)) }, onClick = { set(option); open = false }) }
         }
     }
 }
@@ -117,29 +110,29 @@ private fun sortLabel(sort: NodeSort): String = when (sort) {
 private fun NodeContactRow(item: NodeListItem, onOpen: () -> Unit) {
     val node = item.node
     val name = deviceDisplayName(node.name)
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
-        color = SecureMeshColors.Surface,
-        shape = MaterialTheme.shapes.large,
+    val qualityColor = linkQualityColor(item.primaryLink?.quality() ?: LinkQuality.UNKNOWN)
+    PressScaleSurface(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+        color = SecureMeshColors.SurfaceHigh,
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (node.online) SecureMeshColors.Cyan.copy(alpha = .18f) else SecureMeshColors.Divider.copy(alpha = .70f)),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MeshAvatar(name, node.online, size = 50.dp)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     Text(if (node.online) "в сети" else ageLabel(node.lastSeenEpochMs), style = MaterialTheme.typography.labelSmall, color = if (node.online) SecureMeshColors.Healthy else SecureMeshColors.Muted)
                 }
                 Text("${node.role.ruLabel()} · ${node.id}", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("RSSI ${dbm(item.primaryLink?.rssi)}", color = linkQualityColor(item.primaryLink?.quality() ?: LinkQuality.UNKNOWN), style = MaterialTheme.typography.labelSmall)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    item.primaryLink?.rssi?.let { SignalBars(it, activeColor = qualityColor) }
+                    Text("RSSI ${dbm(item.primaryLink?.rssi)}", color = qualityColor, style = MaterialTheme.typography.labelSmall)
                     Text("SNR ${snr(item.primaryLink?.snr)}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
                     node.batteryPercent?.let { Text("$it%", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall) }
                 }
             }
+            Text("›", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.titleLarge)
         }
     }
 }
@@ -168,100 +161,75 @@ fun NodeDetailsScreen(viewModel: NodeDetailsViewModel, onBack: () -> Unit) {
                 }
             }
         }
-
         item {
             TechnicalCard("Устройство") {
-                DetailRows(
-                    listOf(
-                        "ID" to node.id,
-                        "Роль" to node.role.ruLabel(),
-                        "Прошивка" to (node.firmwareVersion ?: "Нет данных"),
-                        "Протокол" to (node.protocolVersion?.toString() ?: "Нет данных"),
-                        "Последняя активность" to ageLabel(node.lastSeenEpochMs),
-                        "Время работы" to (node.uptimeSec?.let { "${it / 60} мин" } ?: "Нет данных"),
-                    ),
-                )
+                DetailRows(listOf(
+                    "ID" to node.id,
+                    "Роль" to node.role.ruLabel(),
+                    "Прошивка" to (node.firmwareVersion ?: "Нет данных"),
+                    "Протокол" to (node.protocolVersion?.toString() ?: "Нет данных"),
+                    "Последняя активность" to ageLabel(node.lastSeenEpochMs),
+                    "Время работы" to (node.uptimeSec?.let { "${it / 60} мин" } ?: "Нет данных"),
+                ))
             }
         }
-
         item {
             TechnicalCard("Связь") {
-                if (state.links.isEmpty()) {
-                    Text("Нет данных о направленных связях", color = SecureMeshColors.Muted)
-                } else {
-                    state.links.forEachIndexed { index, link ->
-                        if (index > 0) HorizontalDivider(color = SecureMeshColors.Divider)
-                        Text("${link.fromNode} → ${link.toNode}", fontWeight = FontWeight.SemiBold)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Metric("RSSI", dbm(link.rssi), Modifier.weight(1f), linkQualityColor(link.quality()))
-                            Metric("SNR", snr(link.snr), Modifier.weight(1f))
-                            Metric("PDR", percent(link.pdr), Modifier.weight(1f))
-                        }
-                        Text("Повторы: ${link.retries ?: "—"} · данные ${link.lastSeenEpochMs?.let(::ageLabel) ?: "неизвестно"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+                if (state.links.isEmpty()) Text("Нет данных о направленных связях", color = SecureMeshColors.Muted)
+                else state.links.forEachIndexed { index, link ->
+                    if (index > 0) HorizontalDivider(color = SecureMeshColors.Divider)
+                    Text("${link.fromNode} → ${link.toNode}", fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Metric("RSSI", dbm(link.rssi), Modifier.weight(1f), linkQualityColor(link.quality()))
+                        Metric("SNR", snr(link.snr), Modifier.weight(1f))
+                        Metric("PDR", percent(link.pdr), Modifier.weight(1f))
                     }
+                    Text("Повторы: ${link.retries ?: "—"} · данные ${link.lastSeenEpochMs?.let(::ageLabel) ?: "неизвестно"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
-
         item {
             TechnicalCard("Маршруты") {
-                if (state.routes.isEmpty()) {
-                    Text("Маршруты не предоставлены", color = SecureMeshColors.Muted)
-                } else {
-                    state.routes.forEachIndexed { index, route ->
-                        if (index > 0) HorizontalDivider(color = SecureMeshColors.Divider)
-                        Text("${route.destination} через ${route.nextHop}", fontWeight = FontWeight.SemiBold)
-                        Text("${route.type.ruLabel()} · переходов ${route.hopCount ?: "—"} · качество ${route.quality?.let(::percent) ?: "—"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
-                    }
+                if (state.routes.isEmpty()) Text("Маршруты не предоставлены", color = SecureMeshColors.Muted)
+                else state.routes.forEachIndexed { index, route ->
+                    if (index > 0) HorizontalDivider(color = SecureMeshColors.Divider)
+                    Text("${route.destination} через ${route.nextHop}", fontWeight = FontWeight.SemiBold)
+                    Text("${route.type.ruLabel()} · переходов ${route.hopCount ?: "—"} · качество ${route.quality?.let(::percent) ?: "—"}", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
-
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MetricTile("Заряд", node.batteryPercent?.let { "$it%" } ?: "—", Modifier.weight(1f), SecureMeshColors.Cyan)
                 MetricTile("Напряжение", voltage(node.voltage), Modifier.weight(1f), SecureMeshColors.Blue)
             }
         }
-
         item {
             TechnicalCard("GPS") {
                 val position = node.position
-                if (position == null) {
-                    Text("Координаты не предоставлены", color = SecureMeshColors.Muted)
-                } else {
-                    DetailRows(
-                        listOf(
-                            "Статус" to position.status(System.currentTimeMillis()).ruLabel(),
-                            "Широта" to coordinate(position.latitude),
-                            "Долгота" to coordinate(position.longitude),
-                            "Спутники" to (position.satellites?.toString() ?: "—"),
-                            "HDOP" to (position.hdop?.toString() ?: "—"),
-                            "Возраст" to ageLabel(position.timestampEpochMs),
-                        ),
-                    )
-                }
+                if (position == null) Text("Координаты не предоставлены", color = SecureMeshColors.Muted)
+                else DetailRows(listOf(
+                    "Статус" to position.status(System.currentTimeMillis()).ruLabel(),
+                    "Широта" to coordinate(position.latitude),
+                    "Долгота" to coordinate(position.longitude),
+                    "Спутники" to (position.satellites?.toString() ?: "—"),
+                    "HDOP" to (position.hdop?.toString() ?: "—"),
+                    "Возраст" to ageLabel(position.timestampEpochMs),
+                ))
             }
         }
-
         item {
             TechnicalCard("Возможности") {
-                if (node.capabilities.isEmpty()) {
-                    Text("Не объявлены", color = SecureMeshColors.Muted)
-                } else {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        node.capabilities.forEach { capability -> AssistChip(onClick = {}, label = { Text(capability.ruLabel()) }) }
-                    }
+                if (node.capabilities.isEmpty()) Text("Не объявлены", color = SecureMeshColors.Muted)
+                else FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    node.capabilities.forEach { capability -> AssistChip(onClick = {}, label = { Text(capability.ruLabel()) }) }
                 }
             }
         }
-
         item {
             TechnicalCard("Последняя активность") {
                 if (state.events.isEmpty()) Text("Событий не видно", color = SecureMeshColors.Muted)
-                else state.events.take(6).forEach { event ->
-                    Text("${clockLabel(event.timestampEpochMs)} · ${localizedTechnicalText(event.title)}", style = MaterialTheme.typography.bodySmall)
-                }
+                else state.events.take(6).forEach { event -> Text("${clockLabel(event.timestampEpochMs)} · ${localizedTechnicalText(event.title)}", style = MaterialTheme.typography.bodySmall) }
             }
         }
         item { Spacer(Modifier.height(10.dp)) }
@@ -272,11 +240,7 @@ fun NodeDetailsScreen(viewModel: NodeDetailsViewModel, onBack: () -> Unit) {
 private fun DetailRows(rows: List<Pair<String, String>>) {
     rows.forEachIndexed { index, (label, value) ->
         if (index > 0) HorizontalDivider(color = SecureMeshColors.Divider.copy(alpha = .65f))
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = SecureMeshColors.Muted, modifier = Modifier.weight(1f))
             Text(value, fontWeight = FontWeight.Medium)
         }
