@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.securemesh.commander.BuildConfig
 import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.domain.model.*
 
@@ -33,6 +34,7 @@ fun DiscoveryScreen(
     onBleConnected: (secureProtocolReady: Boolean) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { viewModel.scan() }
     val bluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { viewModel.scan() }
 
@@ -75,7 +77,7 @@ fun DiscoveryScreen(
                     MeshConnectionState.BluetoothUnavailable -> EmptyState("Bluetooth недоступен", "Телефон сообщает, что BLE-адаптер отсутствует.")
                     is MeshConnectionState.PairingRequired -> SystemPairingHint(connection)
                     is MeshConnectionState.Authenticating -> AuthenticationHint()
-                    else -> DeviceDiscoveryContent(state, viewModel)
+                    else -> DeviceDiscoveryContent(state, diagnostics, viewModel)
                 }
             }
         }
@@ -110,7 +112,7 @@ private fun AuthenticationHint() {
 }
 
 @Composable
-private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: DiscoveryViewModel) {
+private fun DeviceDiscoveryContent(state: DiscoveryUiState, diagnostics: BleDiagnostics?, viewModel: DiscoveryViewModel) {
     val scanning = state.connection is MeshConnectionState.Scanning || state.connection is MeshConnectionState.DeviceFound
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
@@ -147,11 +149,30 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
             OutlinedIconButton(onClick = viewModel::refresh) { Icon(Icons.Rounded.Refresh, contentDescription = "Обновить") }
         }
         AnimatedVisibility(visible = scanning) { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = SecureMeshColors.Cyan) }
-        Text(
-            "SecureMesh-кандидат определяется по Service UUID. Имя «SecureMesh» само по себе не считается идентичностью.",
-            color = SecureMeshColors.Muted,
-            style = MaterialTheme.typography.bodySmall,
-        )
+        Surface(
+            color = SecureMeshColors.Surface.copy(alpha = .72f),
+            shape = MaterialTheme.shapes.medium,
+            border = BorderStroke(1.dp, SecureMeshColors.Divider.copy(alpha = .7f)),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "Сканер: Android default · без фильтров · ${BuildConfig.VERSION_NAME}",
+                    color = SecureMeshColors.CyanHot,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "В списке: ${state.devices.size} · ${diagnostics?.lastResponse ?: "ожидаем первый ScanResult"}",
+                    color = SecureMeshColors.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "Discovery показывает сырой BLE; SecureMesh identity подтверждается только после GATT + INFO.",
+                    color = SecureMeshColors.Muted,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
         if (state.devices.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 EmptyState("Устройства пока не найдены", "Оставь узел включённым рядом с телефоном и запусти поиск ещё раз.")
