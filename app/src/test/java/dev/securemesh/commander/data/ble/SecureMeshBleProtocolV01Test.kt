@@ -107,7 +107,7 @@ class SecureMeshBleProtocolV01Test {
         assertEquals(2, ui.unreadCount)
         assertEquals("A1B2C3D4", ui.localNodeId)
         assertEquals(0x01020304L, ui.fieldTestId)
-        assertEquals("11223344", ui.targetNodeId)
+        assertEquals("11223344", ui.fieldTestTarget)
 
         val mapped = SecureMeshBleV01DomainMapping.deviceUiState(ui, 1234L)
         assertEquals(dev.securemesh.commander.domain.model.DeviceUiScene.FEATURE, mapped.scene)
@@ -167,7 +167,6 @@ class SecureMeshBleProtocolV01Test {
     @Test fun `overlap or impossible fragment bounds are rejected`() {
         val packet = codec.encodeCommand(1, SecureMeshBleCommand.GetInfo).getOrThrow()
         val fragment = SecureMeshBleFragmentation.fragment(packet, 185, 2).getOrThrow().single().clone()
-        // offset = totalLength, while fragmentLength is still non-zero.
         fragment[9] = 10
         fragment[10] = 0
         val result = SecureMeshBleFragmentation.Reassembler().accept(fragment, 0)
@@ -223,14 +222,14 @@ class SecureMeshBleProtocolV01Test {
     private fun response(requestId: Int, opcode: BleOpcode, payload: ByteArray, status: Int = 0) = responseRaw(requestId, opcode.wire, status, payload)
 
     private fun uiStatePayload(): ByteArray = ByteArray(29).also { out ->
-        out[0] = 2 // modelVersion
-        out[1] = 2 // Feature scene
-        out[2] = 7 // Diagnostics menu
-        out[3] = 1 // menu index
-        out[4] = 0 // scroll
-        out[5] = 2 // nav depth
-        out[6] = 39 // FieldTest feature
-        out[7] = 0b10_1111 // ready/protocol/test/toast + unread; planned bit is clear
+        out[0] = 2
+        out[1] = 2
+        out[2] = 7
+        out[3] = 1
+        out[4] = 0
+        out[5] = 2
+        out[6] = 39
+        out[7] = 0b10_1111
         out[8] = 3
         out[9] = 2
         out[10] = 4
