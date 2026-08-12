@@ -13,7 +13,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-debug-apk:
@@ -24,6 +24,27 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Apply firmware-initiated pairing hotfix
+        run: python3 tools/apply_pairing_hotfix.py
+
+      - name: Persist pairing hotfix source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- \
+            app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt \
+            app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt; then
+            git config user.name "FlabesDorintonin"
+            git config user.email "valiukevich.mirek@gmail.com"
+            git add \
+              app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt \
+              app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
+            git commit -m "fix: align Android pairing with firmware security initiator"
+            git push origin HEAD:firmware/0.6.3-alignment
+          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
