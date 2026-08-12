@@ -84,7 +84,8 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
                 }
             }
 
-            state.error?.let { message ->
+            val errorMessage = state.error
+            if (errorMessage != null) {
                 item {
                     Surface(
                         color = SecureMeshColors.Warning.copy(alpha = .10f),
@@ -98,7 +99,7 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
                         ) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("Команда не выполнена", fontWeight = FontWeight.Bold, color = SecureMeshColors.Warning)
-                                Text(message, color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                Text(errorMessage, color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                             }
                             TextButton(onClick = viewModel::clearError) { Text("Закрыть") }
                         }
