@@ -3,7 +3,12 @@
 package dev.securemesh.commander.feature.messages
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -13,10 +18,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,11 +63,11 @@ fun MessagesScreen(viewModel: MessagesViewModel) {
         targetState = selectedPeerId,
         transitionSpec = {
             if (targetState != null) {
-                (slideInHorizontally(spring(dampingRatio = .90f, stiffness = 520f)) { it / 4 } + fadeIn(tween(170))) togetherWith
-                    (slideOutHorizontally(tween(160)) { -it / 7 } + fadeOut(tween(120)))
+                (slideInHorizontally(spring(dampingRatio = .88f, stiffness = 500f)) { it / 4 } + fadeIn(tween(190))) togetherWith
+                    (slideOutHorizontally(tween(170)) { -it / 7 } + fadeOut(tween(120)))
             } else {
-                (slideInHorizontally(spring(dampingRatio = .90f, stiffness = 520f)) { -it / 4 } + fadeIn(tween(170))) togetherWith
-                    (slideOutHorizontally(tween(160)) { it / 7 } + fadeOut(tween(120)))
+                (slideInHorizontally(spring(dampingRatio = .88f, stiffness = 500f)) { -it / 4 } + fadeIn(tween(190))) togetherWith
+                    (slideOutHorizontally(tween(170)) { it / 7 } + fadeOut(tween(120)))
             }
         },
         label = "chat-navigation",
@@ -168,7 +173,7 @@ private fun ConversationsScreen(
                 title = {
                     Column {
                         Text("Чаты", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
-                        Text("SecureMesh messenger", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+                        Text("Локальная защищённая связь", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -193,9 +198,9 @@ private fun ConversationsScreen(
             item {
                 StaggeredReveal(entered, 20) {
                     Surface(
-                        color = SecureMeshColors.Cyan.copy(alpha = .075f),
+                        color = SecureMeshColors.Cyan.copy(alpha = .068f),
                         shape = MaterialTheme.shapes.large,
-                        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .14f)),
+                        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .13f)),
                     ) {
                         Text(
                             "Локальные сообщения через mesh-сеть · hop-ACK не считается финальной доставкой",
@@ -218,8 +223,10 @@ private fun ConversationsScreen(
                     }
                 }
             } else {
-                items(conversations, key = { it.first.id }) { (node, message) ->
-                    ConversationRow(node, message, localNodeId) { onOpen(node.id) }
+                itemsIndexed(conversations, key = { _, item -> item.first.id }) { index, (node, message) ->
+                    StaggeredReveal(entered, (55 + index * 34).coerceAtMost(210)) {
+                        ConversationRow(node, message, localNodeId) { onOpen(node.id) }
+                    }
                 }
             }
             item { Spacer(Modifier.height(92.dp)) }
@@ -259,6 +266,10 @@ private fun ConversationRow(node: MeshNode, message: MeshMessage, localNodeId: N
                         color = SecureMeshColors.TextSecondary,
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    if (message.origin == localNodeId) {
+                        Spacer(Modifier.width(7.dp))
+                        DeliveryGlyph(message.finalState)
+                    }
                 }
             }
         }
@@ -359,7 +370,7 @@ private fun ChatPattern(modifier: Modifier = Modifier) {
         while (y < size.height) {
             var x = spacing / 2f
             while (x < size.width) {
-                drawCircle(SecureMeshColors.Cyan.copy(alpha = .025f), radius = 1.2f, center = androidx.compose.ui.geometry.Offset(x, y))
+                drawCircle(SecureMeshColors.Cyan.copy(alpha = .022f), radius = 1.2f, center = androidx.compose.ui.geometry.Offset(x, y))
                 x += spacing
             }
             y += spacing
@@ -370,15 +381,15 @@ private fun ChatPattern(modifier: Modifier = Modifier) {
 @Composable
 private fun MessageBubble(message: MeshMessage, outgoing: Boolean, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
-        Surface(
-            modifier = Modifier.widthIn(max = 330.dp).clickable(onClick = onClick),
+        PressScaleSurface(
+            onClick = onClick,
+            modifier = Modifier.widthIn(max = 330.dp),
             color = if (outgoing) SecureMeshColors.BubbleOutgoing else SecureMeshColors.BubbleIncoming,
             shape = if (outgoing) RoundedCornerShape(21.dp, 21.dp, 7.dp, 21.dp) else RoundedCornerShape(21.dp, 21.dp, 21.dp, 7.dp),
             border = BorderStroke(
                 1.dp,
                 if (outgoing) SecureMeshColors.Cyan.copy(alpha = .18f) else SecureMeshColors.Divider.copy(alpha = .62f),
             ),
-            shadowElevation = 2.dp,
         ) {
             Column(Modifier.padding(horizontal = 13.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(message.payload, style = MaterialTheme.typography.bodyLarge, color = SecureMeshColors.Text)
@@ -388,23 +399,42 @@ private fun MessageBubble(message: MeshMessage, outgoing: Boolean, onClick: () -
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(clockLabel(message.createdAtEpochMs), style = MaterialTheme.typography.labelSmall, color = SecureMeshColors.Muted)
-                    if (outgoing) {
-                        Text(
-                            message.finalState.ruLabel(),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium,
-                            color = when (message.finalState) {
-                                MessageFinalState.DELIVERED -> SecureMeshColors.Healthy
-                                MessageFinalState.FAILED, MessageFinalState.EXPIRED -> SecureMeshColors.Critical
-                                MessageFinalState.UNKNOWN -> SecureMeshColors.Warning
-                                else -> SecureMeshColors.Muted
-                            },
-                        )
-                    }
+                    if (outgoing) DeliveryGlyph(message.finalState)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun DeliveryGlyph(state: MessageFinalState) {
+    val targetColor = when (state) {
+        MessageFinalState.DELIVERED -> SecureMeshColors.Healthy
+        MessageFinalState.FAILED, MessageFinalState.EXPIRED -> SecureMeshColors.Critical
+        MessageFinalState.UNKNOWN -> SecureMeshColors.Warning
+        MessageFinalState.PENDING -> SecureMeshColors.Muted
+    }
+    val color by animateColorAsState(targetColor, tween(180), label = "delivery-color")
+    val transition = rememberInfiniteTransition(label = "delivery-pending")
+    val pendingAlpha = transition.animateFloat(
+        initialValue = .40f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(780), repeatMode = RepeatMode.Reverse),
+        label = "delivery-pending-alpha",
+    )
+    val alpha = if (state == MessageFinalState.PENDING) pendingAlpha.value else 1f
+    val symbol = when (state) {
+        MessageFinalState.DELIVERED -> "✓✓"
+        MessageFinalState.FAILED, MessageFinalState.EXPIRED -> "!"
+        MessageFinalState.UNKNOWN -> "?"
+        MessageFinalState.PENDING -> "→"
+    }
+    Text(
+        symbol,
+        color = color.copy(alpha = alpha),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.ExtraBold,
+    )
 }
 
 @Composable

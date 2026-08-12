@@ -1,5 +1,12 @@
 package dev.securemesh.commander.feature.network
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -10,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -38,9 +46,28 @@ fun TopologyScreen(viewModel: NetworkViewModel, onNode: (String) -> Unit) {
         layout(state.topology.nodes, state.localNodeId, size, zoom, pan)
     }
 
+    val motion = rememberInfiniteTransition(label = "topology-motion")
+    val travel = motion.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2300, easing = LinearEasing)),
+        label = "topology-travel",
+    )
+    val breathe = motion.animateFloat(
+        initialValue = .86f,
+        targetValue = 1.14f,
+        animationSpec = infiniteRepeatable(tween(1700), repeatMode = RepeatMode.Reverse),
+        label = "topology-breathe",
+    )
+
     Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Схема сети", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Цвет линии показывает качество направленной связи. Масштабируй двумя пальцами.", color = SecureMeshColors.Muted)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.weight(1f)) {
+                Text("Живая сеть", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                Text("Импульсы идут только по реально наблюдаемым направленным связям.", color = SecureMeshColors.Muted)
+            }
+            StatusChip("${state.topology.nodes.size} узл.", SecureMeshColors.Cyan)
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { zoom = 1f; pan = Offset.Zero }) {
@@ -53,8 +80,10 @@ fun TopologyScreen(viewModel: NetworkViewModel, onNode: (String) -> Unit) {
 
         Surface(
             modifier = Modifier.fillMaxWidth().weight(1f),
-            color = SecureMeshColors.Surface,
-            shape = MaterialTheme.shapes.large,
+            color = SecureMeshColors.Surface.copy(alpha = .94f),
+            shape = MaterialTheme.shapes.extraLarge,
+            border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .14f)),
+            shadowElevation = 8.dp,
         ) {
             if (state.topology.nodes.isEmpty()) {
                 EmptyState("Сеть пока пуста", "Нет доступных узлов и направленных связей.")
@@ -90,19 +119,62 @@ fun TopologyScreen(viewModel: NetworkViewModel, onNode: (String) -> Unit) {
                             }
                         },
                 ) {
-                    state.topology.links.forEach { link ->
-                        val a = positions[link.fromNode] ?: return@forEach
-                        val b = positions[link.toNode] ?: return@forEach
+                    // Ambient rings are intentionally cheap: translucent primitives only, no blur layer.
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    drawCircle(SecureMeshColors.Cyan.copy(alpha = .018f), min(size.width, size.height) * .48f, center)
+                    drawCircle(SecureMeshColors.Violet.copy(alpha = .014f), min(size.width, size.height) * .34f, center)
+
+                    state.topology.links.forEachIndexed { index, link ->
+                        val a = positions[link.fromNode] ?: return@forEachIndexed
+                        val b = positions[link.toNode] ?: return@forEachIndexed
                         val color = linkQualityColor(link.quality())
-                        drawLine(color.copy(alpha = .85f), a, b, strokeWidth = 4f * zoom)
+                        val connectedToSelection = selectedNode == null || link.fromNode == selectedNode || link.toNode == selectedNode
+                        val isSelectedLink = selectedLink == link
+                        val alpha = when {
+                            isSelectedLink -> 1f
+                            connectedToSelection -> .82f
+                            else -> .16f
+                        }
+                        val width = if (isSelectedLink) 5.2f * zoom else 3.1f * zoom
+
+                        drawLine(color.copy(alpha = alpha * .12f), a, b, strokeWidth = width * 3f, cap = StrokeCap.Round)
+                        drawLine(color.copy(alpha = alpha), a, b, strokeWidth = width, cap = StrokeCap.Round)
+
+                        if (connectedToSelection) {
+                            val t = (travel.value + index * .173f) % 1f
+                            val pulse = Offset(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+                            drawCircle(color.copy(alpha = .10f * alpha), 14f * zoom, pulse)
+                            drawCircle(color.copy(alpha = .32f * alpha), 7f * zoom, pulse)
+                            drawCircle(SecureMeshColors.Text.copy(alpha = .92f * alpha), 2.3f * zoom, pulse)
+                        }
                     }
+
                     positions.forEach { (id, point) ->
                         val node = state.nodes.firstOrNull { it.id == id }
-                        val color = if (node?.online == true) SecureMeshColors.Healthy else SecureMeshColors.Muted
-                        drawCircle(color.copy(alpha = .14f), 36f * zoom, point)
-                        drawCircle(color, 21f * zoom, point)
-                        if (id == state.localNodeId) drawCircle(SecureMeshColors.Cyan, 31f * zoom, point, style = Stroke(3f * zoom))
-                        if (id == selectedNode) drawCircle(SecureMeshColors.Warning, 40f * zoom, point, style = Stroke(3f * zoom))
+                        val online = node?.online == true
+                        val accent = when {
+                            id == state.localNodeId -> SecureMeshColors.Cyan
+                            online -> SecureMeshColors.Healthy
+                            else -> SecureMeshColors.Muted
+                        }
+                        val selected = id == selectedNode
+                        val dimmed = selectedNode != null && !selected
+                        val alpha = if (dimmed) .28f else 1f
+                        val pulseScale = if (online || id == state.localNodeId) breathe.value else .92f
+
+                        drawCircle(accent.copy(alpha = .05f * alpha), 46f * zoom * pulseScale, point)
+                        drawCircle(accent.copy(alpha = .13f * alpha), 31f * zoom, point)
+                        drawCircle(SecureMeshColors.GraphiteSoft.copy(alpha = alpha), 22f * zoom, point)
+                        drawCircle(accent.copy(alpha = alpha), 15f * zoom, point)
+                        drawCircle(SecureMeshColors.Text.copy(alpha = .82f * alpha), 4f * zoom, point)
+
+                        if (id == state.localNodeId) {
+                            drawCircle(SecureMeshColors.CyanHot.copy(alpha = .86f * alpha), 29f * zoom, point, style = Stroke(2.8f * zoom))
+                        }
+                        if (selected) {
+                            drawCircle(SecureMeshColors.Warning, 40f * zoom, point, style = Stroke(3f * zoom))
+                            drawCircle(SecureMeshColors.Warning.copy(alpha = .10f), 54f * zoom * breathe.value, point)
+                        }
                     }
                 }
             }
