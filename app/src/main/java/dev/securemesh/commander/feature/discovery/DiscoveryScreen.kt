@@ -247,12 +247,12 @@ private fun ConnectionJourney(connection: MeshConnectionState) {
 private fun SystemPairingHint(state: MeshConnectionState.PairingRequired) {
     TechnicalCard("Подтверди устройство") {
         Text(
-            "Сверь 6-значный код на OLED узла с системным окном Android и подтверди сопряжение.",
+            "На OLED узла появится случайный 6-значный CODE. Android откроет системное окно ввода PIN/passkey — введи туда код с OLED.",
             color = SecureMeshColors.TextSecondary,
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Rounded.Lock, contentDescription = null, tint = SecureMeshColors.CyanHot)
-            Text("Код обрабатывает Android — приложение его не хранит и не отправляет через COMMAND.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+            Text("Ввод выполняет системный Bluetooth Android. SecureMesh не хранит passkey и не отправляет его через COMMAND.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
         }
         Metric("Устройство", deviceDisplayName(state.device.advertisedName ?: state.device.address))
         Metric("Окно подтверждения", "до ${clockLabel(state.expiresAtEpochMs)}")
