@@ -37,7 +37,6 @@ fun DashboardScreen(
     val gpsFixes = state.nodes.count { it.position?.status(System.currentTimeMillis()) == GpsStatus.FIX }
     val minimumBattery = state.nodes.mapNotNull { it.batteryPercent }.minOrNull()
     val recentMessages = state.messages.sortedByDescending { it.createdAtEpochMs }.take(4)
-    val demoProfile = state.demoProfile
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
 
@@ -82,17 +81,6 @@ fun DashboardScreen(
 
         item {
             StaggeredReveal(entered, 45) { ConnectionBanner(state.connection) }
-        }
-
-        if (demoProfile != null) {
-            item {
-                StaggeredReveal(entered, 80) {
-                    StatusChip(
-                        demoProfile.ruLabel(),
-                        if (demoProfile == DemoProfile.CURRENT_FIRMWARE_V05) SecureMeshColors.Warning else SecureMeshColors.Violet,
-                    )
-                }
-            }
         }
 
         item {

@@ -987,12 +987,32 @@ class BleTransport(
     }
 
     private fun environmentState(): MeshConnectionState {
-        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) return MeshConnectionState.BluetoothUnavailable
-        val a = adapter ?: return MeshConnectionState.BluetoothUnavailable
-        if (!a.isEnabled) return MeshConnectionState.BluetoothDisabled
-        val missing = requiredPermissions().filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            return MeshConnectionState.BluetoothUnavailable
+        }
+
+        // Android 12+ protects several adapter operations with BLUETOOTH_CONNECT.
+        // Check runtime permissions *before* touching adapter state. Some OEM stacks
+        // (notably MIUI/HyperOS builds) enforce this more aggressively than others.
+        val missing = requiredPermissions().filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
         if (missing.isNotEmpty()) return MeshConnectionState.PermissionRequired(missing)
-        return MeshConnectionState.Idle
+
+        val a = adapter ?: return MeshConnectionState.BluetoothUnavailable
+        return try {
+            if (a.isEnabled) MeshConnectionState.Idle else MeshConnectionState.BluetoothDisabled
+        } catch (_: SecurityException) {
+            MeshConnectionState.PermissionRequired(requiredPermissions())
+        } catch (t: Throwable) {
+            MeshConnectionState.Error(
+                MeshError(
+                    MeshErrorCode.BLUETOOTH_UNAVAILABLE,
+                    "Bluetooth adapter state failed: ${t.message ?: t::class.java.simpleName}",
+                    "Не удалось проверить состояние Bluetooth",
+                )
+            )
+        }
     }
 
     private fun requiredPermissions(): List<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

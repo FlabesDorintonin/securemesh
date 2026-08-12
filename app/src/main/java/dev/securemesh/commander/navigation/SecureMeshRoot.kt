@@ -82,7 +82,6 @@ fun SecureMeshRoot(repository: SecureMeshRepository) {
             WelcomeScreen(
                 vm,
                 onConnect = { nav.navigate(RootRoute.DISCOVERY) },
-                onDemo = { nav.navigate(RootRoute.MAIN) { popUpTo(RootRoute.WELCOME) { inclusive = true } } },
                 onAutoConnected = { secure -> nav.navigate(if (secure) RootRoute.MAIN else RootRoute.PROTOCOL) },
             )
         }

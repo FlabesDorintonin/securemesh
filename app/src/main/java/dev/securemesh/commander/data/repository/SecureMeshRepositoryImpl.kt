@@ -163,6 +163,20 @@ class SecureMeshRepositoryImpl(
                 delay(backoff)
                 reconnectOverride.value = MeshConnectionState.Reconnecting(trusted.nodeId, index + 1, backoff)
                 router.ble.startScan(5_000)
+
+                // Do not keep retrying while Android is waiting for permission/Bluetooth state.
+                // This is especially important on OEM firmware that aggressively pauses/recreates
+                // the activity around the Nearby devices permission dialog.
+                when (router.ble.connectionState.value) {
+                    is MeshConnectionState.PermissionRequired,
+                    MeshConnectionState.BluetoothDisabled,
+                    MeshConnectionState.BluetoothUnavailable -> {
+                        reconnectOverride.value = null
+                        return@launch
+                    }
+                    else -> Unit
+                }
+
                 val found = withTimeoutOrNull(5_500L) {
                     router.ble.discoveredDevices
                         .map { devices -> devices.firstOrNull { it.address.equals(addressHint, ignoreCase = true) && it.classification != DeviceClassification.UNKNOWN_BLE } }

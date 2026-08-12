@@ -27,6 +27,7 @@ class SettingsStore(private val context: Context) : SettingsDataSource {
         val scanDuration = intPreferencesKey("scan_duration")
         val showUnknown = booleanPreferencesKey("show_unknown_ble")
         val rememberTrustedNode = booleanPreferencesKey("remember_commander") // keep storage key for migration compatibility
+        val secureScreen = booleanPreferencesKey("secure_screen")
         val positionHistory = booleanPreferencesKey("position_history")
         val storeEvents = booleanPreferencesKey("store_events")
         val retentionDays = intPreferencesKey("retention_days")
@@ -49,6 +50,7 @@ class SettingsStore(private val context: Context) : SettingsDataSource {
             scanDurationSec = (p[Keys.scanDuration] ?: 12).coerceIn(5, 30),
             showUnknownBle = p[Keys.showUnknown] ?: true,
             rememberTrustedNode = p[Keys.rememberTrustedNode] ?: true,
+            secureScreen = p[Keys.secureScreen] ?: true,
             positionHistory = p[Keys.positionHistory] ?: true,
             storeEvents = p[Keys.storeEvents] ?: true,
             retentionDays = (p[Keys.retentionDays] ?: 30).coerceIn(1, 365),
@@ -75,6 +77,7 @@ class SettingsStore(private val context: Context) : SettingsDataSource {
             p[Keys.scanDuration] = settings.scanDurationSec
             p[Keys.showUnknown] = settings.showUnknownBle
             p[Keys.rememberTrustedNode] = settings.rememberTrustedNode
+            p[Keys.secureScreen] = settings.secureScreen
             p[Keys.positionHistory] = settings.positionHistory
             p[Keys.storeEvents] = settings.storeEvents
             p[Keys.retentionDays] = settings.retentionDays
