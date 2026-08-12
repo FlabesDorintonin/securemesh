@@ -16,6 +16,7 @@ interface MeshTransport {
     val events: StateFlow<List<MeshEvent>>
     val activeFieldTest: StateFlow<FieldTestSession?>
     val activeSos: StateFlow<SosAlert?>
+    val bleDiagnostics: StateFlow<BleDiagnostics?>
 
     suspend fun start()
     suspend fun stop()
