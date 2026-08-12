@@ -14,8 +14,8 @@ android {
         applicationId = "dev.securemesh.commander"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.7.1-discovery-fix"
+        versionCode = 9
+        versionName = "0.7.2-discovery-parity"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
