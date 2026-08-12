@@ -12,17 +12,32 @@ data class DiscoveryUiState(
     val connection: MeshConnectionState = MeshConnectionState.Idle,
     val session: SecureMeshSession? = null,
     val filter: DiscoveryFilter = DiscoveryFilter(),
-    val showUnknown: Boolean = false,
+    /** Discovery intentionally exposes every ScanResult. Identity is verified only after GATT/INFO. */
+    val showUnknown: Boolean = true,
 )
 
 class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewModel() {
     private val filter = MutableStateFlow(DiscoveryFilter())
-    val uiState = combine(repository.discoveredDevices, repository.connectionState, repository.session, filter, repository.settings) { devices, connection, session, f, settings ->
-        val canShowUnknown = settings.developerMode && settings.showUnknownBle
-        // A SecureMesh-looking name is display-only discovery evidence, never identity/trust.
-        // Exact SecureMesh service + authenticated INFO/nodeId are still mandatory after connect.
-        val allowed = devices.filter { isVisibleDuringDiscovery(it, canShowUnknown) }
-        DiscoveryUiState(filterDevices(allowed, f), connection, session, f, canShowUnknown)
+
+    val uiState = combine(
+        repository.discoveredDevices,
+        repository.connectionState,
+        repository.session,
+        filter,
+        repository.settings,
+    ) { devices, connection, session, f, _ ->
+        // Match the proven debug-scanner behavior: discovery is observability, not authentication.
+        // Never hide a real Android ScanResult merely because the current advertisement callback
+        // did not contain the SecureMesh Service UUID/name. The optional "Только SecureMesh"
+        // filter is applied explicitly by filterDevices(). Exact service/characteristics plus
+        // authenticated INFO/nodeId remain mandatory before a SecureMesh session is established.
+        DiscoveryUiState(
+            devices = filterDevices(devices, f),
+            connection = connection,
+            session = session,
+            filter = f,
+            showUnknown = true,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoveryUiState())
 
     fun setQuery(value: String) { filter.value = filter.value.copy(query = value) }
