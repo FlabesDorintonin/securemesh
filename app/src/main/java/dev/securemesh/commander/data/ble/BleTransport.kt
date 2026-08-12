@@ -89,6 +89,8 @@ class BleTransport(
     override val activeSos = _activeSos.asStateFlow()
     private val _bleDiagnostics = MutableStateFlow<BleDiagnostics?>(BleDiagnostics())
     override val bleDiagnostics = _bleDiagnostics.asStateFlow()
+    private val _deviceUiState = MutableStateFlow<DeviceUiState?>(null)
+    override val deviceUiState = _deviceUiState.asStateFlow()
 
     override suspend fun start() {
         _connectionState.value = environmentState()
@@ -102,6 +104,7 @@ class BleTransport(
         closeGatt()
         connectingDevice = null
         _session.value = null
+        _deviceUiState.value = null
         _demoProfile.value = null
         _connectionState.value = environmentState()
     }
@@ -154,6 +157,7 @@ class BleTransport(
         closeGatt()
         connectingDevice = device
         _session.value = null
+        _deviceUiState.value = null
         _connectionState.value = MeshConnectionState.Connecting(device)
         updateDiagnostics {
             BleDiagnostics(
@@ -300,6 +304,24 @@ class BleTransport(
 
     override suspend fun acknowledgeSos(id: String) {
         // Protocol v0.1 has no SOS command/capability.
+    }
+
+    override suspend fun refreshDeviceUiState(): Result<DeviceUiState> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.UI_OS)) { "Firmware does not advertise UI_OS capability" }
+        val response = command(SecureMeshBleCommand.GetUiState).getOrThrow()
+        val payload = codec.parseUiState(response).getOrThrow()
+        require(payload.localNodeId == session.localNodeIdentity.nodeId) { "GET_UI_STATE local node mismatch" }
+        SecureMeshBleV01DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
+    }
+
+    override suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.UI_OS)) { "Firmware does not advertise UI_OS capability" }
+        val response = command(SecureMeshBleCommand.UiAction(action.wire)).getOrThrow()
+        val payload = codec.parseUiState(response, BleOpcode.UI_ACTION).getOrThrow()
+        require(payload.localNodeId == session.localNodeIdentity.nodeId) { "UI_ACTION local node mismatch" }
+        SecureMeshBleV01DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
     }
 
     private suspend fun command(command: SecureMeshBleCommand): Result<SecureMeshBleFrame.Response> {
@@ -763,12 +785,14 @@ class BleTransport(
         syncNeighborsUnlocked()
         syncRoutesUnlocked()
         syncFieldTestStatusUnlocked()
+        if (_session.value?.supports(DeviceCapability.UI_OS) == true) syncDeviceUiStateUnlocked()
     }
 
     private suspend fun syncStatus() = syncMutex.withLock { syncStatusUnlocked() }
     private suspend fun syncNeighbors() = syncMutex.withLock { syncNeighborsUnlocked() }
     private suspend fun syncRoutes() = syncMutex.withLock { syncRoutesUnlocked() }
     private suspend fun syncFieldTestStatus() = syncMutex.withLock { syncFieldTestStatusUnlocked() }
+    private suspend fun syncDeviceUiState() = syncMutex.withLock { syncDeviceUiStateUnlocked() }
 
     private suspend fun syncStatusUnlocked() {
         val response = command(SecureMeshBleCommand.GetStatus).getOrNull() ?: return
@@ -808,6 +832,21 @@ class BleTransport(
         val status = codec.parseFieldTestStatus(response).getOrNull() ?: return
         val localId = _session.value?.localNodeIdentity?.nodeId ?: return
         _activeFieldTest.value = SecureMeshBleV01DomainMapping.fieldTest(status, localId, _activeFieldTest.value, now())
+    }
+
+    private suspend fun syncDeviceUiStateUnlocked() {
+        val session = _session.value ?: return
+        if (!session.supports(DeviceCapability.UI_OS)) {
+            _deviceUiState.value = null
+            return
+        }
+        val response = command(SecureMeshBleCommand.GetUiState).getOrNull() ?: return
+        val payload = codec.parseUiState(response).getOrNull() ?: return
+        if (payload.localNodeId != session.localNodeIdentity.nodeId) {
+            incrementMalformed("GET_UI_STATE local node mismatch")
+            return
+        }
+        _deviceUiState.value = SecureMeshBleV01DomainMapping.deviceUiState(payload, now())
     }
 
     private fun handleNotification(uuid: UUID, fragment: ByteArray) {
@@ -946,6 +985,14 @@ class BleTransport(
             }
             is BleDecodedEvent.Error -> addEvent(EventCategory.SYSTEM, "ERROR", "context=${event.context} status=${event.status ?: event.rawStatus} related=${event.relatedId}")
             is BleDecodedEvent.NoReturnRoute -> addEvent(EventCategory.ROUTING, "NO_RETURN_ROUTE", "origin=${event.origin} test=${event.testId} seq=${event.sequence}", event.origin)
+            is BleDecodedEvent.UiChanged -> {
+                val session = _session.value
+                if (session == null || event.state.localNodeId != session.localNodeIdentity.nodeId) {
+                    incrementMalformed("UI_CHANGED local node mismatch")
+                } else {
+                    _deviceUiState.value = SecureMeshBleV01DomainMapping.deviceUiState(event.state, now())
+                }
+            }
         }
     }
 
@@ -1053,6 +1100,7 @@ class BleTransport(
     }
 
     private fun resetProtocolState() {
+        _deviceUiState.value = null
         handshakePhase = HandshakePhase.IDLE
         secureService = null
         infoCharacteristic = null

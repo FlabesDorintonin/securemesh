@@ -46,6 +46,9 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
         }
     }
     val toolItems = buildList {
+        if (UiAccessPolicy.canControlDeviceUi(session)) {
+            add(MoreDestination("Устройство", "Живое состояние OLED и пульт меню узла", "device-ui", Icons.Rounded.Settings, SecureMeshColors.CyanHot))
+        }
         if (UiAccessPolicy.canRunFieldTest(session)) {
             add(MoreDestination("Полевой тест", "Проверка реальной связи, RSSI, SNR, PDR и повторов", "fieldtest", Icons.Rounded.Science, SecureMeshColors.Violet))
         }

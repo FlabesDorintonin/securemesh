@@ -34,6 +34,7 @@ import dev.securemesh.commander.domain.repository.SecureMeshRepository
 import dev.securemesh.commander.domain.service.UiAccessPolicy
 import dev.securemesh.commander.feature.dashboard.*
 import dev.securemesh.commander.feature.diagnostics.*
+import dev.securemesh.commander.feature.deviceui.*
 import dev.securemesh.commander.feature.discovery.*
 import dev.securemesh.commander.feature.events.*
 import dev.securemesh.commander.feature.fieldtest.*
@@ -183,12 +184,13 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
         composable("fieldtest") { FieldTestScreen(viewModel(factory = viewModelFactory { FieldTestViewModel(repository) })) }
         composable("events") { EventsScreen(viewModel(factory = viewModelFactory { EventsViewModel(repository) })) }
         composable("diagnostics") { DiagnosticsScreen(viewModel(factory = viewModelFactory { DiagnosticsViewModel(repository) })) }
+        composable("device-ui") { DeviceControlScreen(viewModel(factory = viewModelFactory { DeviceControlViewModel(repository) })) }
         composable("settings") { SettingsScreen(viewModel(factory = viewModelFactory { SettingsViewModel(repository) })) }
         composable("search") { SearchScreen(viewModel(factory = viewModelFactory { SearchViewModel(repository) })) { nav.navigate("node/$it") } }
     }
 }
 
-private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search")
+private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "device-ui", "settings", "search")
 
 private fun isSelected(current: String?, item: NavItem): Boolean = when {
     item.route == "more" -> isMoreRoute(current)

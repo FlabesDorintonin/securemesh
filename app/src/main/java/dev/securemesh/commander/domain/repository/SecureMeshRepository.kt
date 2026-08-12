@@ -17,6 +17,7 @@ interface SecureMeshRepository {
     val activeFieldTest: StateFlow<FieldTestSession?>
     val activeSos: StateFlow<SosAlert?>
     val bleDiagnostics: StateFlow<BleDiagnostics?>
+    val deviceUiState: StateFlow<DeviceUiState?>
     val settings: StateFlow<AppSettings>
 
     fun observeEvents(): Flow<List<MeshEvent>>
@@ -38,6 +39,8 @@ interface SecureMeshRepository {
     suspend fun startFieldTest(config: FieldTestConfig): Result<String>
     suspend fun stopFieldTest()
     suspend fun acknowledgeSos(id: String)
+    suspend fun refreshDeviceUiState(): Result<DeviceUiState>
+    suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState>
     suspend fun updateSettings(transform: (AppSettings) -> AppSettings)
     suspend fun clearLocalHistory()
     suspend fun exportEventsCsv(): String

@@ -15,6 +15,7 @@ object SecureMeshBleV01DomainMapping {
         if (mask and (1L shl 2) != 0L) add(DeviceCapability.RELAY)
         if (mask and (1L shl 3) != 0L) add(DeviceCapability.FIELD_TEST)
         if (mask and (1L shl 4) != 0L) add(DeviceCapability.BLE_CONTROL)
+        if (mask and (1L shl 5) != 0L) add(DeviceCapability.UI_OS)
     }
 
     /**
@@ -75,6 +76,38 @@ object SecureMeshBleV01DomainMapping {
         2 -> MeshRoute(route.destination, route.nextHop, RouteType.STATIC, updatedAtEpochMs = nowMs)
         else -> null
     }
+
+    fun deviceUiState(payload: BleUiStatePayload, nowMs: Long): DeviceUiState = DeviceUiState(
+        modelVersion = payload.modelVersion,
+        scene = DeviceUiScene.fromWire(payload.scene),
+        menu = DeviceUiMenu.fromWire(payload.menu),
+        menuIndex = payload.menuIndex,
+        menuScroll = payload.menuScroll,
+        navigationDepth = payload.navigationDepth,
+        feature = DeviceUiFeature.fromWire(payload.feature),
+        oledReady = payload.flags and (1 shl 0) != 0,
+        bleProtocolReady = payload.flags and (1 shl 1) != 0,
+        fieldTestRunning = payload.flags and (1 shl 2) != 0,
+        toastVisible = payload.flags and (1 shl 3) != 0,
+        plannedFeature = payload.flags and (1 shl 4) != 0,
+        hasUnread = payload.flags and (1 shl 5) != 0,
+        inboxCount = payload.inboxCount,
+        unreadCount = payload.unreadCount,
+        neighborCount = payload.neighborCount,
+        routeCount = payload.routeCount,
+        fieldTestState = payload.fieldTestState,
+        bleState = payload.bleState,
+        messageIndex = payload.messageIndex,
+        neighborIndex = payload.neighborIndex,
+        routeIndex = payload.routeIndex,
+        localNodeId = payload.localNodeId,
+        fieldTestId = payload.fieldTestId,
+        fieldTestTarget = payload.fieldTestTarget.takeUnless { it == "00000000" },
+        rawScene = payload.scene,
+        rawMenu = payload.menu,
+        rawFeature = payload.feature,
+        updatedAtEpochMs = nowMs,
+    )
 
     fun fieldTest(
         status: BleFieldTestStatusPayload,
