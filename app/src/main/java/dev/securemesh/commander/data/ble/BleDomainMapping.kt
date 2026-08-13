@@ -15,6 +15,14 @@ object SecureMeshBleV01DomainMapping {
         if (mask and (1L shl 2) != 0L) add(DeviceCapability.RELAY)
         if (mask and (1L shl 3) != 0L) add(DeviceCapability.FIELD_TEST)
         if (mask and (1L shl 4) != 0L) add(DeviceCapability.BLE_CONTROL)
+        if (mask and (1L shl 5) != 0L) add(DeviceCapability.UI_OS)
+        if (mask and (1L shl 6) != 0L) {
+            add(DeviceCapability.VANGUARD)
+            add(DeviceCapability.ROUTING)
+            add(DeviceCapability.NETWORK_DIAGNOSTICS)
+        }
+        if (mask and (1L shl 7) != 0L) add(DeviceCapability.MANIFEST)
+        if (mask and (1L shl 8) != 0L) add(DeviceCapability.FAULT_LAB)
     }
 
     /**
@@ -38,7 +46,6 @@ object SecureMeshBleV01DomainMapping {
 
     fun identity(info: BleInfoPayload): NodeIdentity = NodeIdentity(
         nodeId = info.localNodeId,
-        // v0.1 INFO intentionally does not expose a user-assigned display name.
         displayName = "Узел ${info.localNodeId}",
         role = role(info.deviceRole),
         firmwareVersion = info.firmwareVersion,
@@ -64,7 +71,6 @@ object SecureMeshBleV01DomainMapping {
         toNode = neighbor.nodeId,
         rssi = neighbor.rssiDbm.roundToInt(),
         snr = neighbor.snrDb,
-        // HELLO receive PDR is the only general neighbor receive-PDR metric in this payload.
         pdr = neighbor.helloPdr,
         retries = null,
         lastSeenEpochMs = (nowMs - neighbor.lastSeenAgeMs).coerceAtLeast(0L),
@@ -72,9 +78,113 @@ object SecureMeshBleV01DomainMapping {
 
     fun route(route: BleRoutePayload, nowMs: Long): MeshRoute? = when (route.source) {
         1 -> MeshRoute(route.destination, route.nextHop, RouteType.DIRECT, updatedAtEpochMs = nowMs)
-        2 -> MeshRoute(route.destination, route.nextHop, RouteType.STATIC, updatedAtEpochMs = nowMs)
+        2, 3 -> MeshRoute(route.destination, route.nextHop, RouteType.DYNAMIC, updatedAtEpochMs = nowMs)
+        4 -> MeshRoute(route.destination, route.nextHop, RouteType.STATIC, updatedAtEpochMs = nowMs)
         else -> null
     }
+
+    fun manifest(payload: BleManifestPayload): VanguardManifest = VanguardManifest(
+        valid = payload.valid,
+        networkEpoch = payload.networkEpoch,
+        digest = payload.digest,
+        entries = payload.entries.map { VanguardManifestEntry(it.slot, it.nodeId) },
+    )
+
+    fun diagnostics(payload: BleRoutingDiagnosticsPayload, nowMs: Long): VanguardDiagnostics = VanguardDiagnostics(
+        version = payload.version,
+        manifestValid = payload.manifestValid,
+        networkEpoch = payload.networkEpoch,
+        manifestDigest = payload.manifestDigest,
+        localRouteSeq = payload.localRouteSeq,
+        acceptedPrimary = payload.acceptedPrimary,
+        acceptedBackup = payload.acceptedBackup,
+        acceptedAlternate = payload.acceptedAlternate,
+        rejectedOldGeneration = payload.rejectedOldGeneration,
+        rejectedLoop = payload.rejectedLoop,
+        rejectedInfeasible = payload.rejectedInfeasible,
+        rejectedWorse = payload.rejectedWorse,
+        rejectedSamePath = payload.rejectedSamePath,
+        promotionsG2 = payload.promotionsG2,
+        promotionsAlternate = payload.promotionsAlternate,
+        expirations = payload.expirations,
+        routeErrors = payload.routeErrors,
+        controlBudgetDrops = payload.controlBudgetDrops,
+        controlBudgetTokensUs = payload.controlBudgetTokensUs,
+        deferredQueued = payload.deferredQueued,
+        deferredDrops = payload.deferredDrops,
+        activeDeferred = payload.activeDeferred,
+        labFaultRxDrops = payload.labFaultRxDrops,
+        labFaultTxDrops = payload.labFaultTxDrops,
+        activeLabFaults = payload.activeLabFaults,
+        routes = payload.routes.map { route ->
+            VanguardRouteDetail(
+                destination = route.destination,
+                primaryNextHop = route.primaryNextHop.takeUnless { it == "00000000" },
+                backupNextHop = route.backupNextHop.takeUnless { it == "00000000" },
+                alternateNextHop = route.alternateNextHop.takeUnless { it == "00000000" },
+                generationBootEpoch = route.generationBootEpoch,
+                generationRouteSeq = route.generationRouteSeq,
+                guardRank = route.guardRank,
+                feasibleDistance = route.feasibleDistance,
+                primaryInternalMask = route.primaryInternalMask,
+                backupInternalMask = route.backupInternalMask,
+                primaryPathTag = route.primaryPathTag,
+                backupPathTag = route.backupPathTag,
+                primaryEca = route.primaryEcaQ16 / 65536.0,
+                primaryReliability = route.primaryReliabilityQ15 / 32767.0,
+                primaryExact = route.flags and 0x01 != 0,
+                exactG2Available = route.flags and 0x02 != 0,
+                primaryPromotedFromBackup = route.flags and 0x04 != 0,
+                primaryPathTagged = route.flags and 0x08 != 0,
+                backupPathTagged = route.flags and 0x10 != 0,
+                backupLease = route.backupLease,
+            )
+        },
+        updatedAtEpochMs = nowMs,
+    )
+
+    fun labPolicies(payloads: List<BleLabLinkPolicyPayload>): List<LabLinkPolicy> = payloads.map { payload ->
+        LabLinkPolicy(
+            peerNodeId = payload.peer,
+            block = payload.flags and 0x01 != 0,
+            metricOverride = payload.flags and 0x02 != 0,
+            remainingMs = payload.remainingMs,
+            reliability = payload.reliabilityQ15 / 32767.0,
+            eca = payload.ecaQ16 / 65536.0,
+        )
+    }
+
+    fun deviceUiState(payload: BleUiStatePayload, nowMs: Long): DeviceUiState = DeviceUiState(
+        modelVersion = payload.modelVersion,
+        scene = DeviceUiScene.fromWire(payload.scene),
+        menu = DeviceUiMenu.fromWire(payload.menu),
+        menuIndex = payload.menuIndex,
+        menuScroll = payload.menuScroll,
+        navigationDepth = payload.navigationDepth,
+        feature = DeviceUiFeature.fromWire(payload.feature),
+        oledReady = payload.flags and (1 shl 0) != 0,
+        bleProtocolReady = payload.flags and (1 shl 1) != 0,
+        fieldTestRunning = payload.flags and (1 shl 2) != 0,
+        toastVisible = payload.flags and (1 shl 3) != 0,
+        plannedFeature = payload.flags and (1 shl 4) != 0,
+        hasUnread = payload.flags and (1 shl 5) != 0,
+        inboxCount = payload.inboxCount,
+        unreadCount = payload.unreadCount,
+        neighborCount = payload.neighborCount,
+        routeCount = payload.routeCount,
+        fieldTestState = payload.fieldTestState,
+        bleState = payload.bleState,
+        messageIndex = payload.messageIndex,
+        neighborIndex = payload.neighborIndex,
+        routeIndex = payload.routeIndex,
+        localNodeId = payload.localNodeId,
+        fieldTestId = payload.fieldTestId,
+        fieldTestTarget = payload.fieldTestTarget.takeUnless { it == "00000000" },
+        rawScene = payload.scene,
+        rawMenu = payload.menu,
+        rawFeature = payload.feature,
+        updatedAtEpochMs = nowMs,
+    )
 
     fun fieldTest(
         status: BleFieldTestStatusPayload,
@@ -89,7 +199,6 @@ object SecureMeshBleV01DomainMapping {
             target = status.target,
             mode = if (status.mode == 1) FieldTestMode.DIRECT else FieldTestMode.ROUTED,
             packetCount = status.requestedPackets,
-            // GET_FIELD_TEST_STATUS does not carry these two original request fields.
             intervalMs = previousConfig?.intervalMs ?: 0L,
             payloadBytes = previousConfig?.payloadBytes ?: 0,
         )
