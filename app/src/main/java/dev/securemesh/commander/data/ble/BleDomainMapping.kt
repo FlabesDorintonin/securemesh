@@ -46,6 +46,7 @@ object SecureMeshBleV01DomainMapping {
 
     fun identity(info: BleInfoPayload): NodeIdentity = NodeIdentity(
         nodeId = info.localNodeId,
+        // v0.1 INFO intentionally does not expose a user-assigned display name.
         displayName = "Узел ${info.localNodeId}",
         role = role(info.deviceRole),
         firmwareVersion = info.firmwareVersion,
@@ -71,6 +72,7 @@ object SecureMeshBleV01DomainMapping {
         toNode = neighbor.nodeId,
         rssi = neighbor.rssiDbm.roundToInt(),
         snr = neighbor.snrDb,
+        // HELLO receive PDR is the only general neighbor receive-PDR metric in this payload.
         pdr = neighbor.helloPdr,
         retries = null,
         lastSeenEpochMs = (nowMs - neighbor.lastSeenAgeMs).coerceAtLeast(0L),
@@ -199,6 +201,7 @@ object SecureMeshBleV01DomainMapping {
             target = status.target,
             mode = if (status.mode == 1) FieldTestMode.DIRECT else FieldTestMode.ROUTED,
             packetCount = status.requestedPackets,
+            // GET_FIELD_TEST_STATUS does not carry these two original request fields.
             intervalMs = previousConfig?.intervalMs ?: 0L,
             payloadBytes = previousConfig?.payloadBytes ?: 0,
         )
