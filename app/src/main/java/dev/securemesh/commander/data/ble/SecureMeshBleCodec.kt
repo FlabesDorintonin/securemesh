@@ -18,7 +18,10 @@ enum class BlePacketType(val wire: Int) {
 enum class BleOpcode(val wire: Int) {
     GET_INFO(1), GET_STATUS(2), GET_NEIGHBORS(3), GET_ROUTES(4), SEND_MESSAGE(5),
     ADD_STATIC_ROUTE(6), REMOVE_STATIC_ROUTE(7), START_FIELD_TEST(8), STOP_FIELD_TEST(9),
-    GET_FIELD_TEST_STATUS(10), PING_LOCAL(11), CLEAR_STATS(12);
+    GET_FIELD_TEST_STATUS(10), PING_LOCAL(11), CLEAR_STATS(12), GET_UI_STATE(13), UI_ACTION(14),
+    GET_KNOWN_NODES(15), GET_MANIFEST(16), SET_MANIFEST(17), DISCOVER_ROUTE(18),
+    GET_ROUTING_DIAGNOSTICS(19), INJECT_LINK_FAILURE(20), CLEAR_DYNAMIC_ROUTES(21),
+    SET_LAB_LINK_POLICY(22), GET_LAB_LINK_POLICIES(23);
 
     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
 }
@@ -35,7 +38,9 @@ enum class BleEventType(val wire: Int) {
     NODE_DISCOVERED(1), NODE_STALE(2), MESSAGE_QUEUED(3), HOP_ACK(4), RETRY(5),
     MESSAGE_LOCAL_RECEIVED(6), ROUTE_CHANGED(7), TEST_STARTED(8), TEST_PACKET_SENT(9),
     TEST_PONG_RECEIVED(10), TEST_PACKET_TIMEOUT(11), TEST_PROGRESS(12), TEST_FINISHED(13),
-    RADIO_RECOVERY(14), BLE_STATE(15), ERROR(16), NO_RETURN_ROUTE(17);
+    RADIO_RECOVERY(14), BLE_STATE(15), ERROR(16), NO_RETURN_ROUTE(17), UI_CHANGED(18),
+    ROUTE_DISCOVERY_STARTED(19), ROUTE_DISCOVERY_RETRY(20), ROUTE_READY(21), G2_READY(22),
+    G2_UNAVAILABLE(23), ROUTE_PROMOTED(24), ROUTE_LOST(25), MANIFEST_CHANGED(26), KNOWN_NODE_ADDED(27);
 
     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
 }
@@ -82,6 +87,23 @@ sealed interface SecureMeshBleCommand {
     data object GetFieldTestStatus : SecureMeshBleCommand { override val opcode = BleOpcode.GET_FIELD_TEST_STATUS }
     data object PingLocal : SecureMeshBleCommand { override val opcode = BleOpcode.PING_LOCAL }
     data object ClearStats : SecureMeshBleCommand { override val opcode = BleOpcode.CLEAR_STATS }
+    data object GetUiState : SecureMeshBleCommand { override val opcode = BleOpcode.GET_UI_STATE }
+    data class UiAction(val action: Int) : SecureMeshBleCommand { override val opcode = BleOpcode.UI_ACTION }
+    data object GetKnownNodes : SecureMeshBleCommand { override val opcode = BleOpcode.GET_KNOWN_NODES }
+    data object GetManifest : SecureMeshBleCommand { override val opcode = BleOpcode.GET_MANIFEST }
+    data class SetManifest(val epoch: Long, val nodes: List<NodeId>) : SecureMeshBleCommand { override val opcode = BleOpcode.SET_MANIFEST }
+    data class DiscoverRoute(val destination: NodeId, val forceFresh: Boolean) : SecureMeshBleCommand { override val opcode = BleOpcode.DISCOVER_ROUTE }
+    data object GetRoutingDiagnostics : SecureMeshBleCommand { override val opcode = BleOpcode.GET_ROUTING_DIAGNOSTICS }
+    data class InjectLinkFailure(val peer: NodeId, val durationMs: Long) : SecureMeshBleCommand { override val opcode = BleOpcode.INJECT_LINK_FAILURE }
+    data object ClearDynamicRoutes : SecureMeshBleCommand { override val opcode = BleOpcode.CLEAR_DYNAMIC_ROUTES }
+    data class SetLabLinkPolicy(
+        val peer: NodeId,
+        val flags: Int,
+        val durationMs: Long,
+        val reliabilityQ15: Int = 24575,
+        val ecaQ16: Long = 65536,
+    ) : SecureMeshBleCommand { override val opcode = BleOpcode.SET_LAB_LINK_POLICY }
+    data object GetLabLinkPolicies : SecureMeshBleCommand { override val opcode = BleOpcode.GET_LAB_LINK_POLICIES }
 }
 
 data class BleInfoPayload(
@@ -163,6 +185,94 @@ data class BleFieldTestStatusPayload(
     val averageFirstHopSnrDb: Double,
 )
 
+data class BleUiStatePayload(
+    val modelVersion: Int,
+    val scene: Int,
+    val menu: Int,
+    val menuIndex: Int,
+    val menuScroll: Int,
+    val navigationDepth: Int,
+    val feature: Int,
+    val flags: Int,
+    val inboxCount: Int,
+    val unreadCount: Int,
+    val neighborCount: Int,
+    val routeCount: Int,
+    val fieldTestState: Int,
+    val bleState: Int,
+    val messageIndex: Int,
+    val neighborIndex: Int,
+    val routeIndex: Int,
+    val localNodeId: NodeId,
+    val fieldTestId: Long,
+    val fieldTestTarget: NodeId,
+)
+
+data class BleManifestEntryPayload(val slot: Int, val nodeId: NodeId)
+
+data class BleManifestPayload(
+    val valid: Boolean,
+    val networkEpoch: Long,
+    val digest: Long,
+    val entries: List<BleManifestEntryPayload>,
+)
+
+data class BleVanguardRoutePayload(
+    val destination: NodeId,
+    val primaryNextHop: NodeId,
+    val backupNextHop: NodeId,
+    val alternateNextHop: NodeId,
+    val generationBootEpoch: Long,
+    val generationRouteSeq: Long,
+    val guardRank: Long,
+    val feasibleDistance: Long,
+    val primaryInternalMask: Long,
+    val backupInternalMask: Long,
+    val primaryPathTag: Long,
+    val backupPathTag: Long,
+    val primaryEcaQ16: Long,
+    val primaryReliabilityQ15: Int,
+    val flags: Int,
+    val backupLease: Int,
+)
+
+data class BleRoutingDiagnosticsPayload(
+    val version: Int,
+    val manifestValid: Boolean,
+    val networkEpoch: Long,
+    val manifestDigest: Long,
+    val localRouteSeq: Long,
+    val acceptedPrimary: Long,
+    val acceptedBackup: Long,
+    val acceptedAlternate: Long,
+    val rejectedOldGeneration: Long,
+    val rejectedLoop: Long,
+    val rejectedInfeasible: Long,
+    val rejectedWorse: Long,
+    val rejectedSamePath: Long,
+    val promotionsG2: Long,
+    val promotionsAlternate: Long,
+    val expirations: Long,
+    val routeErrors: Long,
+    val controlBudgetDrops: Long,
+    val controlBudgetTokensUs: Long,
+    val deferredQueued: Long,
+    val deferredDrops: Long,
+    val activeDeferred: Int,
+    val labFaultRxDrops: Long,
+    val labFaultTxDrops: Long,
+    val activeLabFaults: Int,
+    val routes: List<BleVanguardRoutePayload>,
+)
+
+data class BleLabLinkPolicyPayload(
+    val peer: NodeId,
+    val flags: Int,
+    val remainingMs: Long,
+    val reliabilityQ15: Int,
+    val ecaQ16: Long,
+)
+
 sealed interface BleDecodedEvent {
     val type: BleEventType
     data class Node(override val type: BleEventType, val nodeId: NodeId) : BleDecodedEvent
@@ -181,6 +291,17 @@ sealed interface BleDecodedEvent {
     data class BleState(val state: Int) : BleDecodedEvent { override val type = BleEventType.BLE_STATE }
     data class Error(val context: Int, val status: BleCommandStatus?, val rawStatus: Int, val relatedId: Long) : BleDecodedEvent { override val type = BleEventType.ERROR }
     data class NoReturnRoute(val origin: NodeId, val testId: Long, val sequence: Long) : BleDecodedEvent { override val type = BleEventType.NO_RETURN_ROUTE }
+    data class UiChanged(val state: BleUiStatePayload) : BleDecodedEvent { override val type = BleEventType.UI_CHANGED }
+    data class VanguardRuntime(
+        override val type: BleEventType,
+        val runtimeType: Int,
+        val destination: NodeId,
+        val nextHop: NodeId,
+        val requestIdOrPathTag: Long,
+        val routeVersion: Long,
+    ) : BleDecodedEvent
+    data class ManifestChanged(val manifest: BleManifestPayload) : BleDecodedEvent { override val type = BleEventType.MANIFEST_CHANGED }
+    data class KnownNodeAdded(val nodeId: NodeId) : BleDecodedEvent { override val type = BleEventType.KNOWN_NODE_ADDED }
 }
 
 class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
@@ -298,6 +419,99 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             )
         }
 
+    fun parseUiState(
+        frame: SecureMeshBleFrame.Response,
+        expected: BleOpcode = BleOpcode.GET_UI_STATE,
+    ): Result<BleUiStatePayload> = parseOk(frame, expected) { bytes -> parseUiStatePayload(bytes) }
+
+    private fun parseUiStatePayload(bytes: ByteArray): BleUiStatePayload {
+        requireSize(bytes, 29)
+        val r = Reader(bytes)
+        return BleUiStatePayload(
+            modelVersion = r.u8(),
+            scene = r.u8(),
+            menu = r.u8(),
+            menuIndex = r.u8(),
+            menuScroll = r.u8(),
+            navigationDepth = r.u8(),
+            feature = r.u8(),
+            flags = r.u8(),
+            inboxCount = r.u8(),
+            unreadCount = r.u8(),
+            neighborCount = r.u8(),
+            routeCount = r.u8(),
+            fieldTestState = r.u8(),
+            bleState = r.u8(),
+            messageIndex = r.u8(),
+            neighborIndex = r.u8(),
+            routeIndex = r.u8(),
+            localNodeId = nodeId(r.u32()),
+            fieldTestId = r.u32(),
+            fieldTestTarget = nodeId(r.u32()),
+        ).also { require(r.remaining == 0) { "UI state trailing bytes" } }
+    }
+
+    fun parseKnownNodes(frame: SecureMeshBleFrame.Response): Result<List<NodeId>> = parseOk(frame, BleOpcode.GET_KNOWN_NODES) { bytes ->
+        val r = Reader(bytes)
+        val count = r.u8()
+        require(r.remaining == count * 4) { "GET_KNOWN_NODES length mismatch" }
+        buildList(count) { repeat(count) { add(nodeId(r.u32())) } }
+    }
+
+    fun parseManifest(frame: SecureMeshBleFrame.Response, expected: BleOpcode = BleOpcode.GET_MANIFEST): Result<BleManifestPayload> =
+        parseOk(frame, expected) { bytes -> parseManifestPayload(bytes) }
+
+    private fun parseManifestPayload(bytes: ByteArray): BleManifestPayload {
+        require(bytes.size >= 10) { "manifest payload too short" }
+        val r = Reader(bytes)
+        val valid = r.u8() != 0
+        val epoch = r.u32()
+        val digest = r.u32()
+        val count = r.u8()
+        require(r.remaining == count * 5) { "manifest entry length mismatch" }
+        val entries = buildList(count) { repeat(count) { add(BleManifestEntryPayload(r.u8(), nodeId(r.u32()))) } }
+        return BleManifestPayload(valid, epoch, digest, entries)
+    }
+
+    fun parseRoutingDiagnostics(
+        frame: SecureMeshBleFrame.Response,
+        expected: BleOpcode = BleOpcode.GET_ROUTING_DIAGNOSTICS,
+    ): Result<BleRoutingDiagnosticsPayload> = parseOk(frame, expected) { bytes ->
+        val r = Reader(bytes)
+        require(r.remaining >= 89) { "routing diagnostics v2 header truncated" }
+        val version = r.u8()
+        require(version == 2) { "unsupported routing diagnostics version $version" }
+        val manifestValid = r.u8() != 0
+        val epoch = r.u32(); val digest = r.u32(); val routeSeq = r.u32()
+        val acceptedPrimary = r.u32(); val acceptedBackup = r.u32(); val acceptedAlternate = r.u32()
+        val rejectedOld = r.u32(); val rejectedLoop = r.u32(); val rejectedInfeasible = r.u32(); val rejectedWorse = r.u32(); val rejectedSame = r.u32()
+        val promotionsG2 = r.u32(); val promotionsAlt = r.u32(); val expirations = r.u32(); val routeErrors = r.u32()
+        val budgetDrops = r.u32(); val budgetTokens = r.u32(); val deferredQueued = r.u32(); val deferredDrops = r.u32(); val activeDeferred = r.u8()
+        val faultRx = r.u32(); val faultTx = r.u32(); val activeFaults = r.u8(); val count = r.u8()
+        require(r.remaining == count * 56) { "routing diagnostics route records mismatch" }
+        val routes = buildList(count) {
+            repeat(count) {
+                add(BleVanguardRoutePayload(
+                    destination = nodeId(r.u32()), primaryNextHop = nodeId(r.u32()), backupNextHop = nodeId(r.u32()), alternateNextHop = nodeId(r.u32()),
+                    generationBootEpoch = r.u32(), generationRouteSeq = r.u32(), guardRank = r.u32(), feasibleDistance = r.u32(),
+                    primaryInternalMask = r.u32(), backupInternalMask = r.u32(), primaryPathTag = r.u32(), backupPathTag = r.u32(),
+                    primaryEcaQ16 = r.u32(), primaryReliabilityQ15 = r.u16(), flags = r.u8(), backupLease = r.u8(),
+                ))
+            }
+        }
+        BleRoutingDiagnosticsPayload(version, manifestValid, epoch, digest, routeSeq, acceptedPrimary, acceptedBackup, acceptedAlternate,
+            rejectedOld, rejectedLoop, rejectedInfeasible, rejectedWorse, rejectedSame, promotionsG2, promotionsAlt, expirations, routeErrors,
+            budgetDrops, budgetTokens, deferredQueued, deferredDrops, activeDeferred, faultRx, faultTx, activeFaults, routes)
+    }
+
+    fun parseLabLinkPolicies(frame: SecureMeshBleFrame.Response, expected: BleOpcode = BleOpcode.GET_LAB_LINK_POLICIES): Result<List<BleLabLinkPolicyPayload>> =
+        parseOk(frame, expected) { bytes ->
+            val r = Reader(bytes)
+            val count = r.u8()
+            require(r.remaining == count * 15) { "lab policy length mismatch" }
+            buildList(count) { repeat(count) { add(BleLabLinkPolicyPayload(nodeId(r.u32()), r.u8(), r.u32(), r.u16(), r.u32())) } }
+        }
+
     fun parseEvent(frame: SecureMeshBleFrame.Event): Result<BleDecodedEvent?> = runCatching {
         val type = frame.eventType ?: return@runCatching null
         val r = Reader(frame.payload)
@@ -324,6 +538,14 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             BleEventType.BLE_STATE -> { requireSize(frame.payload, 1); BleDecodedEvent.BleState(r.u8()) }
             BleEventType.ERROR -> { requireSize(frame.payload, 6); val context=r.u8(); val raw=r.u8(); BleDecodedEvent.Error(context, BleCommandStatus.fromWire(raw), raw, r.u32()) }
             BleEventType.NO_RETURN_ROUTE -> { requireSize(frame.payload, 12); BleDecodedEvent.NoReturnRoute(nodeId(r.u32()), r.u32(), r.u32()) }
+            BleEventType.UI_CHANGED -> BleDecodedEvent.UiChanged(parseUiStatePayload(r.bytes(r.remaining)))
+            BleEventType.ROUTE_DISCOVERY_STARTED, BleEventType.ROUTE_DISCOVERY_RETRY, BleEventType.ROUTE_READY,
+            BleEventType.G2_READY, BleEventType.G2_UNAVAILABLE, BleEventType.ROUTE_PROMOTED, BleEventType.ROUTE_LOST -> {
+                requireSize(frame.payload, 17)
+                BleDecodedEvent.VanguardRuntime(type, r.u8(), nodeId(r.u32()), nodeId(r.u32()), r.u32(), r.u32())
+            }
+            BleEventType.MANIFEST_CHANGED -> BleDecodedEvent.ManifestChanged(parseManifestPayload(r.bytes(r.remaining)))
+            BleEventType.KNOWN_NODE_ADDED -> { requireSize(frame.payload, 4); BleDecodedEvent.KnownNodeAdded(nodeId(r.u32())) }
         }
         require(r.remaining == 0) { "event trailing bytes" }
         decoded
@@ -332,7 +554,9 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
     private fun encodePayload(command: SecureMeshBleCommand): ByteArray = when (command) {
         SecureMeshBleCommand.GetInfo, SecureMeshBleCommand.GetStatus, SecureMeshBleCommand.GetNeighbors,
         SecureMeshBleCommand.GetRoutes, SecureMeshBleCommand.StopFieldTest, SecureMeshBleCommand.GetFieldTestStatus,
-        SecureMeshBleCommand.PingLocal, SecureMeshBleCommand.ClearStats -> byteArrayOf()
+        SecureMeshBleCommand.PingLocal, SecureMeshBleCommand.ClearStats, SecureMeshBleCommand.GetUiState,
+        SecureMeshBleCommand.GetKnownNodes, SecureMeshBleCommand.GetManifest, SecureMeshBleCommand.GetRoutingDiagnostics,
+        SecureMeshBleCommand.ClearDynamicRoutes, SecureMeshBleCommand.GetLabLinkPolicies -> byteArrayOf()
 
         is SecureMeshBleCommand.SendMessage -> {
             require(command.bytes.size in 1..70) { "SEND_MESSAGE length must be 1..70" }
@@ -346,6 +570,26 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             require(command.size in 16..70) { "field test size must be 16..70" }
             Writer(12).apply {
                 u32(nodeIdValue(command.target)); u16(command.count); u32(command.intervalMs); u8(command.size); u8(if (command.directOnly) 1 else 0)
+            }.toByteArray()
+        }
+        is SecureMeshBleCommand.UiAction -> {
+            require(command.action in 1..5) { "UI_ACTION must be one of 1..5" }
+            Writer(1).apply { u8(command.action) }.toByteArray()
+        }
+        is SecureMeshBleCommand.SetManifest -> {
+            require(command.nodes.size in 1..16) { "manifest must contain 1..16 nodes" }
+            require(command.nodes.distinct().size == command.nodes.size) { "manifest contains duplicate nodes" }
+            Writer(5 + command.nodes.size * 4).apply {
+                u32(command.epoch); u8(command.nodes.size); command.nodes.forEach { u32(nodeIdValue(it)) }
+            }.toByteArray()
+        }
+        is SecureMeshBleCommand.DiscoverRoute -> Writer(5).apply { u32(nodeIdValue(command.destination)); u8(if (command.forceFresh) 1 else 0) }.toByteArray()
+        is SecureMeshBleCommand.InjectLinkFailure -> Writer(8).apply { u32(nodeIdValue(command.peer)); u32(command.durationMs) }.toByteArray()
+        is SecureMeshBleCommand.SetLabLinkPolicy -> {
+            require(command.flags in 0..3) { "lab flags must only use bits 0..1" }
+            require(command.reliabilityQ15 in 0..0xFFFF) { "reliabilityQ15 out of range" }
+            Writer(15).apply {
+                u32(nodeIdValue(command.peer)); u8(command.flags); u32(command.durationMs); u16(command.reliabilityQ15); u32(command.ecaQ16)
             }.toByteArray()
         }
     }
