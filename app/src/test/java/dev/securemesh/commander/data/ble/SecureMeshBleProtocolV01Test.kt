@@ -4,6 +4,7 @@ import dev.securemesh.commander.domain.model.DeviceCapability
 import dev.securemesh.commander.domain.model.DeviceClassification
 import dev.securemesh.commander.domain.model.FieldTestConfig
 import dev.securemesh.commander.domain.model.FieldTestMode
+import dev.securemesh.commander.domain.model.DeviceUiAction
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
@@ -113,7 +114,6 @@ class SecureMeshBleProtocolV01Test {
     @Test fun `overlap or impossible fragment bounds are rejected`() {
         val packet = codec.encodeCommand(1, SecureMeshBleCommand.GetInfo).getOrThrow()
         val fragment = SecureMeshBleFragmentation.fragment(packet, 185, 2).getOrThrow().single().clone()
-        // offset = totalLength, while fragmentLength is still non-zero.
         fragment[9] = 10
         fragment[10] = 0
         val result = SecureMeshBleFragmentation.Reassembler().accept(fragment, 0)
@@ -164,6 +164,130 @@ class SecureMeshBleProtocolV01Test {
     @Test fun `START_FIELD_TEST validates documented bounds`() {
         assertTrue(codec.encodeCommand(1, SecureMeshBleCommand.StartFieldTest("AABBCCDD", 500, 60_000, 70, false)).isSuccess)
         assertTrue(codec.encodeCommand(1, SecureMeshBleCommand.StartFieldTest("AABBCCDD", 501, 1_000, 32, false)).isFailure)
+    }
+
+    @Test fun `firmware 0_8_2 capability mask exposes VANGUARD manifest fault lab and UI OS`() {
+        val mapped = SecureMeshBleV01DomainMapping.capabilities((1L shl 9) - 1L)
+        assertTrue(DeviceCapability.UI_OS in mapped)
+        assertTrue(DeviceCapability.VANGUARD in mapped)
+        assertTrue(DeviceCapability.MANIFEST in mapped)
+        assertTrue(DeviceCapability.FAULT_LAB in mapped)
+        assertTrue(DeviceCapability.ROUTING in mapped)
+        assertTrue(DeviceCapability.NETWORK_DIAGNOSTICS in mapped)
+        assertFalse(DeviceCapability.GPS in mapped)
+    }
+
+    @Test fun `UI OS v4 state is exactly 29 bytes and preserves node identity`() {
+        val payload = ByteArray(29)
+        payload[0] = 4
+        payload[1] = 2
+        payload[2] = 9
+        payload[3] = 2; payload[4] = 1; payload[5] = 3
+        payload[6] = 39
+        payload[7] = 0b0010_1111
+        payload[8] = 3; payload[9] = 2; payload[10] = 2; payload[11] = 4
+        payload[12] = 1; payload[13] = 5; payload[14] = 0; payload[15] = 1; payload[16] = 2
+        putU32(payload, 17, 0xA1B2C3D4L)
+        putU32(payload, 21, 0x01020304L)
+        putU32(payload, 25, 0x11223344L)
+        val frame = codec.decodeApplicationPacket(response(7, BleOpcode.GET_UI_STATE, payload)).getOrThrow() as SecureMeshBleFrame.Response
+        val ui = codec.parseUiState(frame).getOrThrow()
+        assertEquals(4, ui.modelVersion)
+        assertEquals("A1B2C3D4", ui.localNodeId)
+        assertEquals(9, ui.menu)
+        assertEquals(39, ui.feature)
+        assertEquals(0x01020304L, ui.fieldTestId)
+        assertEquals("11223344", ui.fieldTestTarget)
+        val mapped = SecureMeshBleV01DomainMapping.deviceUiState(ui, 1234)
+        assertEquals(dev.securemesh.commander.domain.model.DeviceUiMenu.QUICK, mapped.menu)
+        assertTrue(mapped.oledReady)
+        assertTrue(mapped.bleProtocolReady)
+    }
+
+    @Test fun `VANGUARD commands 15 through 23 encode exact opcode and payload shapes`() {
+        fun opcodeOf(command: SecureMeshBleCommand): Int = codec.encodeCommand(0x44, command).getOrThrow()[6].toInt() and 0xFF
+        assertEquals(15, opcodeOf(SecureMeshBleCommand.GetKnownNodes))
+        assertEquals(16, opcodeOf(SecureMeshBleCommand.GetManifest))
+        assertEquals(17, opcodeOf(SecureMeshBleCommand.SetManifest(7, listOf("00000001", "00000002", "00000003"))))
+        assertEquals(18, opcodeOf(SecureMeshBleCommand.DiscoverRoute("00000003", true)))
+        assertEquals(19, opcodeOf(SecureMeshBleCommand.GetRoutingDiagnostics))
+        assertEquals(20, opcodeOf(SecureMeshBleCommand.InjectLinkFailure("00000002", 5_000)))
+        assertEquals(21, opcodeOf(SecureMeshBleCommand.ClearDynamicRoutes))
+        assertEquals(22, opcodeOf(SecureMeshBleCommand.SetLabLinkPolicy("00000002", 0b10, 30_000, 23592, 183501)))
+        assertEquals(23, opcodeOf(SecureMeshBleCommand.GetLabLinkPolicies))
+
+        val manifest = codec.encodeCommand(1, SecureMeshBleCommand.SetManifest(0x11223344, listOf("AABBCCDD", "01020304"))).getOrThrow()
+        assertEquals(13, (manifest[8].toInt() and 0xFF) or ((manifest[9].toInt() and 0xFF) shl 8))
+        assertArrayEquals(byteArrayOf(0x44,0x33,0x22,0x11,0x02,0xDD.toByte(),0xCC.toByte(),0xBB.toByte(),0xAA.toByte(),0x04,0x03,0x02,0x01), manifest.copyOfRange(10, 23))
+
+        val lab = codec.encodeCommand(1, SecureMeshBleCommand.SetLabLinkPolicy("11223344", 0b11, 0x01020304, 0x5678, 0x11223344)).getOrThrow()
+        assertEquals(15, (lab[8].toInt() and 0xFF) or ((lab[9].toInt() and 0xFF) shl 8))
+        assertArrayEquals(byteArrayOf(0x44,0x33,0x22,0x11,0x03,0x04,0x03,0x02,0x01,0x78,0x56,0x44,0x33,0x22,0x11), lab.copyOfRange(10, 25))
+    }
+
+    @Test fun `known registry and manifest decode firmware 0_8_2 payloads exactly`() {
+        val knownPayload = byteArrayOf(3, 0x01,0,0,0, 0x02,0,0,0, 0x03,0,0,0)
+        val knownFrame = codec.decodeApplicationPacket(response(8, BleOpcode.GET_KNOWN_NODES, knownPayload)).getOrThrow() as SecureMeshBleFrame.Response
+        assertEquals(listOf("00000001", "00000002", "00000003"), codec.parseKnownNodes(knownFrame).getOrThrow())
+
+        val manifestPayload = ByteArray(25)
+        manifestPayload[0] = 1
+        putU32(manifestPayload, 1, 0x01020304)
+        putU32(manifestPayload, 5, 0xAABBCCDDL)
+        manifestPayload[9] = 3
+        var o = 10
+        listOf(0x11111111L, 0x22222222L, 0x33333333L).forEachIndexed { slot, id ->
+            manifestPayload[o++] = slot.toByte(); putU32(manifestPayload, o, id); o += 4
+        }
+        val mf = codec.decodeApplicationPacket(response(9, BleOpcode.GET_MANIFEST, manifestPayload)).getOrThrow() as SecureMeshBleFrame.Response
+        val parsed = codec.parseManifest(mf).getOrThrow()
+        assertTrue(parsed.valid)
+        assertEquals(0x01020304L, parsed.networkEpoch)
+        assertEquals(0xAABBCCDDL, parsed.digest)
+        assertEquals(listOf("11111111", "22222222", "33333333"), parsed.entries.sortedBy { it.slot }.map { it.nodeId })
+    }
+
+    @Test fun `routing diagnostics v2 consumes exact 89 byte header and 56 byte route record`() {
+        val payload = ByteArray(89 + 56)
+        var o = 0
+        fun u8(v: Int) { payload[o++] = v.toByte() }
+        fun u16(v: Int) { payload[o++] = (v and 0xFF).toByte(); payload[o++] = ((v ushr 8) and 0xFF).toByte() }
+        fun u32(v: Long) { putU32(payload, o, v); o += 4 }
+        u8(2); u8(1); u32(7); u32(0x12345678); u32(99)
+        repeat(3) { u32((it + 1).toLong()) }
+        repeat(5) { u32((it + 10).toLong()) }
+        repeat(4) { u32((it + 20).toLong()) }
+        repeat(4) { u32((it + 30).toLong()) }
+        u8(2); u32(40); u32(41); u8(1); u8(1)
+        u32(0x33333333); u32(0x22222222); u32(0x11111111); u32(0)
+        u32(4); u32(5); u32(6); u32(7); u32(0x3); u32(0x4); u32(0xA1); u32(0xB2)
+        u32(2L shl 16); u16(30000); u8(0b1_1111); u8(9)
+        assertEquals(payload.size, o)
+        val frame = codec.decodeApplicationPacket(response(10, BleOpcode.GET_ROUTING_DIAGNOSTICS, payload)).getOrThrow() as SecureMeshBleFrame.Response
+        val d = codec.parseRoutingDiagnostics(frame).getOrThrow()
+        assertEquals(2, d.version)
+        assertEquals(99, d.localRouteSeq)
+        assertEquals(1, d.routes.size)
+        assertEquals("33333333", d.routes.single().destination)
+        assertEquals(0b1_1111, d.routes.single().flags)
+        assertEquals(9, d.routes.single().backupLease)
+    }
+
+    @Test fun `lab policies decode 15 byte records including manual duration sentinel`() {
+        val payload = ByteArray(1 + 15)
+        payload[0] = 1
+        putU32(payload, 1, 0x11223344)
+        payload[5] = 0b11
+        putU32(payload, 6, 0xFFFF_FFFFL)
+        payload[10] = 0x00; payload[11] = 0x60
+        putU32(payload, 12, 3L shl 16)
+        val frame = codec.decodeApplicationPacket(response(11, BleOpcode.GET_LAB_LINK_POLICIES, payload)).getOrThrow() as SecureMeshBleFrame.Response
+        val policy = codec.parseLabLinkPolicies(frame).getOrThrow().single()
+        assertEquals("11223344", policy.peerNodeId)
+        assertEquals(0b11, policy.flags)
+        assertEquals(0xFFFF_FFFFL, policy.remainingMs)
+        assertEquals(0x6000, policy.reliabilityQ15)
+        assertEquals(3L shl 16, policy.ecaQ16)
     }
 
     private fun response(requestId: Int, opcode: BleOpcode, payload: ByteArray, status: Int = 0) = responseRaw(requestId, opcode.wire, status, payload)
