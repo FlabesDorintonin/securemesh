@@ -14,6 +14,8 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +48,12 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
         }
     }
     val toolItems = buildList {
+        if (session?.supports(dev.securemesh.commander.domain.model.DeviceCapability.VANGUARD) == true) {
+            add(MoreDestination("VANGUARD Control", "Manifest, Primary/G2, discovery и Fault Lab", "vanguard", Icons.Rounded.Tune, SecureMeshColors.Cyan))
+        }
+        if (UiAccessPolicy.canControlDeviceUi(session)) {
+            add(MoreDestination("Экран узла", "Живой UI state и пульт физического OLED", "devicecontrol", Icons.Rounded.Smartphone, SecureMeshColors.Blue))
+        }
         if (UiAccessPolicy.canRunFieldTest(session)) {
             add(MoreDestination("Полевой тест", "Проверка реальной связи, RSSI, SNR, PDR и повторов", "fieldtest", Icons.Rounded.Science, SecureMeshColors.Violet))
         }
