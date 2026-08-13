@@ -38,6 +38,11 @@ class SecureMeshRepositoryImpl(
     override val activeFieldTest = activeFlow { it.activeFieldTest }.stateIn(scope, SharingStarted.Eagerly, null)
     override val activeSos = activeFlow { it.activeSos }.stateIn(scope, SharingStarted.Eagerly, null)
     override val bleDiagnostics = activeFlow { it.bleDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val deviceUiState = activeFlow { it.deviceUiState }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val knownNodeIds = activeFlow { it.knownNodeIds }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+    override val networkManifest = activeFlow { it.networkManifest }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val vanguardDiagnostics = activeFlow { it.vanguardDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val labLinkPolicies = activeFlow { it.labLinkPolicies }.stateIn(scope, SharingStarted.Eagerly, emptyList())
     override val settings = settingsStore.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
     private val localHistoryOwnerNodeId = settingsStore.localHistoryOwnerNodeId.stateIn(scope, SharingStarted.Eagerly, null)
     private val liveEvents = activeFlow { it.events }
@@ -92,8 +97,6 @@ class SecureMeshRepositoryImpl(
                 if (previousHistoryOwner != identity.nodeId) settingsStore.setLocalHistoryOwnerNodeId(identity.nodeId)
 
                 if (transportMode.value == TransportMode.BLE && settings.value.rememberTrustedNode) {
-                    // BleTransport publishes the authenticated session immediately after INFO validation. Diagnostics already
-                    // knows the transport address before that, so use it as the stable source of optional transport metadata.
                     val diagnosticAddress = bleDiagnostics.value?.bleAddress
                     val connected = connectionState.value as? MeshConnectionState.Connected
                     val connectedAddress = connected?.device?.takeIf { it.secureMeshNodeId == identity.nodeId }?.address
@@ -152,8 +155,6 @@ class SecureMeshRepositoryImpl(
     override suspend fun attemptAutoReconnect() {
         if (!settings.value.autoReconnect) return
         val trusted = dao.latestTrustedDevice() ?: return
-        // The protocol intentionally does not advertise nodeId. A remembered BLE address is only a transport hint;
-        // authenticated INFO must still prove the stable nodeId after every reconnect.
         val addressHint = trusted.lastSeenBleAddress ?: return
         router.switchTo(TransportMode.BLE)
         reconnectJob?.cancel()
@@ -164,9 +165,6 @@ class SecureMeshRepositoryImpl(
                 reconnectOverride.value = MeshConnectionState.Reconnecting(trusted.nodeId, index + 1, backoff)
                 router.ble.startScan(5_000)
 
-                // Do not keep retrying while Android is waiting for permission/Bluetooth state.
-                // This is especially important on OEM firmware that aggressively pauses/recreates
-                // the activity around the Nearby devices permission dialog.
                 when (router.ble.connectionState.value) {
                     is MeshConnectionState.PermissionRequired,
                     MeshConnectionState.BluetoothDisabled,
@@ -192,7 +190,6 @@ class SecureMeshRepositoryImpl(
                 }
                 if (verified?.localNodeIdentity?.nodeId == trusted.nodeId) return@launch
                 if (verified != null && verified.localNodeIdentity.nodeId != trusted.nodeId) {
-                    // Address reuse/rotation can happen; never transfer trust to the different authenticated node.
                     dao.upsertTrustedDevice(trusted.copy(lastSeenBleAddress = null))
                     router.ble.disconnect()
                     return@launch
@@ -209,6 +206,14 @@ class SecureMeshRepositoryImpl(
     override suspend fun startFieldTest(config: FieldTestConfig) = router.current().startFieldTest(config)
     override suspend fun stopFieldTest() = router.current().stopFieldTest()
     override suspend fun acknowledgeSos(id: String) = router.current().acknowledgeSos(id)
+    override suspend fun refreshDeviceUiState() = router.current().refreshDeviceUiState()
+    override suspend fun sendDeviceUiAction(action: DeviceUiAction) = router.current().sendDeviceUiAction(action)
+    override suspend fun refreshVanguardState() = router.current().refreshVanguardState()
+    override suspend fun setManifest(epoch: Long, nodes: List<NodeId>) = router.current().setManifest(epoch, nodes)
+    override suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean) = router.current().discoverRoute(destination, forceFresh)
+    override suspend fun clearDynamicRoutes() = router.current().clearDynamicRoutes()
+    override suspend fun injectLinkFailure(peer: NodeId, durationMs: Long) = router.current().injectLinkFailure(peer, durationMs)
+    override suspend fun setLabLinkPolicy(peer: NodeId, preset: LabLinkPreset, durationMs: Long) = router.current().setLabLinkPolicy(peer, preset, durationMs)
     override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.write(transform(settings.value))
     private suspend fun clearSessionSensitiveHistory() {
         dao.clearEvents(); dao.clearMessages(); dao.clearKnownNodes(); dao.clearFieldTests(); dao.clearPositions()
