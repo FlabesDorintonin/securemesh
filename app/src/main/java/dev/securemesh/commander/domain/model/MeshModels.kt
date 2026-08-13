@@ -84,6 +84,10 @@ enum class DeviceCapability {
     STATIC_ROUTING,
     BLE_CONTROL,
     NETWORK_DIAGNOSTICS,
+    UI_OS,
+    VANGUARD,
+    MANIFEST,
+    FAULT_LAB,
     OTA,
     SENSORS,
 }
