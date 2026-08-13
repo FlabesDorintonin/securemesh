@@ -114,6 +114,7 @@ class SecureMeshBleProtocolV01Test {
     @Test fun `overlap or impossible fragment bounds are rejected`() {
         val packet = codec.encodeCommand(1, SecureMeshBleCommand.GetInfo).getOrThrow()
         val fragment = SecureMeshBleFragmentation.fragment(packet, 185, 2).getOrThrow().single().clone()
+        // offset = totalLength, while fragmentLength is still non-zero.
         fragment[9] = 10
         fragment[10] = 0
         val result = SecureMeshBleFragmentation.Reassembler().accept(fragment, 0)
@@ -283,7 +284,7 @@ class SecureMeshBleProtocolV01Test {
         putU32(payload, 12, 3L shl 16)
         val frame = codec.decodeApplicationPacket(response(11, BleOpcode.GET_LAB_LINK_POLICIES, payload)).getOrThrow() as SecureMeshBleFrame.Response
         val policy = codec.parseLabLinkPolicies(frame).getOrThrow().single()
-        assertEquals("11223344", policy.peerNodeId)
+        assertEquals("11223344", policy.peer)
         assertEquals(0b11, policy.flags)
         assertEquals(0xFFFF_FFFFL, policy.remainingMs)
         assertEquals(0x6000, policy.reliabilityQ15)
