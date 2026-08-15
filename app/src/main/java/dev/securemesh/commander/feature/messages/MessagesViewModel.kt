@@ -17,12 +17,49 @@ data class MessagesUiState(
 )
 
 class MessagesViewModel(private val repository: SecureMeshRepository) : ViewModel() {
-    val uiState = combine(repository.messages, repository.nodes, repository.session) { messages, nodes, session ->
+    val uiState = combine(
+        repository.observeMessageHistory(),
+        repository.nodes,
+        repository.session,
+        repository.localHistoryOwnerNodeId,
+        repository.connectionState,
+    ) { history, liveNodes, session, historyOwner, connectionState ->
+        val liveCanView = UiAccessPolicy.canShowMessages(session)
+        val localNodeId = session?.localNodeIdentity?.nodeId ?: historyOwner
+        val canUseStoredHistory = session == null && historyOwner != null && connectionState.allowsStoredHistory()
+        val canView = liveCanView || canUseStoredHistory
+        val visibleMessages = if (canView) history else emptyList()
+
+        val visibleLiveNodes = if (session != null) UiAccessPolicy.visibleNodes(session, liveNodes) else emptyList()
+        val existingIds = visibleLiveNodes.mapTo(mutableSetOf()) { it.id }
+        val historyPeers = visibleMessages
+            .mapNotNull { it.peerFor(localNodeId) }
+            .distinct()
+            .filterNot(existingIds::contains)
+            .map { peerId ->
+                val lastSeen = visibleMessages.asSequence()
+                    .filter { it.origin == peerId || it.destination == peerId }
+                    .maxOfOrNull { it.createdAtEpochMs }
+                    ?: 0L
+                MeshNode(
+                    identity = NodeIdentity(
+                        nodeId = peerId,
+                        displayName = "Узел $peerId",
+                        role = NodeRole.UNKNOWN,
+                        firmwareVersion = null,
+                        protocolVersion = null,
+                        capabilities = setOf(DeviceCapability.MESSAGING),
+                    ),
+                    online = false,
+                    lastSeenEpochMs = lastSeen,
+                )
+            }
+
         MessagesUiState(
-            messages = UiAccessPolicy.visibleMessages(session, messages),
-            nodes = UiAccessPolicy.visibleNodes(session, nodes),
-            localNodeId = session?.localNodeIdentity?.nodeId,
-            canView = UiAccessPolicy.canShowMessages(session),
+            messages = visibleMessages,
+            nodes = (visibleLiveNodes + historyPeers).distinctBy { it.id },
+            localNodeId = localNodeId,
+            canView = canView,
             canSend = UiAccessPolicy.canSendMessages(session),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MessagesUiState())
@@ -35,4 +72,21 @@ class MessagesViewModel(private val repository: SecureMeshRepository) : ViewMode
         if (!uiState.value.canSend) { _error.value = "SEND_MESSAGE not granted"; return@launch }
         repository.sendMessage(destination, text.trim()).onFailure { _error.value = it.message }
     }
+}
+
+private fun MeshMessage.peerFor(localNodeId: NodeId?): NodeId? = when {
+    localNodeId == null -> null
+    origin == localNodeId && destination != localNodeId -> destination
+    destination == localNodeId && origin != localNodeId -> origin
+    else -> null
+}
+
+private fun MeshConnectionState.allowsStoredHistory(): Boolean = when (this) {
+    MeshConnectionState.Idle,
+    MeshConnectionState.BluetoothUnavailable,
+    MeshConnectionState.BluetoothDisabled,
+    is MeshConnectionState.PermissionRequired,
+    is MeshConnectionState.Disconnected,
+    is MeshConnectionState.Error -> true
+    else -> false
 }
