@@ -108,6 +108,9 @@ jobs:
           set -euo pipefail
           git config user.name "SecureMesh Hardening Bot"
           git config user.email "actions@users.noreply.github.com"
+          # The GitHub Actions token must not self-publish workflow changes.
+          # The normal CI workflow is updated separately through the GitHub connector.
+          git checkout HEAD -- .github/workflows/blank.yml
           git add -A
           if git ls-files | grep -E '(^|/)(build|\.gradle)/' ; then
             echo 'Build output unexpectedly tracked' >&2
