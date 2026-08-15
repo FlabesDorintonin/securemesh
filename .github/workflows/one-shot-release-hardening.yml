@@ -36,6 +36,25 @@ jobs:
           git apply --check tools/release_hardening_themefix.patch
           git apply tools/release_hardening_themefix.patch
           rm -rf tools/release_patch_chunks tools/release_hardening.patch.gz.b64 tools/release_hardening_lintfix.patch tools/release_hardening_themefix.patch
+          cat > .gitignore <<'EOF'
+          .gradle/
+          **/build/
+          local.properties
+          .idea/
+          *.iml
+          .DS_Store
+          .cxx/
+          .externalNativeBuild/
+          captures/
+          *.jks
+          *.keystore
+          *.log
+          apk-sha256.txt
+          source-sha256.txt
+          verified-commit.txt
+          SecureMesh-0.8.3-source.zip
+          EOF
+          sed -i 's/^          //' .gitignore
           git diff --check
 
       - name: Set up Java 17
@@ -90,6 +109,10 @@ jobs:
           git config user.name "SecureMesh Hardening Bot"
           git config user.email "actions@users.noreply.github.com"
           git add -A
+          if git ls-files | grep -E '(^|/)(build|\.gradle)/' ; then
+            echo 'Build output unexpectedly tracked' >&2
+            exit 1
+          fi
           git commit -m "Release hardening 0.8.3"
           git rev-parse HEAD | tee verified-commit.txt
 
@@ -100,6 +123,7 @@ jobs:
           git archive --format=zip --output=SecureMesh-0.8.3-source.zip HEAD
           zip -d SecureMesh-0.8.3-source.zip '.github/workflows/one-shot-release-hardening.yml' >/dev/null || true
           sha256sum SecureMesh-0.8.3-source.zip | tee source-sha256.txt
+          test "$(stat -c%s SecureMesh-0.8.3-source.zip)" -lt 5000000
 
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
@@ -127,7 +151,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git push --force-with-lease origin HEAD:refs/heads/release/securemesh-0.8.3-hardening
+          git push origin HEAD:refs/heads/release/securemesh-0.8.3-hardening
 
       - name: Upload failure logs
         if: failure()
