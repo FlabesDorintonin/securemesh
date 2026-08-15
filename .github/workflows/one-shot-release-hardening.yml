@@ -116,6 +116,8 @@ jobs:
           path: |
             alignment-gate.log
             lint-debug.log
+            app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            app/build/reports/lint-results-debug.html
             test-debug.log
             assemble-debug.log
           if-no-files-found: ignore
