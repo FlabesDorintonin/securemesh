@@ -35,7 +35,7 @@ jobs:
           git apply tools/release_hardening_lintfix.patch
           git apply --check tools/release_hardening_themefix.patch
           git apply tools/release_hardening_themefix.patch
-          rm -rf tools/release_patch_chunks tools/release_hardening.patch.gz.b64 tools/release_hardening_lintfix.patch tools/release_hardening_themefix.patch .github/workflows/one-shot-release-hardening.yml
+          rm -rf tools/release_patch_chunks tools/release_hardening.patch.gz.b64 tools/release_hardening_lintfix.patch tools/release_hardening_themefix.patch
           git diff --check
 
       - name: Set up Java 17
@@ -83,7 +83,7 @@ jobs:
           test -f app/build/outputs/apk/debug/app-debug.apk
           sha256sum app/build/outputs/apk/debug/app-debug.apk | tee apk-sha256.txt
 
-      - name: Commit verified hardening
+      - name: Create verified release commit
         shell: bash
         run: |
           set -euo pipefail
@@ -91,10 +91,15 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add -A
           git commit -m "Release hardening 0.8.3"
-          git push origin HEAD:agent/0.8.3-release-hardening
+          git rev-parse HEAD | tee verified-commit.txt
 
       - name: Package verified source
-        run: git archive --format=zip --output=SecureMesh-0.8.3-source.zip HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=zip --output=SecureMesh-0.8.3-source.zip HEAD
+          zip -d SecureMesh-0.8.3-source.zip '.github/workflows/one-shot-release-hardening.yml' >/dev/null || true
+          sha256sum SecureMesh-0.8.3-source.zip | tee source-sha256.txt
 
       - name: Upload verified APK
         uses: actions/upload-artifact@v4
@@ -103,6 +108,7 @@ jobs:
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             apk-sha256.txt
+            verified-commit.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -110,9 +116,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SecureMesh-0.8.3-hardening-source-${{ github.run_number }}
-          path: SecureMesh-0.8.3-source.zip
+          path: |
+            SecureMesh-0.8.3-source.zip
+            source-sha256.txt
+            verified-commit.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish verified release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin HEAD:refs/heads/release/securemesh-0.8.3-hardening
 
       - name: Upload failure logs
         if: failure()
@@ -126,5 +141,7 @@ jobs:
             app/build/reports/lint-results-debug.html
             test-debug.log
             assemble-debug.log
+            apk-sha256.txt
+            verified-commit.txt
           if-no-files-found: ignore
           retention-days: 7
