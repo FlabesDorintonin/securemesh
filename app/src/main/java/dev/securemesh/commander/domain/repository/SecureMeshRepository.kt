@@ -23,7 +23,9 @@ interface SecureMeshRepository {
     val vanguardDiagnostics: StateFlow<VanguardDiagnostics?>
     val labLinkPolicies: StateFlow<List<LabLinkPolicy>>
     val settings: StateFlow<AppSettings>
+    val localHistoryOwnerNodeId: StateFlow<NodeId?>
 
+    fun observeMessageHistory(): Flow<List<MeshMessage>>
     fun observeEvents(): Flow<List<MeshEvent>>
     fun observeFieldTestHistory(): Flow<List<FieldTestSession>>
     fun observePositionHistory(nodeId: NodeId? = null): Flow<List<NodePosition>>
