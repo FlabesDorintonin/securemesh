@@ -16,6 +16,7 @@ data class DiscoveryUiState(
     val session: SecureMeshSession? = null,
     val filter: DiscoveryFilter = DiscoveryFilter(),
     val permissionDenied: Boolean = false,
+    val showingUnknownBle: Boolean = false,
 )
 
 class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewModel() {
@@ -28,15 +29,18 @@ class DiscoveryViewModel(private val repository: SecureMeshRepository) : ViewMod
         repository.discoveredDevices,
         repository.connectionState,
         repository.session,
-        filter,
-        permissionDenied,
-    ) { devices, connection, session, currentFilter, denied ->
+        repository.settings,
+        combine(filter, permissionDenied) { currentFilter, denied -> currentFilter to denied },
+    ) { devices, connection, session, settings, controls ->
+        val (currentFilter, denied) = controls
+        val canShowUnknown = settings.developerMode && settings.showUnknownBle
         DiscoveryUiState(
-            devices = filterDevices(devices, currentFilter),
+            devices = filterDevices(devices, currentFilter, canShowUnknown),
             connection = connection,
             session = session,
             filter = currentFilter,
             permissionDenied = denied,
+            showingUnknownBle = canShowUnknown,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiscoveryUiState())
 

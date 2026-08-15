@@ -207,7 +207,12 @@ private fun FaultTab(
     apply: (NodeId, LabLinkPreset, Long) -> Unit,
     inject: (NodeId, Long) -> Unit,
 ) {
+    if (!state.faultLabAvailable) {
+        EmptyState("Fault Lab недоступен", "Подключённый узел не объявил capability FAULT_LAB. Лабораторные link-fault команды скрыты.")
+        return
+    }
     val peers = state.nodes.filter { it.id != state.session?.localNodeIdentity?.nodeId }.map { it.id }.distinct()
+    var pendingConfirmation by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             TechnicalCard("Deterministic Fault Lab") {
@@ -223,10 +228,30 @@ private fun FaultTab(
                     Button(onClick = { selected?.let { apply(it, LabLinkPreset.VERY_WEAK, duration) } }, enabled = selected != null && !state.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Violet)) { Text("Very weak") }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { selected?.let { apply(it, LabLinkPreset.BLOCK, duration) } }, enabled = selected != null && !state.busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Critical)) { Text("BLOCK") }
+                    Button(
+                        onClick = {
+                            selected?.let { peer ->
+                                pendingConfirmation = "Полностью заблокировать link к $peer на выбранное время?" to {
+                                    apply(peer, LabLinkPreset.BLOCK, duration)
+                                }
+                            }
+                        },
+                        enabled = selected != null && !state.busy,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Critical),
+                    ) { Text("BLOCK") }
                     OutlinedButton(onClick = { selected?.let { apply(it, LabLinkPreset.CLEAR, 0) } }, enabled = selected != null && !state.busy, modifier = Modifier.weight(1f)) { Text("Clear") }
                 }
-                TextButton(onClick = { selected?.let { inject(it, duration) } }, enabled = selected != null && !state.busy) { Text("Legacy InjectLinkFailure") }
+                TextButton(
+                    onClick = {
+                        selected?.let { peer ->
+                            pendingConfirmation = "Запустить legacy InjectLinkFailure для $peer? Это намеренно нарушит связь в лабораторном тесте." to {
+                                inject(peer, duration)
+                            }
+                        }
+                    },
+                    enabled = selected != null && !state.busy,
+                ) { Text("Legacy InjectLinkFailure") }
             }
         }
         item {
@@ -248,6 +273,26 @@ private fun FaultTab(
                 ValueRow("Осталось", if (policy.manual) "manual" else "${policy.remainingMs/1000.0}s")
             }
         }
+    }
+
+    pendingConfirmation?.let { (message, action) ->
+        AlertDialog(
+            onDismissRequest = { if (!state.busy) pendingConfirmation = null },
+            title = { Text("Подтвердить Fault Lab") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.busy,
+                    onClick = {
+                        pendingConfirmation = null
+                        action()
+                    },
+                ) { Text("Применить", color = SecureMeshColors.Critical) }
+            },
+            dismissButton = {
+                TextButton(enabled = !state.busy, onClick = { pendingConfirmation = null }) { Text("Отмена") }
+            },
+        )
     }
 }
 

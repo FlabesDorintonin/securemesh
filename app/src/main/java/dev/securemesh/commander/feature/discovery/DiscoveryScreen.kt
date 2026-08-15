@@ -302,21 +302,30 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
             onValueChange = viewModel::setQuery,
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             label = { Text("Поиск устройства") },
-            placeholder = { Text("Имя или BLE-адрес") },
+            placeholder = { Text(if (state.showingUnknownBle) "Имя или BLE-адрес" else "SecureMesh-узел") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             shape = MaterialTheme.shapes.extraLarge,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            FilterChip(
-                selected = state.filter.secureMeshOnly,
-                onClick = { viewModel.setSecureMeshOnly(!state.filter.secureMeshOnly) },
-                label = { Text("Только SecureMesh") },
-            )
+            if (state.showingUnknownBle) {
+                FilterChip(
+                    selected = state.filter.secureMeshOnly,
+                    onClick = { viewModel.setSecureMeshOnly(!state.filter.secureMeshOnly) },
+                    label = { Text("Только SecureMesh") },
+                )
+            }
             FilterChip(
                 selected = state.filter.sort == DeviceSort.RSSI,
                 onClick = { viewModel.setSort(DeviceSort.RSSI) },
                 label = { Text("Сильнее сигнал") },
+            )
+        }
+        if (!state.showingUnknownBle) {
+            Text(
+                "Показываются только устройства с подтверждённым SecureMesh Service UUID. Имя BLE не считается идентичностью.",
+                color = SecureMeshColors.Muted,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

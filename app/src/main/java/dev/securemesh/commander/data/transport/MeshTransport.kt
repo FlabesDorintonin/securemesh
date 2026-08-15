@@ -47,7 +47,7 @@ interface MeshTransport {
     suspend fun addStaticRoute(destination: NodeId, via: NodeId): Result<Unit>
     suspend fun removeRoute(destination: NodeId): Result<Unit>
     suspend fun startFieldTest(config: FieldTestConfig): Result<String>
-    suspend fun stopFieldTest()
+    suspend fun stopFieldTest(): Result<Unit>
     suspend fun acknowledgeSos(id: String)
     suspend fun refreshDeviceUiState(): Result<DeviceUiState> =
         Result.failure(UnsupportedOperationException("Device UI OS is not supported by this transport"))

@@ -58,7 +58,7 @@ class VanguardControlViewModel(private val repository: SecureMeshRepository) : V
             diagnostics = core.diagnostics,
             labPolicies = aux.policies,
             deviceUi = aux.ui,
-            vanguardAvailable = session?.supports(DeviceCapability.VANGUARD) == true,
+            vanguardAvailable = dev.securemesh.commander.domain.service.UiAccessPolicy.canShowVanguard(session),
             manifestAvailable = session?.supports(DeviceCapability.MANIFEST) == true,
             faultLabAvailable = session?.supports(DeviceCapability.FAULT_LAB) == true,
             uiOsAvailable = session?.supports(DeviceCapability.UI_OS) == true,
@@ -67,18 +67,19 @@ class VanguardControlViewModel(private val repository: SecureMeshRepository) : V
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VanguardControlUiState())
 
-    fun refresh() = executeUnit { repository.refreshVanguardState() }
-    fun discover(destination: NodeId) = execute { repository.discoverRoute(destination, true) }
-    fun clearRoutes() = execute { repository.clearDynamicRoutes() }
-    fun injectBlock(peer: NodeId, durationMs: Long) = execute { repository.injectLinkFailure(peer, durationMs) }
-    fun lab(peer: NodeId, preset: LabLinkPreset, durationMs: Long) = execute { repository.setLabLinkPolicy(peer, preset, durationMs) }
-    fun setManifest(epoch: Long, nodes: List<NodeId>) = execute { repository.setManifest(epoch, nodes) }
-    fun refreshOled() = execute { repository.refreshDeviceUiState() }
-    fun oled(action: DeviceUiAction) = execute { repository.sendDeviceUiAction(action) }
+    fun refresh() = executeUnit(require = { uiState.value.vanguardAvailable }) { repository.refreshVanguardState() }
+    fun discover(destination: NodeId) = execute(require = { uiState.value.vanguardAvailable }) { repository.discoverRoute(destination, true) }
+    fun clearRoutes() = execute(require = { uiState.value.vanguardAvailable }) { repository.clearDynamicRoutes() }
+    fun injectBlock(peer: NodeId, durationMs: Long) = execute(require = { uiState.value.faultLabAvailable }) { repository.injectLinkFailure(peer, durationMs) }
+    fun lab(peer: NodeId, preset: LabLinkPreset, durationMs: Long) = execute(require = { uiState.value.faultLabAvailable }) { repository.setLabLinkPolicy(peer, preset, durationMs) }
+    fun setManifest(epoch: Long, nodes: List<NodeId>) = execute(require = { uiState.value.manifestAvailable }) { repository.setManifest(epoch, nodes) }
+    fun refreshOled() = execute(require = { uiState.value.uiOsAvailable }) { repository.refreshDeviceUiState() }
+    fun oled(action: DeviceUiAction) = execute(require = { uiState.value.uiOsAvailable }) { repository.sendDeviceUiAction(action) }
     fun clearError() { error.value = null }
 
-    private fun executeUnit(block: suspend () -> Result<Unit>) {
+    private fun executeUnit(require: () -> Boolean = { true }, block: suspend () -> Result<Unit>) {
         if (busy.value) return
+        if (!require()) { error.value = "Команда недоступна для текущей capability/permission"; return }
         viewModelScope.launch {
             busy.value = true
             error.value = null
@@ -87,8 +88,9 @@ class VanguardControlViewModel(private val repository: SecureMeshRepository) : V
         }
     }
 
-    private fun execute(block: suspend () -> Result<*>) {
+    private fun execute(require: () -> Boolean = { true }, block: suspend () -> Result<*>) {
         if (busy.value) return
+        if (!require()) { error.value = "Команда недоступна для текущей capability/permission"; return }
         viewModelScope.launch {
             busy.value = true
             error.value = null

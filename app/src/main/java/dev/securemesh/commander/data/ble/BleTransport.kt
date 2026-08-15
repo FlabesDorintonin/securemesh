@@ -110,6 +110,7 @@ class BleTransport(
         requestManager.failAll(IllegalStateException("SecureMesh BLE transport stopped"))
         resetProtocolState()
         closeGatt()
+        releaseBondReceiver()
         connectingDevice = null
         _session.value = null
         _demoProfile.value = null
@@ -303,10 +304,10 @@ class BleTransport(
         status.testId.toString()
     }
 
-    override suspend fun stopFieldTest() {
-        val result = command(SecureMeshBleCommand.StopFieldTest)
-        result.onSuccess(::requireOk)
-        if (result.isSuccess) syncFieldTestStatus()
+    override suspend fun stopFieldTest(): Result<Unit> = runCatching {
+        val response = command(SecureMeshBleCommand.StopFieldTest).getOrThrow()
+        requireOk(response)
+        syncFieldTestStatus()
     }
 
     override suspend fun acknowledgeSos(id: String) {
@@ -455,6 +456,10 @@ class BleTransport(
                 @Suppress("DEPRECATION")
                 currentGatt.writeCharacteristic(characteristic)
             }
+        } catch (security: SecurityException) {
+            synchronized(stateLock) { if (writeAwaiter === waiter) writeAwaiter = null }
+            _connectionState.value = MeshConnectionState.PermissionRequired(requiredPermissions())
+            throw security
         } catch (t: Throwable) {
             synchronized(stateLock) { if (writeAwaiter === waiter) writeAwaiter = null }
             throw t
@@ -544,6 +549,7 @@ class BleTransport(
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(callbackGatt: BluetoothGatt, status: Int, newState: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             val device = connectingDevice ?: return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 requestManager.failAll(IllegalStateException("GATT status $status"))
@@ -576,6 +582,7 @@ class BleTransport(
         }
 
         override fun onServicesDiscovered(callbackGatt: BluetoothGatt, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 markProtocolUnavailable("Service discovery status $status")
                 return
@@ -599,6 +606,7 @@ class BleTransport(
         }
 
         override fun onMtuChanged(callbackGatt: BluetoothGatt, mtu: Int, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (status == BluetoothGatt.GATT_SUCCESS && mtu >= 23) negotiatedMtu = mtu
             updateDiagnostics { it.copy(mtu = negotiatedMtu) }
             if (handshakePhase == HandshakePhase.REQUESTING_MTU) {
@@ -608,6 +616,7 @@ class BleTransport(
         }
 
         override fun onDescriptorWrite(callbackGatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 failAndClose(MeshErrorCode.PROTOCOL_MISMATCH, "CCCD write status $status", "Не удалось включить SecureMesh notifications")
                 return
@@ -628,25 +637,30 @@ class BleTransport(
 
         @Deprecated("Deprecated in Android 13")
         override fun onCharacteristicRead(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             @Suppress("DEPRECATION")
             handleCharacteristicRead(characteristic.uuid, characteristic.value ?: byteArrayOf(), status)
         }
 
         override fun onCharacteristicRead(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             handleCharacteristicRead(characteristic.uuid, value, status)
         }
 
         @Deprecated("Deprecated in Android 13")
         override fun onCharacteristicChanged(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            if (!isCurrentGatt(callbackGatt)) return
             @Suppress("DEPRECATION")
             handleNotification(characteristic.uuid, characteristic.value ?: byteArrayOf())
         }
 
         override fun onCharacteristicChanged(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            if (!isCurrentGatt(callbackGatt)) return
             handleNotification(characteristic.uuid, value)
         }
 
         override fun onCharacteristicWrite(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (characteristic.uuid != config.commandCharacteristicUuid) return
             synchronized(stateLock) { writeAwaiter }?.complete(status)
         }
@@ -654,8 +668,15 @@ class BleTransport(
 
     private suspend fun beginSystemBonding(device: BluetoothDevice) {
         val uiDevice = connectingDevice ?: return
-        updateDiagnostics { it.copy(gattState = "SERVICE_VERIFIED", bonded = device.bondState == BluetoothDevice.BOND_BONDED) }
-        when (device.bondState) {
+        val bondState = try {
+            device.bondState
+        } catch (_: SecurityException) {
+            _connectionState.value = MeshConnectionState.PermissionRequired(requiredPermissions())
+            closeGatt()
+            return
+        }
+        updateDiagnostics { it.copy(gattState = "SERVICE_VERIFIED", bonded = bondState == BluetoothDevice.BOND_BONDED) }
+        when (bondState) {
             BluetoothDevice.BOND_BONDED -> continueAfterBond()
             BluetoothDevice.BOND_BONDING -> waitForBond(uiDevice)
             else -> {
@@ -1017,8 +1038,9 @@ class BleTransport(
             }
             is BleDecodedEvent.HopAck -> {
                 val id = wireId(event.messageId)
+                val localNodeId = _session.value?.localNodeIdentity?.nodeId
                 _messages.value = _messages.value.map { message ->
-                    if (message.id != id) message else {
+                    if (message.id != id || message.origin != localNodeId) message else {
                         val local = message.origin
                         val existing = message.hopTrace.firstOrNull { it.to == event.neighborId }
                         val hop = (existing ?: TransmissionHop(local, event.neighborId, null, HopAckState.PENDING, 0, null, null, now())).copy(
@@ -1037,8 +1059,9 @@ class BleTransport(
             }
             is BleDecodedEvent.Retry -> {
                 val id = wireId(event.messageId)
+                val localNodeId = _session.value?.localNodeIdentity?.nodeId
                 _messages.value = _messages.value.map { message ->
-                    if (message.id != id) message else {
+                    if (message.id != id || message.origin != localNodeId) message else {
                         val local = message.origin
                         val existing = message.hopTrace.firstOrNull { it.to == event.neighborId }
                         val hop = (existing ?: TransmissionHop(local, event.neighborId, null, HopAckState.PENDING, 0, null, null, now())).copy(
@@ -1139,6 +1162,8 @@ class BleTransport(
 
     private fun markProtocolUnavailable(technical: String) {
         val device = connectingDevice ?: return
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = null
         handshakePhase = HandshakePhase.IDLE
         _session.value = null
         _connectionState.value = MeshConnectionState.Connected(
@@ -1257,9 +1282,24 @@ class BleTransport(
         }
     }
 
+    private fun isCurrentGatt(callbackGatt: BluetoothGatt): Boolean = callbackGatt === gatt
+
+    private fun releaseBondReceiver() {
+        if (!bondReceiverRegistered) return
+        try { context.unregisterReceiver(bondReceiver) } catch (_: IllegalArgumentException) { }
+        bondReceiverRegistered = false
+    }
+
     private fun closeGatt() {
-        try { gatt?.close() } catch (_: Throwable) { }
-        gatt = null
+        try {
+            gatt?.close()
+        } catch (_: SecurityException) {
+            // BLUETOOTH_CONNECT can be revoked while a GATT session is alive.
+        } catch (_: Throwable) {
+            // OEM Bluetooth stacks may throw while tearing down an already-dead GATT.
+        } finally {
+            gatt = null
+        }
     }
 
     private fun allocateTransportId(): Int = synchronized(stateLock) {
@@ -1286,7 +1326,7 @@ class BleTransport(
     }
 
     private fun upsertMessage(items: List<MeshMessage>, message: MeshMessage): List<MeshMessage> =
-        (items.filterNot { it.id == message.id } + message).sortedByDescending { it.createdAtEpochMs }.take(500)
+        (items.filterNot { it.stableKey() == message.stableKey() } + message).sortedByDescending { it.createdAtEpochMs }.take(500)
 
     private fun wireId(value: Long): String = value.toString(16).uppercase().padStart(8, '0')
 

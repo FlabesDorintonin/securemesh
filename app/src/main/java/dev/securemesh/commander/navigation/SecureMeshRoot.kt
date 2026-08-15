@@ -46,6 +46,7 @@ import dev.securemesh.commander.feature.nodes.*
 import dev.securemesh.commander.feature.routes.*
 import dev.securemesh.commander.feature.search.*
 import dev.securemesh.commander.feature.settings.*
+import dev.securemesh.commander.feature.security.*
 import dev.securemesh.commander.feature.sos.SosOverlay
 import dev.securemesh.commander.feature.welcome.*
 import dev.securemesh.commander.feature.vanguard.*
@@ -65,7 +66,7 @@ private fun itemsFor(session: SecureMeshSession?): List<NavItem> = buildList {
     if (UiAccessPolicy.canShowMessages(session)) add(NavItem("messages", "Чаты", Icons.Rounded.ChatBubble))
     if (UiAccessPolicy.canShowNodes(session)) add(NavItem("nodes", "Сеть", Icons.Rounded.People))
     else session?.let { add(NavItem("node/${it.localNodeIdentity.nodeId}", "Мой узел", Icons.Rounded.People)) }
-    if (session?.supports(DeviceCapability.VANGUARD) == true) add(NavItem("vanguard", "Пульт", Icons.Rounded.Tune))
+    if (UiAccessPolicy.canShowVanguard(session)) add(NavItem("vanguard", "Пульт", Icons.Rounded.Tune))
     else add(NavItem("map", "Карта", Icons.Rounded.Map))
     add(NavItem("more", "Ещё", Icons.Rounded.MoreHoriz))
 }
@@ -106,22 +107,35 @@ fun SecureMeshRoot(repository: SecureMeshRepository) {
             } else {
                 ProtocolUnavailableScreen(
                     connected,
-                    onDisconnect = { vm.disconnect(); nav.popBackStack(RootRoute.DISCOVERY, false) },
-                    onBack = { nav.popBackStack(RootRoute.DISCOVERY, false) },
+                    onDisconnect = vm::disconnect,
+                    onBack = vm::disconnect,
                 )
             }
         }
-        composable(RootRoute.MAIN) { MainShell(repository) }
+        composable(RootRoute.MAIN) {
+            MainShell(repository) {
+                nav.navigate(RootRoute.WELCOME) {
+                    popUpTo(RootRoute.MAIN) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun MainShell(repository: SecureMeshRepository) {
+private fun MainShell(repository: SecureMeshRepository, onSessionEnded: () -> Unit) {
     val nav = rememberNavController()
     val vm: RootViewModel = viewModel(factory = viewModelFactory { RootViewModel(repository) })
     val session by vm.session.collectAsStateWithLifecycle()
     val sos by vm.sos.collectAsStateWithLifecycle()
+    val connection by vm.connection.collectAsStateWithLifecycle()
+    val mode by vm.transportMode.collectAsStateWithLifecycle()
     val items = itemsFor(session)
+
+    LaunchedEffect(mode, session?.authenticationState, connection) {
+        if (shouldExitMainShell(mode, session, connection)) onSessionEnded()
+    }
 
     MeshBackdrop(Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -189,12 +203,13 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
         composable("fieldtest") { FieldTestScreen(viewModel(factory = viewModelFactory { FieldTestViewModel(repository) })) }
         composable("events") { EventsScreen(viewModel(factory = viewModelFactory { EventsViewModel(repository) })) }
         composable("diagnostics") { DiagnosticsScreen(viewModel(factory = viewModelFactory { DiagnosticsViewModel(repository) })) }
+        composable("security") { SecurityCenterScreen(viewModel(factory = viewModelFactory { SecurityCenterViewModel(repository) })) }
         composable("settings") { SettingsScreen(viewModel(factory = viewModelFactory { SettingsViewModel(repository) })) }
         composable("search") { SearchScreen(viewModel(factory = viewModelFactory { SearchViewModel(repository) })) { nav.navigate("node/$it") } }
     }
 }
 
-private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search", "devicecontrol")
+private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "security", "settings", "search", "devicecontrol")
 
 private fun isSelected(current: String?, item: NavItem): Boolean = when {
     item.route == "more" -> isMoreRoute(current)

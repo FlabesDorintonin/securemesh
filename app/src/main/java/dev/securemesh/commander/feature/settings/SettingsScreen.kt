@@ -38,8 +38,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         item {
             ProductSettingsGroup("Безопасность", Icons.Rounded.Lock, SecureMeshColors.Cyan) {
                 SettingSwitch(
-                    label = "Защищать экран после входа",
-                    description = "Блокирует снимки экрана и вывод на небезопасный дисплей во время защищённой сессии.",
+                    label = "Защищать экран SecureMesh",
+                    description = "Блокирует снимки, небезопасный вывод и сторонние overlay-окна на всём чувствительном интерфейсе приложения.",
                     value = settings.secureScreen,
                 ) { value -> viewModel.update { it.copy(secureScreen = value) } }
 
@@ -74,6 +74,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     "Автоматическое переподключение",
                     "Повторно ищет последний доверенный узел, но не переносит доверие по BLE MAC.",
                     settings.autoReconnect,
+                    enabled = settings.rememberTrustedNode,
                 ) { value -> viewModel.update { it.copy(autoReconnect = value) } }
 
                 HorizontalDivider(color = SecureMeshColors.Divider)
@@ -88,9 +89,10 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 HorizontalDivider(color = SecureMeshColors.Divider)
 
                 SettingSwitch(
-                    "Показывать все BLE-устройства",
-                    "Полезно, если рекламный пакет SecureMesh приходит без Service UUID. Проверка identity всё равно происходит только после GATT.",
+                    "Диагностический поиск всех BLE",
+                    "Работает только вместе с developer mode. В обычном режиме показываются устройства с подтверждённым SecureMesh Service UUID.",
                     settings.showUnknownBle,
+                    enabled = settings.developerMode,
                 ) { value -> viewModel.update { it.copy(showUnknownBle = value) } }
             }
         }
@@ -198,7 +200,7 @@ private fun SettingValue(label: String, value: String) {
 }
 
 @Composable
-private fun SettingSwitch(label: String, description: String, value: Boolean, set: (Boolean) -> Unit) {
+private fun SettingSwitch(label: String, description: String, value: Boolean, enabled: Boolean = true, set: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -208,7 +210,7 @@ private fun SettingSwitch(label: String, description: String, value: Boolean, se
             Text(label, fontWeight = FontWeight.Medium)
             Text(description, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
         }
-        Switch(checked = value, onCheckedChange = set)
+        Switch(checked = value, onCheckedChange = set, enabled = enabled)
     }
 }
 

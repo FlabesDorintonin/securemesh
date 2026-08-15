@@ -48,7 +48,7 @@ class SettingsStore(private val context: Context) : SettingsDataSource {
             keepScreenAwakeDuringTest = p[Keys.keepAwake] ?: true,
             autoReconnect = p[Keys.autoReconnect] ?: true,
             scanDurationSec = (p[Keys.scanDuration] ?: 12).coerceIn(5, 30),
-            showUnknownBle = p[Keys.showUnknown] ?: true,
+            showUnknownBle = p[Keys.showUnknown] ?: false,
             rememberTrustedNode = p[Keys.rememberTrustedNode] ?: true,
             secureScreen = p[Keys.secureScreen] ?: true,
             positionHistory = p[Keys.positionHistory] ?: true,

@@ -18,14 +18,18 @@ data class DiscoveryFilter(
 fun isSecureMeshDiscoveryRelevant(device: DiscoveredDevice): Boolean =
     device.classification != DeviceClassification.UNKNOWN_BLE || "name-only-not-identity" in device.matchReasons
 
-/** Default discovery must never hide a real Android ScanResult. */
-@Suppress("UNUSED_PARAMETER")
-fun isVisibleDuringDiscovery(device: DiscoveredDevice, canShowUnknown: Boolean): Boolean = true
+/**
+ * Production discovery shows only devices with protocol evidence. Raw/unknown BLE is a developer diagnostic
+ * surface and must be explicitly enabled; a SecureMesh-looking name alone is never enough.
+ */
+fun isVisibleDuringDiscovery(device: DiscoveredDevice, canShowUnknown: Boolean): Boolean =
+    canShowUnknown || device.classification != DeviceClassification.UNKNOWN_BLE
 
-fun filterDevices(devices: List<DiscoveredDevice>, filter: DiscoveryFilter): List<DiscoveredDevice> {
+fun filterDevices(devices: List<DiscoveredDevice>, filter: DiscoveryFilter, canShowUnknown: Boolean = false): List<DiscoveredDevice> {
     val q = filter.query.trim().lowercase()
     return devices.asSequence()
-        .filter { device -> !filter.secureMeshOnly || isSecureMeshDiscoveryRelevant(device) }
+        .filter { device -> isVisibleDuringDiscovery(device, canShowUnknown) }
+        .filter { device -> !filter.secureMeshOnly || device.classification != DeviceClassification.UNKNOWN_BLE }
         .filter { device -> q.isBlank() || device.advertisedName.orEmpty().lowercase().contains(q) || device.address.lowercase().contains(q) }
         .let { sequence ->
             when (filter.sort) {

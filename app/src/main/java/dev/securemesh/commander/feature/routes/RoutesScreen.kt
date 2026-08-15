@@ -29,6 +29,7 @@ fun RoutesScreen(viewModel: RoutesViewModel) {
     var showAdd by remember { mutableStateOf(false) }
     var destination by remember { mutableStateOf("") }
     var via by remember { mutableStateOf("") }
+    var pendingRemove by remember { mutableStateOf<MeshRoute?>(null) }
     val visibleError = localizedError(error)
 
     LazyColumn(
@@ -65,7 +66,7 @@ fun RoutesScreen(viewModel: RoutesViewModel) {
         } else {
             items(state.routes, key = { it.destination }) { route ->
                 RouteCard(route, state.canManage && route.type == RouteType.STATIC) {
-                    viewModel.remove(route.destination)
+                    pendingRemove = route
                 }
             }
         }
@@ -80,13 +81,36 @@ fun RoutesScreen(viewModel: RoutesViewModel) {
                 RouteNodeSelector("Куда", destination, state.nodes) { destination = it }
                 RouteNodeSelector("Через", via, state.nodes.filter { it.id != destination }) { via = it }
                 Button(
-                    onClick = { viewModel.add(destination, via); showAdd = false },
-                    enabled = destination.isNotBlank() && via.isNotBlank() && destination != via,
+                    onClick = {
+                        viewModel.add(destination, via) {
+                            showAdd = false
+                            destination = ""
+                            via = ""
+                        }
+                    },
+                    enabled = destination.isNotBlank() && via.isNotBlank() && destination != via && !state.busy,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Сохранить маршрут") }
+                ) { Text(if (state.busy) "Сохраняем…" else "Сохранить маршрут") }
             }
         }
     }
+
+
+    pendingRemove?.let { route ->
+        AlertDialog(
+            onDismissRequest = { if (!state.busy) pendingRemove = null },
+            title = { Text("Удалить статический маршрут?") },
+            text = { Text("${route.destination} → ${route.nextHop}. Сеть перестанет использовать это ручное правило после подтверждения firmware.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.busy,
+                    onClick = { viewModel.remove(route.destination) { pendingRemove = null } },
+                ) { Text("Удалить", color = SecureMeshColors.Critical) }
+            },
+            dismissButton = { TextButton(enabled = !state.busy, onClick = { pendingRemove = null }) { Text("Отмена") } },
+        )
+    }
+
 }
 
 @Composable

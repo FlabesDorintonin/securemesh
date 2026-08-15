@@ -160,7 +160,7 @@ fun DashboardScreen(
                 }
             }
         } else {
-            items(recentMessages, key = { it.id }) { message ->
+            items(recentMessages, key = { it.stableKey() }) { message ->
                 val peerId = if (message.origin == local?.nodeId) message.destination else message.origin
                 val peer = state.nodes.firstOrNull { it.id == peerId }
                 val peerName = deviceDisplayName(peer?.name ?: peerId)

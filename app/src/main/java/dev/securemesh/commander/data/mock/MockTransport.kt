@@ -262,7 +262,10 @@ class MockTransport(
         return Result.success(id)
     }
 
-    override suspend fun stopFieldTest() { testJob?.cancel(); _activeFieldTest.value = _activeFieldTest.value?.copy(running = false, finishedAtEpochMs = now()) }
+    override suspend fun stopFieldTest(): Result<Unit> = runCatching {
+        testJob?.cancel()
+        _activeFieldTest.value = _activeFieldTest.value?.copy(running = false, finishedAtEpochMs = now())
+    }
 
     override suspend fun acknowledgeSos(id: String) {
         val session = _session.value ?: return

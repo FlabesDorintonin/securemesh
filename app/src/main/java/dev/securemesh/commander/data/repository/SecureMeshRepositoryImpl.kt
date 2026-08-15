@@ -135,7 +135,7 @@ class SecureMeshRepositoryImpl(
                     val persisted = stored.map { it.toDomain() }
                     val liveForOwner = live.filter { it.origin == owner || it.destination == owner }
                     (persisted + liveForOwner)
-                        .associateBy { it.id }
+                        .associateBy { it.stableKey() }
                         .values
                         .sortedByDescending { it.createdAtEpochMs }
                 }
@@ -176,7 +176,7 @@ class SecureMeshRepositoryImpl(
     }
 
     override suspend fun attemptAutoReconnect() {
-        if (!settings.value.autoReconnect) return
+        if (!settings.value.autoReconnect || !settings.value.rememberTrustedNode) return
         val trusted = dao.latestTrustedDevice() ?: return
         // The protocol intentionally does not advertise nodeId. A remembered BLE address is only a transport hint;
         // authenticated INFO must still prove the stable nodeId after every reconnect.
@@ -243,7 +243,14 @@ class SecureMeshRepositoryImpl(
     override suspend fun clearDynamicRoutes() = router.current().clearDynamicRoutes()
     override suspend fun injectLinkFailure(peer: NodeId, durationMs: Long) = router.current().injectLinkFailure(peer, durationMs)
     override suspend fun setLabLinkPolicy(peer: NodeId, preset: LabLinkPreset, durationMs: Long) = router.current().setLabLinkPolicy(peer, preset, durationMs)
-    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.write(transform(settings.value))
+    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        val previous = settings.value
+        val requested = transform(previous)
+        val updated = if (!requested.rememberTrustedNode) requested.copy(autoReconnect = false) else requested
+        settingsStore.write(updated)
+        if (previous.rememberTrustedNode && !updated.rememberTrustedNode) dao.clearTrustedDevices()
+        if (previous.autoReconnect && !updated.autoReconnect) cancelReconnect()
+    }
 
     private suspend fun clearSessionSensitiveHistory(preserveMessages: Boolean = false) {
         dao.clearEvents()
@@ -271,7 +278,20 @@ class SecureMeshRepositoryImpl(
 
 private fun MeshEvent.toEntity() = EventEntity(id,timestampEpochMs,category.name,title,details,nodeId)
 private fun EventEntity.toDomain() = MeshEvent(id,timestampEpochMs,EventCategory.valueOf(category),title,details,nodeId)
-private fun MeshMessage.toEntity() = MessageEntity(id,origin,destination,payload,createdAtEpochMs,progressState.name,observedRoute().joinToString(">"),hopTrace.size,totalRetries() ?: 0,deliveredAtEpochMs,failureReason)
+private fun MeshMessage.toEntity() = MessageEntity(
+    key = stableKey(),
+    id = id,
+    origin = origin,
+    destination = destination,
+    payload = payload,
+    createdAtEpochMs = createdAtEpochMs,
+    state = progressState.name,
+    route = observedRoute().joinToString(">"),
+    hops = hopTrace.size,
+    retries = totalRetries() ?: 0,
+    deliveredAtEpochMs = deliveredAtEpochMs,
+    failureReason = failureReason,
+)
 private fun MessageEntity.toDomain(): MeshMessage {
     val progress = runCatching { MessageDeliveryState.valueOf(state) }.getOrDefault(MessageDeliveryState.QUEUED)
     val routeNodes = route.split(">").filter(String::isNotBlank)

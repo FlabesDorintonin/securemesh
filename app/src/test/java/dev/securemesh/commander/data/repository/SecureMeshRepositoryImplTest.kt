@@ -50,6 +50,7 @@ class SecureMeshRepositoryImplTest {
         dao.upsertMessages(
             listOf(
                 MessageEntity(
+                    key = "SM-OLD:old-message",
                     id = "old-message",
                     origin = "SM-OLD",
                     destination = "SM-PEER",
@@ -87,6 +88,7 @@ class SecureMeshRepositoryImplTest {
         dao.upsertMessages(
             listOf(
                 MessageEntity(
+                    key = "SM-LOCAL:persisted-1",
                     id = "persisted-1",
                     origin = "SM-LOCAL",
                     destination = "SM-REMOTE",
@@ -116,6 +118,46 @@ class SecureMeshRepositoryImplTest {
         }
     }
 
+    @Test fun `same firmware message id from different origins does not collide`() = runBlocking {
+        val mock = MockTransport()
+        val ble = MockTransport()
+        val dao = FakeDao()
+        val settings = FakeSettings(initialOwner = "SM-LOCAL")
+        dao.upsertMessages(
+            listOf(
+                MessageEntity("A:0000002A", "0000002A", "A", "SM-LOCAL", "from A", 10L, MessageDeliveryState.DELIVERED.name, "A>SM-LOCAL", 1, 0, 11L, null),
+                MessageEntity("B:0000002A", "0000002A", "B", "SM-LOCAL", "from B", 20L, MessageDeliveryState.DELIVERED.name, "B>SM-LOCAL", 1, 0, 21L, null),
+            )
+        )
+        val repository = SecureMeshRepositoryImpl(TransportRouter(mock, ble), mock, dao, settings)
+        try {
+            val restored = repository.observeMessageHistory().first { it.size == 2 }
+            assertEquals(setOf("from A", "from B"), restored.map { it.payload }.toSet())
+            assertEquals(2, restored.map { it.stableKey() }.distinct().size)
+        } finally {
+            mock.stop(); ble.stop()
+        }
+    }
+
+    @Test fun `disabling remembered trust deletes saved reconnect identity`() = runBlocking {
+        val mock = MockTransport()
+        val ble = MockTransport()
+        val dao = FakeDao()
+        val settings = FakeSettings(initialSettings = AppSettings(rememberTrustedNode = true, autoReconnect = true))
+        dao.upsertTrustedDevice(
+            TrustedDeviceEntity("A1B2C3D4", "Node", "AA:BB:CC:DD:EE:FF", 10L, "0.8.3", 1)
+        )
+        val repository = SecureMeshRepositoryImpl(TransportRouter(mock, ble), mock, dao, settings)
+        try {
+            repository.updateSettings { it.copy(rememberTrustedNode = false) }
+            assertNull(dao.latestTrustedDevice())
+            repository.attemptAutoReconnect()
+            assertEquals(TransportMode.BLE, repository.transportMode.value)
+        } finally {
+            mock.stop(); ble.stop()
+        }
+    }
+
     @Test fun `trusted record uses SecureMesh node identity and BLE address is metadata`() = runBlocking {
         val dao = FakeDao()
         val trusted = TrustedDeviceEntity(
@@ -133,8 +175,11 @@ class SecureMeshRepositoryImplTest {
     }
 }
 
-private class FakeSettings(initialOwner: NodeId? = null) : SettingsDataSource {
-    private val state = MutableStateFlow(AppSettings())
+private class FakeSettings(
+    initialOwner: NodeId? = null,
+    initialSettings: AppSettings = AppSettings(),
+) : SettingsDataSource {
+    private val state = MutableStateFlow(initialSettings)
     private val owner = MutableStateFlow(initialOwner)
     val ownerValue: NodeId? get() = owner.value
     override val settings: Flow<AppSettings> = state
@@ -156,7 +201,7 @@ private class FakeDao : SecureMeshDao {
         events.value = (items + events.value).distinctBy { it.id }
     }
     override fun observeEvents(limit: Int): Flow<List<EventEntity>> = events.map { it.take(limit) }
-    override suspend fun upsertMessages(items: List<MessageEntity>) { messages.value = (items + messages.value).distinctBy { it.id } }
+    override suspend fun upsertMessages(items: List<MessageEntity>) { messages.value = (items + messages.value).distinctBy { it.key } }
     override fun observeMessages(limit: Int): Flow<List<MessageEntity>> = messages.map { it.take(limit) }
     override fun observeMessagesForNode(nodeId: String, limit: Int): Flow<List<MessageEntity>> =
         messages.map { rows -> rows.filter { it.origin == nodeId || it.destination == nodeId }.take(limit) }

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.*
@@ -48,7 +49,7 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
         }
     }
     val toolItems = buildList {
-        if (session?.supports(dev.securemesh.commander.domain.model.DeviceCapability.VANGUARD) == true) {
+        if (UiAccessPolicy.canShowVanguard(session)) {
             add(MoreDestination("VANGUARD Control", "Manifest, Primary/G2, discovery и Fault Lab", "vanguard", Icons.Rounded.Tune, SecureMeshColors.Cyan))
         }
         if (UiAccessPolicy.canControlDeviceUi(session)) {
@@ -65,7 +66,8 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
         }
     }
     val systemItems = listOf(
-        MoreDestination("Настройки", "Безопасность, Bluetooth и локальные данные", "settings", Icons.Rounded.Settings, SecureMeshColors.TextSecondary),
+        MoreDestination("Центр безопасности", "Экран, локальные данные, BLE trust и privacy", "security", Icons.Rounded.Security, SecureMeshColors.Healthy),
+        MoreDestination("Настройки", "Bluetooth, история и поведение приложения", "settings", Icons.Rounded.Settings, SecureMeshColors.TextSecondary),
     )
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }

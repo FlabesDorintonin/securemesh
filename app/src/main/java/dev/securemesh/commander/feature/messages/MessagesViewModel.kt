@@ -66,11 +66,29 @@ class MessagesViewModel(private val repository: SecureMeshRepository) : ViewMode
 
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
+    private val _sending = MutableStateFlow(false)
+    val sending = _sending.asStateFlow()
 
-    fun send(destination: String, text: String) = viewModelScope.launch {
-        if (text.isBlank()) return@launch
-        if (!uiState.value.canSend) { _error.value = "SEND_MESSAGE not granted"; return@launch }
-        repository.sendMessage(destination, text.trim()).onFailure { _error.value = it.message }
+    fun send(destination: String, text: String, onAccepted: () -> Unit = {}) {
+        if (_sending.value) return
+        viewModelScope.launch {
+            val value = text.trim()
+            if (value.isBlank()) return@launch
+            if (messageUtf8Bytes(value) > SECUREMESH_MESSAGE_MAX_UTF8_BYTES) {
+                _error.value = "Сообщение превышает 70 байт UTF-8"
+                return@launch
+            }
+            if (!uiState.value.canSend) { _error.value = "SEND_MESSAGE not granted"; return@launch }
+            _sending.value = true
+            _error.value = null
+            try {
+                repository.sendMessage(destination, value)
+                    .onSuccess { onAccepted() }
+                    .onFailure { _error.value = it.message ?: "Не удалось отправить сообщение" }
+            } finally {
+                _sending.value = false
+            }
+        }
     }
 }
 

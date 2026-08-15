@@ -48,6 +48,7 @@ import dev.securemesh.commander.domain.model.*
 fun MessagesScreen(viewModel: MessagesViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val sending by viewModel.sending.collectAsStateWithLifecycle()
 
     if (!state.canView) {
         EmptyState("Чаты недоступны", "У текущей сессии нет права на просмотр сообщений.")
@@ -91,9 +92,10 @@ fun MessagesScreen(viewModel: MessagesViewModel) {
                         (it.origin == state.localNodeId && it.destination == peerId)
                 }.sortedBy { it.createdAtEpochMs },
                 canSend = state.canSend,
+                sending = sending,
                 error = localizedError(error),
                 onBack = { selectedPeerId = null },
-                onSend = { text -> viewModel.send(peerId, text) },
+                onSend = { text, onAccepted -> viewModel.send(peerId, text, onAccepted) },
                 onMessageDetails = { selectedMessage = it },
             )
         }
@@ -283,9 +285,10 @@ private fun ChatScreen(
     localNodeId: NodeId?,
     messages: List<MeshMessage>,
     canSend: Boolean,
+    sending: Boolean,
     error: String?,
     onBack: () -> Unit,
-    onSend: (String) -> Unit,
+    onSend: (String, () -> Unit) -> Unit,
     onMessageDetails: (MeshMessage) -> Unit,
 ) {
     var text by remember(peerId) { mutableStateOf("") }
@@ -327,15 +330,13 @@ private fun ChatScreen(
         bottomBar = {
             MessageComposer(
                 text = text,
-                onText = { text = it },
-                enabled = canSend && peer?.online != false,
+                onText = { text = fitMessageDraftToProtocol(it) },
+                enabled = canSend && peer?.online != false && !sending,
+                sending = sending,
                 error = error,
                 onSend = {
                     val value = text.trim()
-                    if (value.isNotEmpty()) {
-                        onSend(value)
-                        text = ""
-                    }
+                    if (value.isNotEmpty()) onSend(value) { text = "" }
                 },
             )
         },
@@ -353,7 +354,7 @@ private fun ChatScreen(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 15.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(messages, key = { it.id }) { message ->
+                    items(messages, key = { it.stableKey() }) { message ->
                         MessageBubble(message, outgoing = message.origin == localNodeId) { onMessageDetails(message) }
                     }
                 }
@@ -442,9 +443,11 @@ private fun MessageComposer(
     text: String,
     onText: (String) -> Unit,
     enabled: Boolean,
+    sending: Boolean,
     error: String?,
     onSend: () -> Unit,
 ) {
+    val utf8Bytes = messageUtf8Bytes(text)
     val sendScale by animateFloatAsState(
         targetValue = if (enabled && text.isNotBlank()) 1f else .90f,
         animationSpec = spring(dampingRatio = .78f, stiffness = 620f),
@@ -456,7 +459,12 @@ private fun MessageComposer(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (!enabled) {
-            Text("Отправка сейчас недоступна", modifier = Modifier.padding(horizontal = 12.dp), color = SecureMeshColors.Warning, style = MaterialTheme.typography.labelSmall)
+            Text(
+                if (sending) "Отправляем…" else "Отправка сейчас недоступна",
+                modifier = Modifier.padding(horizontal = 12.dp),
+                color = if (sending) SecureMeshColors.Cyan else SecureMeshColors.Warning,
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
         error?.let {
             Text(it, modifier = Modifier.padding(horizontal = 12.dp), color = SecureMeshColors.Critical, style = MaterialTheme.typography.labelSmall)
@@ -505,6 +513,12 @@ private fun MessageComposer(
                 }
             }
         }
+        Text(
+            "$utf8Bytes/$SECUREMESH_MESSAGE_MAX_UTF8_BYTES байт UTF-8",
+            modifier = Modifier.padding(horizontal = 12.dp),
+            color = if (utf8Bytes >= 60) SecureMeshColors.Warning else SecureMeshColors.Muted,
+            style = MaterialTheme.typography.labelSmall,
+        )
     }
 }
 
