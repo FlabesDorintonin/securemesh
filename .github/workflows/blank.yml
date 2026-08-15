@@ -9,7 +9,6 @@ on:
       - product/0.8.0-hardening
       - agent/premium-motion-polish
       - agent/firmware-0.8.2-vanguard-console
-      - agent/0.8.2-persist-chat-history-ui
   pull_request:
     branches:
       - main
