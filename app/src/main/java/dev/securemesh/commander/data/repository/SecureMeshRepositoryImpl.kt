@@ -44,7 +44,7 @@ class SecureMeshRepositoryImpl(
     override val vanguardDiagnostics = activeFlow { it.vanguardDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
     override val labLinkPolicies = activeFlow { it.labLinkPolicies }.stateIn(scope, SharingStarted.Eagerly, emptyList())
     override val settings = settingsStore.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
-    private val localHistoryOwnerNodeId = settingsStore.localHistoryOwnerNodeId.stateIn(scope, SharingStarted.Eagerly, null)
+    override val localHistoryOwnerNodeId = settingsStore.localHistoryOwnerNodeId.stateIn(scope, SharingStarted.Eagerly, null)
     private val liveEvents = activeFlow { it.events }
 
     init {
@@ -93,7 +93,11 @@ class SecureMeshRepositoryImpl(
                 if (secureSession.authenticationState != AuthenticationState.AUTHENTICATED) return@collect
                 val identity = secureSession.localNodeIdentity
                 val previousHistoryOwner = settingsStore.localHistoryOwnerNodeId.first()
-                if (previousHistoryOwner != null && previousHistoryOwner != identity.nodeId) clearSessionSensitiveHistory()
+                if (previousHistoryOwner != null && previousHistoryOwner != identity.nodeId) {
+                    // Operational telemetry is session-scoped. Chat rows are different: origin/destination already
+                    // partition them by SecureMesh identity, so switching the attached ESP32 must not destroy chats.
+                    clearSessionSensitiveHistory(preserveMessages = true)
+                }
                 if (previousHistoryOwner != identity.nodeId) settingsStore.setLocalHistoryOwnerNodeId(identity.nodeId)
 
                 if (transportMode.value == TransportMode.BLE && settings.value.rememberTrustedNode) {
@@ -120,6 +124,23 @@ class SecureMeshRepositoryImpl(
     private fun historyOwnedByCurrentSession(session: SecureMeshSession?, ownerNodeId: NodeId?): Boolean =
         session?.authenticationState == AuthenticationState.AUTHENTICATED &&
             ownerNodeId != null && session.localNodeIdentity.nodeId == ownerNodeId
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeMessageHistory(): Flow<List<MeshMessage>> =
+        localHistoryOwnerNodeId.flatMapLatest { owner ->
+            if (owner == null) {
+                flowOf(emptyList<MeshMessage>())
+            } else {
+                combine(dao.observeMessagesForNode(owner), messages) { stored, live ->
+                    val persisted = stored.map { it.toDomain() }
+                    val liveForOwner = live.filter { it.origin == owner || it.destination == owner }
+                    (persisted + liveForOwner)
+                        .associateBy { it.id }
+                        .values
+                        .sortedByDescending { it.createdAtEpochMs }
+                }
+            }
+        }
 
     override fun observeEvents(): Flow<List<MeshEvent>> = combine(dao.observeEvents(), session, localHistoryOwnerNodeId) { list, currentSession, owner ->
         if (!historyOwnedByCurrentSession(currentSession, owner)) emptyList() else list.map { event -> event.toDomain() }
@@ -223,10 +244,20 @@ class SecureMeshRepositoryImpl(
     override suspend fun injectLinkFailure(peer: NodeId, durationMs: Long) = router.current().injectLinkFailure(peer, durationMs)
     override suspend fun setLabLinkPolicy(peer: NodeId, preset: LabLinkPreset, durationMs: Long) = router.current().setLabLinkPolicy(peer, preset, durationMs)
     override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.write(transform(settings.value))
-    private suspend fun clearSessionSensitiveHistory() {
-        dao.clearEvents(); dao.clearMessages(); dao.clearKnownNodes(); dao.clearFieldTests(); dao.clearPositions()
+
+    private suspend fun clearSessionSensitiveHistory(preserveMessages: Boolean = false) {
+        dao.clearEvents()
+        if (!preserveMessages) dao.clearMessages()
+        dao.clearKnownNodes()
+        dao.clearFieldTests()
+        dao.clearPositions()
     }
-    override suspend fun clearLocalHistory() = clearSessionSensitiveHistory()
+
+    override suspend fun clearLocalHistory() {
+        val owner = localHistoryOwnerNodeId.value
+        clearSessionSensitiveHistory(preserveMessages = true)
+        if (owner == null) dao.clearMessages() else dao.clearMessagesForNode(owner)
+    }
 
     override suspend fun exportEventsCsv(): String = observeEvents().first().joinToString("\n", "timestamp,category,node,title,details\n") { e -> listOf(e.timestampEpochMs,e.category,e.nodeId.orEmpty(),e.title,e.details).joinToString(",") { csv(it.toString()) } }
     override suspend fun exportEventsJson(): String = observeEvents().first().joinToString(",\n", "[\n", "\n]") { e -> "  {\"id\":${json(e.id)},\"timestamp\":${e.timestampEpochMs},\"category\":${json(e.category.name)},\"nodeId\":${jsonNullable(e.nodeId)},\"title\":${json(e.title)},\"details\":${json(e.details)}}" }
@@ -241,6 +272,41 @@ class SecureMeshRepositoryImpl(
 private fun MeshEvent.toEntity() = EventEntity(id,timestampEpochMs,category.name,title,details,nodeId)
 private fun EventEntity.toDomain() = MeshEvent(id,timestampEpochMs,EventCategory.valueOf(category),title,details,nodeId)
 private fun MeshMessage.toEntity() = MessageEntity(id,origin,destination,payload,createdAtEpochMs,progressState.name,observedRoute().joinToString(">"),hopTrace.size,totalRetries() ?: 0,deliveredAtEpochMs,failureReason)
+private fun MessageEntity.toDomain(): MeshMessage {
+    val progress = runCatching { MessageDeliveryState.valueOf(state) }.getOrDefault(MessageDeliveryState.QUEUED)
+    val routeNodes = route.split(">").filter(String::isNotBlank)
+    val syntheticHops = routeNodes.zipWithNext().mapIndexed { index, pair ->
+        TransmissionHop(
+            from = pair.first,
+            to = pair.second,
+            frameId = null,
+            ackState = HopAckState.UNAVAILABLE,
+            retries = this.retries.takeIf { index == routeNodes.size - 2 && it > 0 },
+            rssi = null,
+            snr = null,
+            timestampEpochMs = createdAtEpochMs,
+        )
+    }
+    val finalState = when {
+        deliveredAtEpochMs != null || progress == MessageDeliveryState.DELIVERED -> MessageFinalState.DELIVERED
+        progress == MessageDeliveryState.FAILED -> MessageFinalState.FAILED
+        progress == MessageDeliveryState.EXPIRED -> MessageFinalState.EXPIRED
+        progress == MessageDeliveryState.FINAL_CONFIRMATION_PENDING -> MessageFinalState.UNKNOWN
+        else -> MessageFinalState.PENDING
+    }
+    return MeshMessage(
+        id = id,
+        origin = origin,
+        destination = destination,
+        payload = payload,
+        createdAtEpochMs = createdAtEpochMs,
+        progressState = progress,
+        finalState = finalState,
+        hopTrace = syntheticHops,
+        deliveredAtEpochMs = deliveredAtEpochMs,
+        failureReason = failureReason,
+    )
+}
 private fun MeshNode.toEntity() = KnownNodeEntity(id,name,role.name,firmwareVersion ?: "UNKNOWN",protocolVersion ?: -1,lastSeenEpochMs)
 private fun NodePosition.toEntity() = PositionEntity("$nodeId:$timestampEpochMs",nodeId,latitude,longitude,timestampEpochMs,satellites ?: -1,hdop,speedMps,valid)
 private fun PositionEntity.toDomain() = NodePosition(nodeId,latitude,longitude,timestampEpochMs,satellites.takeIf { it >= 0 },hdop,speedMps,valid)
