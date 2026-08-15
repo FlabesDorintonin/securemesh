@@ -18,7 +18,9 @@ interface SecureMeshRepository {
     val activeSos: StateFlow<SosAlert?>
     val bleDiagnostics: StateFlow<BleDiagnostics?>
     val settings: StateFlow<AppSettings>
+    val localHistoryOwnerNodeId: StateFlow<NodeId?>
 
+    fun observeMessageHistory(): Flow<List<MeshMessage>>
     fun observeEvents(): Flow<List<MeshEvent>>
     fun observeFieldTestHistory(): Flow<List<FieldTestSession>>
     fun observePositionHistory(nodeId: NodeId? = null): Flow<List<NodePosition>>
