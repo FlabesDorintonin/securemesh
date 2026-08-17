@@ -61,6 +61,14 @@ jobs:
           python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate.log
           git diff --check
 
+      - name: Apply MapLibre v13 compile fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v09_maplibre_compile_fix.patch
+          git apply v09_maplibre_compile_fix.patch
+          git diff --check
+
       - name: Upload alignment failure log
         if: failure()
         uses: actions/upload-artifact@v4
