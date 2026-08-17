@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.*
 data class SearchResult(val nodes: List<MeshNode> = emptyList(), val messages: List<MeshMessage> = emptyList(), val events: List<MeshEvent> = emptyList())
 class SearchViewModel(repository: SecureMeshRepository) : ViewModel() {
     private val query = MutableStateFlow("")
-    val result = combine(query, repository.nodes, repository.messages, repository.observeEvents(), repository.session) { q, nodes, messages, events, session ->
+    val result = combine(query, repository.nodes, repository.observeMessageHistory(), repository.observeEvents(), repository.session) { q, nodes, messages, events, session ->
         val text = q.trim().lowercase()
         if (text.isBlank()) SearchResult() else SearchResult(
             UiAccessPolicy.visibleNodes(session, nodes).filter { it.id.lowercase().contains(text) || it.name.lowercase().contains(text) }.take(20),

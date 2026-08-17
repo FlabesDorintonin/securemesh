@@ -110,7 +110,7 @@ check("Permission result is handled explicitly", "permissionResultGranted" in DI
 check("Sensitive backup and device transfer excluded", 'android:allowBackup="false"' in MANIFEST and 'android:dataExtractionRules="@xml/data_extraction_rules"' in MANIFEST and '<exclude domain="database"' in BACKUP_RULES and '<exclude domain="sharedpref"' in DATA_EXTRACTION_RULES)
 check("Cleartext network traffic disabled", 'android:usesCleartextTraffic="false"' in MANIFEST)
 check("Welcome surface has no demo controls", "onDemo" not in WELCOME_SCREEN and "Открыть демо" not in WELCOME_SCREEN and "будущие возможности" not in WELCOME_SCREEN.lower())
-check("Product hardening version is stamped", 'versionName = "0.8.0-product-hardening"' in (ROOT / "app/build.gradle.kts").read_text())
+check("Firmware 0.8.2 VANGUARD console version is stamped", 'versionName = "0.8.2-vanguard-console"' in (ROOT / "app/build.gradle.kts").read_text())
 check("Disconnect has local cleanup fallback", "BLE disconnect timeout; local GATT closed" in BLE and "No active BLE link" in BLE)
 
 check("Trusted entity nodeId primary key", '@Entity(tableName = "trusted_devices")' in ENTITIES and "@PrimaryKey val nodeId: String" in ENTITIES)

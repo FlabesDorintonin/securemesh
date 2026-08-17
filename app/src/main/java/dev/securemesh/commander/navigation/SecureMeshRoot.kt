@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -47,6 +48,8 @@ import dev.securemesh.commander.feature.search.*
 import dev.securemesh.commander.feature.settings.*
 import dev.securemesh.commander.feature.sos.SosOverlay
 import dev.securemesh.commander.feature.welcome.*
+import dev.securemesh.commander.feature.vanguard.*
+import dev.securemesh.commander.feature.deviceui.*
 
 private object RootRoute {
     const val WELCOME = "welcome"
@@ -62,7 +65,8 @@ private fun itemsFor(session: SecureMeshSession?): List<NavItem> = buildList {
     if (UiAccessPolicy.canShowMessages(session)) add(NavItem("messages", "Чаты", Icons.Rounded.ChatBubble))
     if (UiAccessPolicy.canShowNodes(session)) add(NavItem("nodes", "Сеть", Icons.Rounded.People))
     else session?.let { add(NavItem("node/${it.localNodeIdentity.nodeId}", "Мой узел", Icons.Rounded.People)) }
-    add(NavItem("map", "Карта", Icons.Rounded.Map))
+    if (session?.supports(DeviceCapability.VANGUARD) == true) add(NavItem("vanguard", "Пульт", Icons.Rounded.Tune))
+    else add(NavItem("map", "Карта", Icons.Rounded.Map))
     add(NavItem("more", "Ещё", Icons.Rounded.MoreHoriz))
 }
 
@@ -178,6 +182,8 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
         composable("messages") { MessagesScreen(viewModel(factory = viewModelFactory { MessagesViewModel(repository) })) }
         composable("map") { MapScreen(viewModel(factory = viewModelFactory { NetworkViewModel(repository) }), onNode = { nav.navigate("node/$it") }) }
         composable("more") { MoreScreen(session) { nav.navigate(it) } }
+        composable("vanguard") { VanguardControlScreen(viewModel(factory = viewModelFactory { VanguardControlViewModel(repository) })) }
+        composable("devicecontrol") { DeviceControlScreen(viewModel(factory = viewModelFactory { DeviceControlViewModel(repository) })) }
         composable("topology") { TopologyScreen(viewModel(factory = viewModelFactory { NetworkViewModel(repository) })) { nav.navigate("node/$it") } }
         composable("routes") { RoutesScreen(viewModel(factory = viewModelFactory { RoutesViewModel(repository) })) }
         composable("fieldtest") { FieldTestScreen(viewModel(factory = viewModelFactory { FieldTestViewModel(repository) })) }
@@ -188,7 +194,7 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
     }
 }
 
-private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search")
+private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search", "devicecontrol")
 
 private fun isSelected(current: String?, item: NavItem): Boolean = when {
     item.route == "more" -> isMoreRoute(current)

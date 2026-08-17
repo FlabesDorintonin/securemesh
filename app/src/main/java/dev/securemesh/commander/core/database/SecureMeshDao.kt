@@ -14,6 +14,8 @@ interface SecureMeshDao {
     suspend fun upsertMessages(items: List<MessageEntity>)
     @Query("SELECT * FROM messages ORDER BY createdAtEpochMs DESC LIMIT :limit")
     fun observeMessages(limit: Int = 1000): Flow<List<MessageEntity>>
+    @Query("SELECT * FROM messages WHERE origin = :nodeId OR destination = :nodeId ORDER BY createdAtEpochMs DESC LIMIT :limit")
+    fun observeMessagesForNode(nodeId: String, limit: Int = 1000): Flow<List<MessageEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertKnownNodes(items: List<KnownNodeEntity>)
@@ -41,6 +43,7 @@ interface SecureMeshDao {
     @Query("DELETE FROM position_history WHERE timestampEpochMs < :cutoff") suspend fun deletePositionsBefore(cutoff: Long)
     @Query("DELETE FROM events") suspend fun clearEvents()
     @Query("DELETE FROM messages") suspend fun clearMessages()
+    @Query("DELETE FROM messages WHERE origin = :nodeId OR destination = :nodeId") suspend fun clearMessagesForNode(nodeId: String)
     @Query("DELETE FROM known_nodes") suspend fun clearKnownNodes()
     @Query("DELETE FROM field_tests") suspend fun clearFieldTests()
     @Query("DELETE FROM position_history") suspend fun clearPositions()

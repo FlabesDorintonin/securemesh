@@ -8,6 +8,7 @@ on:
       - master
       - product/0.8.0-hardening
       - agent/premium-motion-polish
+      - agent/firmware-0.8.2-vanguard-console
   pull_request:
     branches:
       - main
