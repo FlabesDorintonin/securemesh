@@ -57,8 +57,6 @@ jobs:
           gzip -dc v091_full.patch.gz > v091_full.patch
           git apply --check v091_full.patch
           git apply v091_full.patch
-          git apply --check v091_security_interface_fix.patch
-          git apply v091_security_interface_fix.patch
           git diff --check
           python3 tools/domain_alignment_gate.py
 
