@@ -1,0 +1,16 @@
+diff --git a/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt b/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt
+--- a/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt
++++ b/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt
+@@ -18,9 +18,9 @@ import javax.crypto.spec.GCMParameterSpec
+  * authentication instead of silently decrypting to the wrong record.
+  */
+ interface SensitiveDataProtector {
+-    override fun isEncrypted(value: String): Boolean
+-    override fun encryptString(plainText: String, aad: String): String
+-    override fun decryptString(value: String, aad: String): String
++    fun isEncrypted(value: String): Boolean
++    fun encryptString(plainText: String, aad: String): String
++    fun decryptString(value: String, aad: String): String
+ }
+ 
+ class SensitiveDataCipher(
