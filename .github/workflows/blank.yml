@@ -69,6 +69,14 @@ jobs:
           git apply v09_maplibre_compile_fix.patch
           git diff --check
 
+      - name: Apply BLE v0.2 GPS test fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v09_test_decode_fix.patch
+          git apply v09_test_decode_fix.patch
+          git diff --check
+
       - name: Upload alignment failure log
         if: failure()
         uses: actions/upload-artifact@v4
