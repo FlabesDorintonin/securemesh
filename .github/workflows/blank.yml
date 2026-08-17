@@ -9,6 +9,7 @@ on:
       - product/0.8.0-hardening
       - agent/premium-motion-polish
       - agent/firmware-0.8.2-vanguard-console
+      - agent/0.9.1-contact-vault
   pull_request:
     branches:
       - main
@@ -84,6 +85,19 @@ jobs:
           git apply --check v09_position_fixture_fix.patch
           git apply v09_position_fixture_fix.patch
           git diff --check
+
+      - name: Apply v0.9.1 Contact Vault + GPS visibility patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat v091_full_patch_parts/part*.txt > v091_full.patch.gz.b64
+          test "$(wc -c < v091_full.patch.gz.b64)" -eq 24468
+          base64 -d v091_full.patch.gz.b64 > v091_full.patch.gz
+          gzip -dc v091_full.patch.gz > v091_full.patch
+          git apply --check v091_full.patch
+          git apply v091_full.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py
 
       - name: Upload alignment failure log
         if: failure()
