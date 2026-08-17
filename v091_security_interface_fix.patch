@@ -1,16 +1,11 @@
 diff --git a/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt b/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt
 --- a/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt
 +++ b/app/src/main/java/dev/securemesh/commander/core/security/SensitiveDataCipher.kt
-@@ -18,9 +18,9 @@ import javax.crypto.spec.GCMParameterSpec
+@@ -17,6 +17,7 @@ import javax.crypto.spec.GCMParameterSpec
+  * (for example a specific contact/node or message key), so moving ciphertext between records fails
   * authentication instead of silently decrypting to the wrong record.
   */
++// Explicit interface keeps repository code testable without exposing Android Keystore internals.
  interface SensitiveDataProtector {
--    override fun isEncrypted(value: String): Boolean
--    override fun encryptString(plainText: String, aad: String): String
--    override fun decryptString(value: String, aad: String): String
-+    fun isEncrypted(value: String): Boolean
-+    fun encryptString(plainText: String, aad: String): String
-+    fun decryptString(value: String, aad: String): String
- }
- 
- class SensitiveDataCipher(
+     fun isEncrypted(value: String): Boolean
+     fun encryptString(plainText: String, aad: String): String
