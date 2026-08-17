@@ -99,6 +99,14 @@ jobs:
           git diff --check
           python3 tools/domain_alignment_gate.py
 
+      - name: Apply v0.9.1 security interface compile fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v091_security_interface_fix.patch
+          git apply v091_security_interface_fix.patch
+          git diff --check
+
       - name: Upload alignment failure log
         if: failure()
         uses: actions/upload-artifact@v4
