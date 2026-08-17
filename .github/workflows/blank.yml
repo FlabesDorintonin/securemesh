@@ -45,11 +45,21 @@ jobs:
         with:
           gradle-version: '8.13'
 
+      - name: Assemble v0.9 patch transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G 'v09_patch_parts/part*.txt' > /dev/null; then
+            cat v09_patch_parts/part*.txt > v09_android.patch.gz.b64
+            test "$(wc -c < v09_android.patch.gz.b64)" -eq 33500
+          fi
+
       - name: Architecture alignment gate
         shell: bash
         run: |
           set -o pipefail
           python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate.log
+          git diff --check
 
       - name: Upload alignment failure log
         if: failure()
@@ -82,6 +92,30 @@ jobs:
         with:
           name: SecureMesh-test-failure-log-${{ github.run_number }}
           path: test-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Android lint
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace --console=plain lintDebug > lint-debug.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "----- concise Android lint failure -----"
+            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" lint-debug.log | head -n 200 || true
+            tail -n 100 lint-debug.log
+          else
+            tail -n 30 lint-debug.log
+          fi
+          exit "$code"
+
+      - name: Upload lint failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-lint-failure-log-${{ github.run_number }}
+          path: lint-debug.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -122,8 +156,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Package source snapshot
-        run: git archive --format=zip --output=SecureMesh-source-${{ github.run_number }}.zip HEAD
+      - name: Package applied v0.9 source snapshot
+        shell: bash
+        run: |
+          rm -rf .git .gradle app/build build
+          zip -qr SecureMesh-source-${{ github.run_number }}.zip . -x 'SecureMesh-source-*.zip'
 
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4
