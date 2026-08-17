@@ -77,6 +77,14 @@ jobs:
           git apply v09_test_decode_fix.patch
           git diff --check
 
+      - name: Apply POSITION v0.2 fixture fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v09_position_fixture_fix.patch
+          git apply v09_position_fixture_fix.patch
+          git diff --check
+
       - name: Upload alignment failure log
         if: failure()
         uses: actions/upload-artifact@v4
