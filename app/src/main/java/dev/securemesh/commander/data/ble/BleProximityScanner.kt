@@ -89,7 +89,15 @@ class BleProximityScanner(context: Context) : BleProximitySource {
         purge(System.currentTimeMillis())
         _error.value = null
         _scanning.value = true
-        scanner.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), callback)
+        try {
+            scanner.startScan(
+                null,
+                ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
+                callback,
+            )
+        } catch (error: SecurityException) {
+            throw IllegalStateException("BLE_PERMISSION: permission was revoked during scan start", error)
+        }
         timeoutJob = scope.launch {
             delay(durationMs.coerceIn(5_000L, 30_000L))
             stop(updateState = true)
