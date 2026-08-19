@@ -118,6 +118,14 @@ jobs:
           test "$(sha256sum v093_field_awareness.patch | awk '{print $1}')" = "769bc62b91f24010137d86ce9cb2d2e066cc74f999b62bbb844dda3178d2ed1c"
           git apply --check v093_field_awareness.patch
           git apply v093_field_awareness.patch
+
+      - name: Apply v0.9.3 Kotlin integration fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum v093_compile_fix.patch | awk '{print $1}')" = "c7db55997fec71832034b2415f7c404d635dd5019dce7ba2a22f672b72327543"
+          git apply --check v093_compile_fix.patch
+          git apply v093_compile_fix.patch
           git diff --check
           python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate-v093.log
 
