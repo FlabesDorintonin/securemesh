@@ -127,6 +127,19 @@ jobs:
           git diff --check
           python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate-v093.log
 
+      - name: Apply v0.9.3 compile completion layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat v093_compile_fix_parts/part*.txt > v093_compile_fix.patch.gz.b64
+          test "$(wc -c < v093_compile_fix.patch.gz.b64)" -eq 11296
+          base64 -d v093_compile_fix.patch.gz.b64 > v093_compile_fix.patch.gz
+          gzip -dc v093_compile_fix.patch.gz > v093_compile_fix.patch
+          git apply --check v093_compile_fix.patch
+          git apply v093_compile_fix.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate-v093-final.log
+
       - name: Run JVM unit tests
         shell: bash
         run: |
@@ -152,6 +165,7 @@ jobs:
             test-debug.log
             alignment-gate.log
             alignment-gate-v093.log
+            alignment-gate-v093-final.log
           if-no-files-found: ignore
           retention-days: 7
 
