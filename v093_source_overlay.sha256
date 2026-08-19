@@ -1,0 +1,10 @@
+535c725d20c69b9f721068ada274ef5398fdd66d41a25b10a401acbb3bea467b  app/src/main/java/dev/securemesh/commander/AppContainer.kt
+3223eb4d97a7e1668093b5908c787430a93ca4fec64f77d9b28b182c6360ad7a  app/src/main/java/dev/securemesh/commander/data/ble/BleProximityScanner.kt
+30900e0543d261a5ed9a1fc6ed7dba650dcc0eb953bfa010fe9400b3ce541e47  app/src/main/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImpl.kt
+b166cc4b00c5b5a21e5ad6108da62caa19a6186cb4adfb1306d250bdcef15738  app/src/main/java/dev/securemesh/commander/domain/repository/SecureMeshRepository.kt
+6c5d998639b6d499527804e20b1c7087c07efeb73a018c21f7e82e04141861d4  app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt
+12a1d407e4561f7aff903743e91a3e8e41568da876f015f76316abdfc83dbd8a  app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsViewModel.kt
+c6f5ab8b2fa529661e5dfb7f5e480350c5e2157518defdef9df5812b18a041f2  app/src/main/java/dev/securemesh/commander/feature/nodes/NodesViewModel.kt
+7bd8b4d0cdd51c70b3705a06c35c452b0d1d05f2ca07041d67e4ce1596c85003  app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt
+e99eca30aa192f58b8aa9985640b520f8d72b78e98cdc8909f3282947ef8a6e6  app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarViewModel.kt
+34331594470e17f84bff8239a722c44547d0cff357a6c90d8df3ad7f37a61d03  app/src/main/java/dev/securemesh/commander/navigation/SecureMeshRoot.kt
