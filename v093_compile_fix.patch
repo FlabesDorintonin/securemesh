@@ -1,0 +1,59 @@
+diff --git a/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt b/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt
+index 9b46aa5..1f86898 100644
+--- a/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt
++++ b/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt
+@@ -53,7 +53,15 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
+                     HealthRow(Icons.Rounded.Lock, "Защита канала", yesNo(state.health?.cryptoReady, "Работает", "Ошибка"), state.health?.cryptoReady)
+                     HealthRow(Icons.Rounded.MyLocation, "Местоположение", gpsLabel(state.health?.gpsState), gpsGood(state.health?.gpsState))
+                     HealthRow(Icons.Rounded.Bluetooth, "Связь с телефоном", yesNo(state.health?.bleReady, "Подключена", "Нет связи"), state.health?.bleReady)
+-                    HealthRow(Icons.Rounded.Hub, "Mesh-сеть", if (state.health == null) "Нет данных" else "${state.health.neighborCount} соседей · ${state.health.routeCount} маршрутов", state.health?.neighborCount?.let { it > 0 })
++                    run {
++                        val health = state.health
++                        HealthRow(
++                            Icons.Rounded.Hub,
++                            "Mesh-сеть",
++                            if (health == null) "Нет данных" else "${health.neighborCount} соседей · ${health.routeCount} маршрутов",
++                            health?.neighborCount?.let { it > 0 },
++                        )
++                    }
+                     HealthRow(Icons.Rounded.SignalCellularAlt, "Качество связи", state.strongestLink.label, state.strongestLink.quality in setOf(LinkQuality.EXCELLENT, LinkQuality.GOOD))
+                     if ((state.health?.mailboxUsed ?: 0) > 0) {
+                         HealthRow(Icons.Rounded.ScheduleSend, "Ожидает доставки", "${state.health?.mailboxUsed} сообщ.", false)
+diff --git a/app/src/main/java/dev/securemesh/commander/feature/network/NetworkViewModel.kt b/app/src/main/java/dev/securemesh/commander/feature/network/NetworkViewModel.kt
+index 659a7d9..238246d 100644
+--- a/app/src/main/java/dev/securemesh/commander/feature/network/NetworkViewModel.kt
++++ b/app/src/main/java/dev/securemesh/commander/feature/network/NetworkViewModel.kt
+@@ -78,8 +78,18 @@ class NetworkViewModel(private val repository: SecureMeshRepository) : ViewModel
+         }
+     }
+ 
+-    fun saveContact(nodeId: NodeId, alias: String?, note: String?, pinned: Boolean) {
+-        viewModelScope.launch { repository.updateContactProfile(nodeId, alias, note, pinned, favorite, groupLabel, accentIndex) }
++    fun saveContact(
++        nodeId: NodeId,
++        alias: String?,
++        note: String?,
++        pinned: Boolean,
++        favorite: Boolean,
++        groupLabel: String?,
++        accentIndex: Int,
++    ) {
++        viewModelScope.launch {
++            repository.updateContactProfile(nodeId, alias, note, pinned, favorite, groupLabel, accentIndex)
++        }
+     }
+ 
+     fun clearContact(nodeId: NodeId) {
+diff --git a/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarViewModel.kt b/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarViewModel.kt
+index 78f053d..29b79a9 100644
+--- a/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarViewModel.kt
++++ b/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarViewModel.kt
+@@ -42,7 +42,7 @@ class BleRadarViewModel(private val repository: SecureMeshRepository) : ViewMode
+                 nodeId = nodeId,
+                 rssi = device.rssi,
+                 proximity = proximityLabel(device.rssi),
+-                secureMesh = device.classification != DeviceClassification.OTHER_BLE,
++                secureMesh = device.classification != DeviceClassification.UNKNOWN_BLE,
+                 trusted = device.classification == DeviceClassification.TRUSTED_SECUREMESH,
+             )
+         }.filter { !onlySecure || it.secureMesh }.sortedByDescending { it.rssi }
