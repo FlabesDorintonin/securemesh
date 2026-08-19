@@ -1,0 +1,2 @@
+CI validation probe for SecureMesh v0.9.3 Field Awareness.
+Link-health test fix pass 3.
