@@ -123,7 +123,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(sha256sum v093_compile_fix.patch | awk '{print $1}')" = "c7db55997fec71832034b2415f7c404d635dd5019dce7ba2a22f672b72327543"
+          test "$(sha256sum v093_compile_fix.patch | awk '{print $1}')" = "55a8228acee479463c9c7eb59c55b851a0c104d869e9d1eafeda53a69be6d40e"
           git apply --check v093_compile_fix.patch
           git apply v093_compile_fix.patch
           git diff --check
