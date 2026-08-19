@@ -1,0 +1,16 @@
+diff --git a/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt b/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt
+index cce1abf..1f047ed 100644
+--- a/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt
++++ b/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt
+@@ -355,8 +355,9 @@ class SecureMeshBleProtocolV02Test {
+         payload[o++] = 8
+         putU16(payload, o, 300); o += 2
+         putU32(payload, o, 400); o += 4
+-        val event = codec.decodeEvent(event(BleEventType.POSITION_UPDATED, payload)).getOrThrow() as BleDecodedEvent.PositionUpdated
+-        val mapped = SecureMeshBleV02DomainMapping.position(event.position, 1_800_000_101_000L)
++        val frame = codec.decodeApplicationPacket(event(BleEventType.POSITION_UPDATED, payload)).getOrThrow() as SecureMeshBleFrame.Event
++        val decoded = codec.parseEvent(frame).getOrThrow() as BleDecodedEvent.PositionUpdated
++        val mapped = SecureMeshBleV02DomainMapping.position(decoded.position, 1_800_000_101_000L)
+         assertTrue(mapped.valid)
+         assertEquals("01020304", mapped.nodeId)
+         assertEquals(1.11, mapped.hdop!!, 0.001)

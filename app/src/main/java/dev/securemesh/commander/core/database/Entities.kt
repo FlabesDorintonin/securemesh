@@ -15,7 +15,8 @@ data class EventEntity(
 
 @Entity(tableName = "messages")
 data class MessageEntity(
-    @PrimaryKey val id: String,
+    @PrimaryKey val key: String,
+    val id: String,
     val origin: String,
     val destination: String,
     val payload: String,

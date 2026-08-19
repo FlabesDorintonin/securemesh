@@ -19,7 +19,7 @@ import kotlinx.coroutines.Dispatchers
         PositionEntity::class,
         TrustedDeviceEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class SecureMeshDatabase : RoomDatabase() {
@@ -60,11 +60,46 @@ abstract class SecureMeshDatabase : RoomDatabase() {
             }
         }
 
+        /** Message ids are firmware-local u32 values, so origin + id is the durable unique identity. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override suspend fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    """
+                    CREATE TABLE `messages_new` (
+                        `key` TEXT NOT NULL,
+                        `id` TEXT NOT NULL,
+                        `origin` TEXT NOT NULL,
+                        `destination` TEXT NOT NULL,
+                        `payload` TEXT NOT NULL,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        `state` TEXT NOT NULL,
+                        `route` TEXT NOT NULL,
+                        `hops` INTEGER NOT NULL,
+                        `retries` INTEGER NOT NULL,
+                        `deliveredAtEpochMs` INTEGER,
+                        `failureReason` TEXT,
+                        PRIMARY KEY(`key`)
+                    )
+                    """.trimIndent()
+                )
+                connection.execSQL(
+                    """
+                    INSERT OR REPLACE INTO `messages_new`
+                        (`key`,`id`,`origin`,`destination`,`payload`,`createdAtEpochMs`,`state`,`route`,`hops`,`retries`,`deliveredAtEpochMs`,`failureReason`)
+                    SELECT `origin` || ':' || `id`, `id`, `origin`, `destination`, `payload`, `createdAtEpochMs`, `state`, `route`, `hops`, `retries`, `deliveredAtEpochMs`, `failureReason`
+                    FROM `messages`
+                    """.trimIndent()
+                )
+                connection.execSQL("DROP TABLE `messages`")
+                connection.execSQL("ALTER TABLE `messages_new` RENAME TO `messages`")
+            }
+        }
+
         fun create(context: Context): SecureMeshDatabase =
             Room.databaseBuilder<SecureMeshDatabase>(context, "securemesh_commander.db")
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

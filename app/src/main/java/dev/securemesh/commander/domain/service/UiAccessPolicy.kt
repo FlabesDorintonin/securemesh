@@ -39,6 +39,14 @@ object UiAccessPolicy {
         (session?.supports(DeviceCapability.BLE_CONTROL) == true || session?.supports(DeviceCapability.NETWORK_DIAGNOSTICS) == true) &&
             session?.can(SessionPermission.VIEW_NETWORK_DIAGNOSTICS) == true
 
+    fun canShowVanguard(session: SecureMeshSession?): Boolean =
+        session?.supports(DeviceCapability.VANGUARD) == true &&
+            session.can(SessionPermission.VIEW_NETWORK_DIAGNOSTICS)
+
+    fun canControlDeviceUi(session: SecureMeshSession?): Boolean =
+        session?.supports(DeviceCapability.UI_OS) == true &&
+            session.authenticationState == AuthenticationState.AUTHENTICATED
+
     fun canShowMap(session: SecureMeshSession?): Boolean =
         session?.supports(DeviceCapability.GPS) == true &&
             (session.can(SessionPermission.VIEW_OWN_POSITION) || session.can(SessionPermission.VIEW_TEAM_POSITIONS))

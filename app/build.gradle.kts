@@ -14,8 +14,8 @@ android {
         applicationId = "dev.securemesh.commander"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.7.0-ble-protocol-v01"
+        versionCode = 14
+        versionName = "0.8.3-release-hardening"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

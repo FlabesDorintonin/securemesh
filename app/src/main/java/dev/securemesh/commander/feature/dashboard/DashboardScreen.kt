@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Chat
-import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,7 +36,7 @@ fun DashboardScreen(
     val gpsFixes = state.nodes.count { it.position?.status(System.currentTimeMillis()) == GpsStatus.FIX }
     val minimumBattery = state.nodes.mapNotNull { it.batteryPercent }.minOrNull()
     val recentMessages = state.messages.sortedByDescending { it.createdAtEpochMs }.take(4)
-    val demoProfile = state.demoProfile
+    val secure = state.session?.authenticationState == AuthenticationState.AUTHENTICATED
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
 
@@ -48,86 +47,73 @@ fun DashboardScreen(
     ) {
         item {
             StaggeredReveal(entered, 0) {
-                Surface(
-                    color = SecureMeshColors.SurfaceHigh.copy(alpha = .82f),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .17f)),
-                    tonalElevation = 2.dp,
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(13.dp),
-                    ) {
-                        MeshAvatar(localName, online = state.session != null, size = 56.dp)
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Text("SECUREMESH", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
-                                Surface(Modifier.size(6.dp), shape = CircleShape, color = if (state.session != null) SecureMeshColors.Healthy else SecureMeshColors.Muted) {}
-                            }
-                            Text(localName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-                            Text(
-                                local?.let { "${it.role.ruLabel()} · ${it.nodeId}" } ?: "Локальный узел ещё не определён",
-                                color = SecureMeshColors.Muted,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        IconButton(onClick = onMore) {
-                            Icon(Icons.Rounded.MoreHoriz, contentDescription = "Ещё", tint = SecureMeshColors.TextSecondary)
-                        }
-                    }
-                }
+                PremiumMeshHero(
+                    localName = localName,
+                    localNodeId = local?.nodeId,
+                    nodes = state.nodes,
+                    topology = state.topology,
+                    secure = secure,
+                )
             }
         }
 
         item {
-            StaggeredReveal(entered, 45) { ConnectionBanner(state.connection) }
-        }
-
-        if (demoProfile != null) {
-            item {
-                StaggeredReveal(entered, 80) {
-                    StatusChip(
-                        demoProfile.ruLabel(),
-                        if (demoProfile == DemoProfile.CURRENT_FIRMWARE_V05) SecureMeshColors.Warning else SecureMeshColors.Violet,
-                    )
-                }
-            }
+            StaggeredReveal(entered, 55) { ConnectionBanner(state.connection) }
         }
 
         item {
-            StaggeredReveal(entered, 105) {
+            StaggeredReveal(entered, 110) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PressScaleSurface(
                         onClick = onMessages,
-                        modifier = Modifier.weight(1f).height(86.dp),
+                        modifier = Modifier.weight(1f).height(92.dp),
                         color = SecureMeshColors.Cyan.copy(alpha = .13f),
-                        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .26f)),
+                        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .28f)),
                     ) {
                         Column(
                             Modifier.fillMaxSize().padding(14.dp),
                             verticalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Icon(Icons.Rounded.Chat, contentDescription = null, tint = SecureMeshColors.CyanHot, modifier = Modifier.size(24.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = SecureMeshColors.Cyan.copy(alpha = .13f),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Chat,
+                                    contentDescription = null,
+                                    tint = SecureMeshColors.CyanHot,
+                                    modifier = Modifier.padding(8.dp).size(22.dp),
+                                )
+                            }
                             Column {
                                 Text("Чаты", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                Text("Открыть переписки", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
+                                Text("Защищённая переписка", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
                     PressScaleSurface(
                         onClick = onNodes,
-                        modifier = Modifier.weight(1f).height(86.dp),
+                        modifier = Modifier.weight(1f).height(92.dp),
                         color = SecureMeshColors.Blue.copy(alpha = .11f),
-                        border = BorderStroke(1.dp, SecureMeshColors.Blue.copy(alpha = .24f)),
+                        border = BorderStroke(1.dp, SecureMeshColors.Blue.copy(alpha = .25f)),
                     ) {
                         Column(
                             Modifier.fillMaxSize().padding(14.dp),
                             verticalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Icon(Icons.Rounded.People, contentDescription = null, tint = SecureMeshColors.Blue, modifier = Modifier.size(24.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = SecureMeshColors.Blue.copy(alpha = .12f),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.People,
+                                    contentDescription = null,
+                                    tint = SecureMeshColors.Blue,
+                                    modifier = Modifier.padding(8.dp).size(22.dp),
+                                )
+                            }
                             Column {
-                                Text(if (state.canOpenNodeList) "Узлы" else "Мой узел", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                Text(if (state.canOpenNodeList) "Сеть" else "Мой узел", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                                 Text(if (state.canOpenNodeList) "$online в сети" else "Состояние устройства", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelSmall)
                             }
                         }
@@ -137,24 +123,8 @@ fun DashboardScreen(
         }
 
         item {
-            StaggeredReveal(entered, 145) {
-                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    SectionHeader("Сеть сейчас")
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        MetricTile("Узлов", state.nodes.size.toString(), Modifier.weight(1f), SecureMeshColors.Cyan)
-                        MetricTile("Онлайн", "$online/${state.nodes.size}", Modifier.weight(1f), SecureMeshColors.Healthy)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        MetricTile("Связей", state.topology.links.size.toString(), Modifier.weight(1f), SecureMeshColors.Blue)
-                        MetricTile("Маршрутов", state.routes.size.toString(), Modifier.weight(1f), SecureMeshColors.Violet)
-                    }
-                }
-            }
-        }
-
-        item {
-            StaggeredReveal(entered, 185) {
-                TechnicalCard("Состояние локальной сети") {
+            StaggeredReveal(entered, 165) {
+                TechnicalCard("Состояние") {
                     DashboardStatusRow("GPS", if (gpsFixes > 0) "$gpsFixes узл. с фиксацией" else "Нет данных", if (gpsFixes > 0) SecureMeshColors.Healthy else SecureMeshColors.Muted)
                     HorizontalDivider(color = SecureMeshColors.Divider)
                     DashboardStatusRow("Питание", minimumBattery?.let { "Минимум $it%" } ?: "Нет данных", if (minimumBattery != null) SecureMeshColors.Cyan else SecureMeshColors.Muted)
@@ -162,8 +132,10 @@ fun DashboardScreen(
                     DashboardStatusRow(
                         "Сессия",
                         state.session?.authenticationState.ruLabel(),
-                        if (state.session?.authenticationState == AuthenticationState.AUTHENTICATED) SecureMeshColors.Healthy else SecureMeshColors.Warning,
+                        if (secure) SecureMeshColors.Healthy else SecureMeshColors.Warning,
                     )
+                    HorizontalDivider(color = SecureMeshColors.Divider)
+                    DashboardStatusRow("Маршруты", state.routes.size.toString(), if (state.routes.isNotEmpty()) SecureMeshColors.Violet else SecureMeshColors.Muted)
                     HorizontalDivider(color = SecureMeshColors.Divider)
                     DashboardStatusRow("SOS", if (state.sos == null) "Спокойно" else "Активный сигнал", if (state.sos == null) SecureMeshColors.Healthy else SecureMeshColors.Critical)
                 }
@@ -188,7 +160,7 @@ fun DashboardScreen(
                 }
             }
         } else {
-            items(recentMessages, key = { it.id }) { message ->
+            items(recentMessages, key = { it.stableKey() }) { message ->
                 val peerId = if (message.origin == local?.nodeId) message.destination else message.origin
                 val peer = state.nodes.firstOrNull { it.id == peerId }
                 val peerName = deviceDisplayName(peer?.name ?: peerId)

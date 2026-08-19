@@ -1,12 +1,18 @@
 package dev.securemesh.commander.feature.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -15,134 +21,210 @@ import dev.securemesh.commander.core.ui.*
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    var confirmClear by remember { mutableStateOf(false) }
 
-    LazyColumn(
+    androidx.compose.foundation.lazy.LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text("Настройки", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Поведение приложения, Bluetooth и локальное хранение", color = SecureMeshColors.Muted)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Настройки", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                Text("Безопасность, Bluetooth и локальные данные", color = SecureMeshColors.Muted)
+            }
         }
 
         item {
-            SettingsGroup("Основное") {
-                SettingValue("Тема", if (settings.theme.equals("dark", true)) "Тёмная" else settings.theme)
-                SettingValue("Единицы", if (settings.units.equals("metric", true)) "Метрические" else settings.units)
-                SettingSwitch("Не выключать экран во время теста", settings.keepScreenAwakeDuringTest) { value ->
-                    viewModel.update { it.copy(keepScreenAwakeDuringTest = value) }
+            ProductSettingsGroup("Безопасность", Icons.Rounded.Lock, SecureMeshColors.Cyan) {
+                SettingSwitch(
+                    label = "Защищать экран SecureMesh",
+                    description = "Блокирует снимки, небезопасный вывод и сторонние overlay-окна на всём чувствительном интерфейсе приложения.",
+                    value = settings.secureScreen,
+                ) { value -> viewModel.update { it.copy(secureScreen = value) } }
+
+                HorizontalDivider(color = SecureMeshColors.Divider)
+
+                SettingSwitch(
+                    label = "Запоминать доверенный узел",
+                    description = "BLE-адрес используется только как подсказка для поиска. Доверие каждый раз подтверждается authenticated INFO/nodeId.",
+                    value = settings.rememberTrustedNode,
+                ) { value -> viewModel.update { it.copy(rememberTrustedNode = value) } }
+
+                HorizontalDivider(color = SecureMeshColors.Divider)
+                SettingValue("Резервное копирование", "Отключено")
+                SettingValue("Облачный backend", "Не используется")
+
+                OutlinedButton(
+                    onClick = { confirmClear = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, SecureMeshColors.Critical.copy(alpha = .38f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = SecureMeshColors.Critical),
+                ) {
+                    Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Очистить локальную историю")
                 }
             }
         }
 
         item {
-            SettingsGroup("Bluetooth") {
-                SettingSwitch("Автоматическое переподключение", settings.autoReconnect) { value ->
-                    viewModel.update { it.copy(autoReconnect = value) }
-                }
+            ProductSettingsGroup("Bluetooth", Icons.Rounded.Bluetooth, SecureMeshColors.Blue) {
+                SettingSwitch(
+                    "Автоматическое переподключение",
+                    "Повторно ищет последний доверенный узел, но не переносит доверие по BLE MAC.",
+                    settings.autoReconnect,
+                    enabled = settings.rememberTrustedNode,
+                ) { value -> viewModel.update { it.copy(autoReconnect = value) } }
+
+                HorizontalDivider(color = SecureMeshColors.Divider)
+
                 SettingStepper(
                     "Длительность поиска",
                     "${settings.scanDurationSec} сек",
                     onMinus = { viewModel.update { it.copy(scanDurationSec = (it.scanDurationSec - 1).coerceAtLeast(5)) } },
                     onPlus = { viewModel.update { it.copy(scanDurationSec = (it.scanDurationSec + 1).coerceAtMost(30)) } },
                 )
-                SettingSwitch("Показывать неизвестные BLE-устройства", settings.showUnknownBle) { value ->
-                    viewModel.update { it.copy(showUnknownBle = value) }
-                }
-                SettingSwitch("Запоминать доверенный узел SecureMesh", settings.rememberTrustedNode) { value ->
-                    viewModel.update { it.copy(rememberTrustedNode = value) }
-                }
+
+                HorizontalDivider(color = SecureMeshColors.Divider)
+
+                SettingSwitch(
+                    "Диагностический поиск всех BLE",
+                    "Работает только вместе с developer mode. В обычном режиме показываются устройства с подтверждённым SecureMesh Service UUID.",
+                    settings.showUnknownBle,
+                    enabled = settings.developerMode,
+                ) { value -> viewModel.update { it.copy(showUnknownBle = value) } }
             }
         }
 
         item {
-            SettingsGroup("Карта и история") {
-                SettingValue("Офлайн-карта", "Локальный провайдер")
-                SettingSwitch("Хранить историю позиций", settings.positionHistory) { value ->
-                    viewModel.update { it.copy(positionHistory = value) }
-                }
-            }
-        }
+            ProductSettingsGroup("Локальные данные", Icons.Rounded.Storage, SecureMeshColors.Violet) {
+                SettingSwitch(
+                    "История позиций",
+                    "Сохранять подтверждённые координаты локально на телефоне.",
+                    settings.positionHistory,
+                ) { value -> viewModel.update { it.copy(positionHistory = value) } }
 
-        item {
-            SettingsGroup("Журнал") {
-                SettingSwitch("Сохранять события локально", settings.storeEvents) { value ->
-                    viewModel.update { it.copy(storeEvents = value) }
-                }
+                HorizontalDivider(color = SecureMeshColors.Divider)
+
+                SettingSwitch(
+                    "Журнал событий",
+                    "Сохранять события текущего authenticated nodeId локально.",
+                    settings.storeEvents,
+                ) { value -> viewModel.update { it.copy(storeEvents = value) } }
+
+                HorizontalDivider(color = SecureMeshColors.Divider)
+
                 SettingStepper(
-                    "Хранить историю",
+                    "Срок хранения",
                     "${settings.retentionDays} дн",
                     onMinus = { viewModel.update { it.copy(retentionDays = (it.retentionDays - 1).coerceAtLeast(1)) } },
                     onPlus = { viewModel.update { it.copy(retentionDays = (it.retentionDays + 1).coerceAtMost(365)) } },
                 )
-                SettingValue("Экспорт", "JSON / CSV на устройство")
+
+                Text(
+                    "При ручном экспорте файл покидает закрытое хранилище приложения — дальше его защищает уже выбранное место сохранения.",
+                    color = SecureMeshColors.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
 
         item {
-            SettingsGroup("Для разработчика") {
-                SettingSwitch("Режим разработчика", settings.developerMode) { value -> viewModel.update { it.copy(developerMode = value) } }
-                SettingSwitch("Демо-транспорт", settings.mockMode) { value -> viewModel.update { it.copy(mockMode = value) } }
-                SettingSwitch("Сырой BLE", settings.rawBle) { value -> viewModel.update { it.copy(rawBle = value) } }
-                SettingSwitch("Подробные логи", settings.verboseLogs) { value -> viewModel.update { it.copy(verboseLogs = value) } }
-                SettingSwitch("Симулировать ошибки", settings.simulateFailures) { value -> viewModel.update { it.copy(simulateFailures = value) } }
+            ProductSettingsGroup("Интерфейс", null, SecureMeshColors.TextSecondary) {
+                SettingValue("Тема", "Тёмная")
+                SettingValue("Единицы", "Метрические")
+                SettingSwitch(
+                    "Не выключать экран во время теста",
+                    "Удобно для полевого теста связи.",
+                    settings.keepScreenAwakeDuringTest,
+                ) { value -> viewModel.update { it.copy(keepScreenAwakeDuringTest = value) } }
             }
         }
 
-        item {
-            Text(
-                "Все данные приложения сохраняются локально. Сетевой backend для работы SecureMesh не требуется.",
-                color = SecureMeshColors.Muted,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-            )
-        }
+        item { Spacer(Modifier.height(8.dp)) }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Очистить локальную историю?") },
+            text = { Text("Будут удалены локальные сообщения, события, известные узлы, позиции и результаты полевых тестов. Доверенный nodeId останется.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearHistory()
+                    confirmClear = false
+                }) { Text("Очистить", color = SecureMeshColors.Critical) }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Отмена") } },
+        )
     }
 }
 
 @Composable
-private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    TechnicalCard(title) {
-        content()
+private fun ProductSettingsGroup(
+    title: String,
+    icon: ImageVector?,
+    accent: Color,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        color = SecureMeshColors.SurfaceHigh.copy(alpha = .92f),
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, accent.copy(alpha = .18f)),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (icon != null) Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp))
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            content()
+        }
     }
 }
 
 @Composable
 private fun SettingValue(label: String, value: String) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 7.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, modifier = Modifier.weight(1f))
-        Text(value, color = SecureMeshColors.Muted)
-    }
-}
-
-@Composable
-private fun SettingSwitch(label: String, value: Boolean, set: (Boolean) -> Unit) {
-    Row(
         Modifier.fillMaxWidth().padding(vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, Modifier.weight(1f))
-        Switch(checked = value, onCheckedChange = set)
+        Text(label, modifier = Modifier.weight(1f), color = SecureMeshColors.TextSecondary)
+        Text(value, color = SecureMeshColors.Text, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun SettingSwitch(label: String, description: String, value: Boolean, enabled: Boolean = true, set: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, fontWeight = FontWeight.Medium)
+            Text(description, color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = value, onCheckedChange = set, enabled = enabled)
     }
 }
 
 @Composable
 private fun SettingStepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, Modifier.weight(1f))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedIconButton(onClick = onMinus, modifier = Modifier.size(40.dp)) { Text("−") }
-            Text(value, color = SecureMeshColors.TextSecondary)
+            Text(value, color = SecureMeshColors.TextSecondary, fontWeight = FontWeight.Medium)
             OutlinedIconButton(onClick = onPlus, modifier = Modifier.size(40.dp)) { Text("+") }
         }
     }

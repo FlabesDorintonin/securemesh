@@ -35,6 +35,9 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
     val remotes = state.nodes.filter { it.id != local }
     var target by remember(remotes) { mutableStateOf(remotes.firstOrNull()?.id.orEmpty()) }
     var mode by remember { mutableStateOf(FieldTestMode.AUTO) }
+    var packetCount by remember { mutableIntStateOf(100) }
+    var intervalMs by remember { mutableLongStateOf(1000L) }
+    var payloadBytes by remember { mutableIntStateOf(32) }
     val active = state.active
 
     LazyColumn(
@@ -57,21 +60,39 @@ fun FieldTestScreen(viewModel: FieldTestViewModel) {
                         FilterChip(mode == candidate, { mode = candidate }, { Text(candidate.ruLabel()) })
                     }
                 }
+                Text("Профиль теста", color = SecureMeshColors.Muted, style = MaterialTheme.typography.labelLarge)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    item { AssistChip(onClick = { packetCount = 30; intervalMs = 500L; payloadBytes = 16 }, label = { Text("Быстрый") }) }
+                    item { AssistChip(onClick = { packetCount = 100; intervalMs = 1000L; payloadBytes = 32 }, label = { Text("Стандарт") }) }
+                    item { AssistChip(onClick = { packetCount = 200; intervalMs = 1500L; payloadBytes = 48 }, label = { Text("Дальний") }) }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Metric("Пакеты", packetCount.toString())
+                    Metric("Интервал", "$intervalMs мс")
+                    Metric("Payload", "$payloadBytes Б")
+                }
+                state.error?.let {
+                    Text(localizedError(it) ?: it, color = SecureMeshColors.Critical, style = MaterialTheme.typography.bodySmall)
+                }
                 if (active?.running == true) {
-                    Button(onClick = viewModel::stop, colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Critical)) {
+                    Button(
+                        onClick = viewModel::stop,
+                        enabled = !state.busy,
+                        colors = ButtonDefaults.buttonColors(containerColor = SecureMeshColors.Critical),
+                    ) {
                         Icon(Icons.Rounded.Stop, contentDescription = null)
                         Spacer(Modifier.width(7.dp))
                         Text("Остановить тест")
                     }
                 } else {
                     Button(
-                        onClick = { viewModel.start(FieldTestConfig(local, target, mode, 100, 1000, 32)) },
-                        enabled = target.isNotBlank(),
+                        onClick = { viewModel.start(FieldTestConfig(local, target, mode, packetCount, intervalMs, payloadBytes)) },
+                        enabled = target.isNotBlank() && !state.busy,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(7.dp))
-                        Text("Запустить 100 пакетов")
+                        Text(if (state.busy) "Запускаем…" else "Запустить тест")
                     }
                 }
             }

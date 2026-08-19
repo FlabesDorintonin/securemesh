@@ -84,6 +84,10 @@ enum class DeviceCapability {
     STATIC_ROUTING,
     BLE_CONTROL,
     NETWORK_DIAGNOSTICS,
+    UI_OS,
+    VANGUARD,
+    MANIFEST,
+    FAULT_LAB,
     OTA,
     SENSORS,
 }
@@ -254,6 +258,7 @@ data class MeshMessage(
         if (hopTrace.isEmpty()) return listOf(origin, destination).distinct()
         return buildList { add(hopTrace.first().from); hopTrace.forEach { add(it.to) } }
     }
+    fun stableKey(): String = "$origin:$id"
     fun totalRetries(): Int? = hopTrace.mapNotNull { it.retries }.takeIf { it.isNotEmpty() }?.sum()
     fun deliveryTimeMs(): Long? = deliveredAtEpochMs?.minus(createdAtEpochMs)
 }
@@ -364,8 +369,9 @@ data class AppSettings(
     val keepScreenAwakeDuringTest: Boolean = true,
     val autoReconnect: Boolean = true,
     val scanDurationSec: Int = 12,
-    val showUnknownBle: Boolean = true,
+    val showUnknownBle: Boolean = false,
     val rememberTrustedNode: Boolean = true,
+    val secureScreen: Boolean = true,
     val positionHistory: Boolean = true,
     val storeEvents: Boolean = true,
     val retentionDays: Int = 30,
