@@ -4,23 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
-      - master
-      - product/0.8.0-hardening
-      - agent/premium-motion-polish
-      - agent/firmware-0.8.2-vanguard-console
-      - agent/0.9.1-contact-vault
-      - agent/0.9.2-offline-map-manager
-  pull_request:
-    branches:
-      - main
+      - agent/0.9.3-field-awareness
 
 permissions:
   contents: read
 
 jobs:
   build-debug-apk:
-    name: Test and build debug APK
+    name: Validate and build v0.9.3 Field Awareness
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -47,7 +38,7 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Assemble v0.9 patch transport
+      - name: Apply v0.9 base fixes
         shell: bash
         run: |
           set -euo pipefail
@@ -55,39 +46,14 @@ jobs:
             cat v09_patch_parts/part*.txt > v09_android.patch.gz.b64
             test "$(wc -c < v09_android.patch.gz.b64)" -eq 33500
           fi
-
-      - name: Architecture alignment gate
-        shell: bash
-        run: |
-          set -o pipefail
-          python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate.log
-          git diff --check
-
-      - name: Apply MapLibre v13 compile fix
-        shell: bash
-        run: |
-          set -euo pipefail
           git apply --check v09_maplibre_compile_fix.patch
           git apply v09_maplibre_compile_fix.patch
-          git diff --check
-
-      - name: Apply BLE v0.2 GPS test fix
-        shell: bash
-        run: |
-          set -euo pipefail
           git apply --check v09_test_decode_fix.patch
           git apply v09_test_decode_fix.patch
-          git diff --check
-
-      - name: Apply POSITION v0.2 fixture fix
-        shell: bash
-        run: |
-          set -euo pipefail
           git apply --check v09_position_fixture_fix.patch
           git apply v09_position_fixture_fix.patch
-          git diff --check
 
-      - name: Apply v0.9.1 Contact Vault + GPS visibility patch
+      - name: Apply v0.9.1 Contact Vault
         shell: bash
         run: |
           set -euo pipefail
@@ -97,18 +63,10 @@ jobs:
           gzip -dc v091_full.patch.gz > v091_full.patch
           git apply --check v091_full.patch
           git apply v091_full.patch
-          git diff --check
-          python3 tools/domain_alignment_gate.py
-
-      - name: Apply v0.9.1 security interface compile fix
-        shell: bash
-        run: |
-          set -euo pipefail
           git apply --check v091_security_interface_fix.patch
           git apply v091_security_interface_fix.patch
-          git diff --check
 
-      - name: Apply v0.9.2 offline maps patch
+      - name: Apply v0.9.2 offline maps
         shell: bash
         run: |
           set -euo pipefail
@@ -118,17 +76,20 @@ jobs:
           gzip -dc v092_offline_maps.patch.gz > v092_offline_maps.patch
           git apply --check v092_offline_maps.patch
           git apply v092_offline_maps.patch
-          git diff --check
-          python3 tools/domain_alignment_gate.py
 
-      - name: Upload alignment failure log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SecureMesh-alignment-failure-log-${{ github.run_number }}
-          path: alignment-gate.log
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Apply v0.9.3 Field Awareness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat v093_patch_parts/part*.txt > v093_field_awareness.patch.gz.b64
+          test "$(wc -c < v093_field_awareness.patch.gz.b64)" -eq 37688
+          base64 -d v093_field_awareness.patch.gz.b64 > v093_field_awareness.patch.gz
+          gzip -dc v093_field_awareness.patch.gz > v093_field_awareness.patch
+          test "$(sha256sum v093_field_awareness.patch | awk '{print $1}')" = "769bc62b91f24010137d86ce9cb2d2e066cc74f999b62bbb844dda3178d2ed1c"
+          git apply --check v093_field_awareness.patch
+          git apply v093_field_awareness.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate-v093.log
 
       - name: Run JVM unit tests
         shell: bash
@@ -137,23 +98,12 @@ jobs:
           gradle --no-daemon --stacktrace --console=plain testDebugUnitTest > test-debug.log 2>&1
           code=$?
           if [ "$code" -ne 0 ]; then
-            echo "----- concise Gradle/Kotlin failure -----"
-            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" test-debug.log | head -n 200 || true
-            echo "----- tail -----"
-            tail -n 100 test-debug.log
+            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" test-debug.log | head -n 220 || true
+            tail -n 120 test-debug.log
           else
-            tail -n 30 test-debug.log
+            tail -n 40 test-debug.log
           fi
           exit "$code"
-
-      - name: Upload test failure log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SecureMesh-test-failure-log-${{ github.run_number }}
-          path: test-debug.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Android lint
         shell: bash
@@ -162,22 +112,12 @@ jobs:
           gradle --no-daemon --stacktrace --console=plain lintDebug > lint-debug.log 2>&1
           code=$?
           if [ "$code" -ne 0 ]; then
-            echo "----- concise Android lint failure -----"
-            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" lint-debug.log | head -n 200 || true
-            tail -n 100 lint-debug.log
+            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" lint-debug.log | head -n 220 || true
+            tail -n 120 lint-debug.log
           else
-            tail -n 30 lint-debug.log
+            tail -n 40 lint-debug.log
           fi
           exit "$code"
-
-      - name: Upload lint failure log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SecureMesh-lint-failure-log-${{ github.run_number }}
-          path: lint-debug.log
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Build debug APK
         shell: bash
@@ -186,46 +126,50 @@ jobs:
           gradle --no-daemon --stacktrace --console=plain assembleDebug > assemble-debug.log 2>&1
           code=$?
           if [ "$code" -ne 0 ]; then
-            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" assemble-debug.log | head -n 200 || true
-            tail -n 100 assemble-debug.log
+            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" assemble-debug.log | head -n 220 || true
+            tail -n 120 assemble-debug.log
           else
-            tail -n 30 assemble-debug.log
+            tail -n 40 assemble-debug.log
           fi
           exit "$code"
 
-      - name: Upload build failure log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SecureMesh-build-failure-log-${{ github.run_number }}
-          path: assemble-debug.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Verify APK exists
+      - name: Verify APK
         run: |
           test -f app/build/outputs/apk/debug/app-debug.apk
           ls -lh app/build/outputs/apk/debug/app-debug.apk
           sha256sum app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload SecureMesh APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-debug-apk-${{ github.run_number }}
+          name: SecureMesh-v0.9.3-debug-apk-${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Package applied v0.9 source snapshot
+      - name: Package applied source
         shell: bash
         run: |
           rm -rf .git .gradle app/build build
-          zip -qr SecureMesh-source-${{ github.run_number }}.zip . -x 'SecureMesh-source-*.zip'
+          zip -qr SecureMesh-v0.9.3-source-${{ github.run_number }}.zip . -x 'SecureMesh-v0.9.3-source-*.zip'
 
-      - name: Upload source snapshot
+      - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-source-${{ github.run_number }}
-          path: SecureMesh-source-${{ github.run_number }}.zip
+          name: SecureMesh-v0.9.3-source-${{ github.run_number }}
+          path: SecureMesh-v0.9.3-source-${{ github.run_number }}.zip
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-v0.9.3-failure-logs-${{ github.run_number }}
+          path: |
+            alignment-gate-v093.log
+            test-debug.log
+            lint-debug.log
+            assemble-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
