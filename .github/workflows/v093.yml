@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - agent/0.9.3-field-awareness
+  pull_request:
+    branches:
+      - agent/0.9.3-field-awareness
 
 permissions:
   contents: read
