@@ -38,8 +38,13 @@ class SecureMeshRepositoryImpl(
     override val activeFieldTest = activeFlow { it.activeFieldTest }.stateIn(scope, SharingStarted.Eagerly, null)
     override val activeSos = activeFlow { it.activeSos }.stateIn(scope, SharingStarted.Eagerly, null)
     override val bleDiagnostics = activeFlow { it.bleDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val deviceUiState = activeFlow { it.deviceUiState }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val knownNodeIds = activeFlow { it.knownNodeIds }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+    override val networkManifest = activeFlow { it.networkManifest }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val vanguardDiagnostics = activeFlow { it.vanguardDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
+    override val labLinkPolicies = activeFlow { it.labLinkPolicies }.stateIn(scope, SharingStarted.Eagerly, emptyList())
     override val settings = settingsStore.settings.stateIn(scope, SharingStarted.Eagerly, AppSettings())
-    private val localHistoryOwnerNodeId = settingsStore.localHistoryOwnerNodeId.stateIn(scope, SharingStarted.Eagerly, null)
+    override val localHistoryOwnerNodeId = settingsStore.localHistoryOwnerNodeId.stateIn(scope, SharingStarted.Eagerly, null)
     private val liveEvents = activeFlow { it.events }
 
     init {
@@ -88,7 +93,11 @@ class SecureMeshRepositoryImpl(
                 if (secureSession.authenticationState != AuthenticationState.AUTHENTICATED) return@collect
                 val identity = secureSession.localNodeIdentity
                 val previousHistoryOwner = settingsStore.localHistoryOwnerNodeId.first()
-                if (previousHistoryOwner != null && previousHistoryOwner != identity.nodeId) clearSessionSensitiveHistory()
+                if (previousHistoryOwner != null && previousHistoryOwner != identity.nodeId) {
+                    // Operational telemetry is session-scoped. Chat rows are different: origin/destination already
+                    // partition them by SecureMesh identity, so switching the attached ESP32 must not destroy chats.
+                    clearSessionSensitiveHistory(preserveMessages = true)
+                }
                 if (previousHistoryOwner != identity.nodeId) settingsStore.setLocalHistoryOwnerNodeId(identity.nodeId)
 
                 if (transportMode.value == TransportMode.BLE && settings.value.rememberTrustedNode) {
@@ -115,6 +124,23 @@ class SecureMeshRepositoryImpl(
     private fun historyOwnedByCurrentSession(session: SecureMeshSession?, ownerNodeId: NodeId?): Boolean =
         session?.authenticationState == AuthenticationState.AUTHENTICATED &&
             ownerNodeId != null && session.localNodeIdentity.nodeId == ownerNodeId
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeMessageHistory(): Flow<List<MeshMessage>> =
+        localHistoryOwnerNodeId.flatMapLatest { owner ->
+            if (owner == null) {
+                flowOf(emptyList<MeshMessage>())
+            } else {
+                combine(dao.observeMessagesForNode(owner), messages) { stored, live ->
+                    val persisted = stored.map { it.toDomain() }
+                    val liveForOwner = live.filter { it.origin == owner || it.destination == owner }
+                    (persisted + liveForOwner)
+                        .associateBy { it.stableKey() }
+                        .values
+                        .sortedByDescending { it.createdAtEpochMs }
+                }
+            }
+        }
 
     override fun observeEvents(): Flow<List<MeshEvent>> = combine(dao.observeEvents(), session, localHistoryOwnerNodeId) { list, currentSession, owner ->
         if (!historyOwnedByCurrentSession(currentSession, owner)) emptyList() else list.map { event -> event.toDomain() }
@@ -150,7 +176,7 @@ class SecureMeshRepositoryImpl(
     }
 
     override suspend fun attemptAutoReconnect() {
-        if (!settings.value.autoReconnect) return
+        if (!settings.value.autoReconnect || !settings.value.rememberTrustedNode) return
         val trusted = dao.latestTrustedDevice() ?: return
         // The protocol intentionally does not advertise nodeId. A remembered BLE address is only a transport hint;
         // authenticated INFO must still prove the stable nodeId after every reconnect.
@@ -163,6 +189,20 @@ class SecureMeshRepositoryImpl(
                 delay(backoff)
                 reconnectOverride.value = MeshConnectionState.Reconnecting(trusted.nodeId, index + 1, backoff)
                 router.ble.startScan(5_000)
+
+                // Do not keep retrying while Android is waiting for permission/Bluetooth state.
+                // This is especially important on OEM firmware that aggressively pauses/recreates
+                // the activity around the Nearby devices permission dialog.
+                when (router.ble.connectionState.value) {
+                    is MeshConnectionState.PermissionRequired,
+                    MeshConnectionState.BluetoothDisabled,
+                    MeshConnectionState.BluetoothUnavailable -> {
+                        reconnectOverride.value = null
+                        return@launch
+                    }
+                    else -> Unit
+                }
+
                 val found = withTimeoutOrNull(5_500L) {
                     router.ble.discoveredDevices
                         .map { devices -> devices.firstOrNull { it.address.equals(addressHint, ignoreCase = true) && it.classification != DeviceClassification.UNKNOWN_BLE } }
@@ -195,11 +235,36 @@ class SecureMeshRepositoryImpl(
     override suspend fun startFieldTest(config: FieldTestConfig) = router.current().startFieldTest(config)
     override suspend fun stopFieldTest() = router.current().stopFieldTest()
     override suspend fun acknowledgeSos(id: String) = router.current().acknowledgeSos(id)
-    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = settingsStore.write(transform(settings.value))
-    private suspend fun clearSessionSensitiveHistory() {
-        dao.clearEvents(); dao.clearMessages(); dao.clearKnownNodes(); dao.clearFieldTests(); dao.clearPositions()
+    override suspend fun refreshDeviceUiState() = router.current().refreshDeviceUiState()
+    override suspend fun sendDeviceUiAction(action: DeviceUiAction) = router.current().sendDeviceUiAction(action)
+    override suspend fun refreshVanguardState() = router.current().refreshVanguardState()
+    override suspend fun setManifest(epoch: Long, nodes: List<NodeId>) = router.current().setManifest(epoch, nodes)
+    override suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean) = router.current().discoverRoute(destination, forceFresh)
+    override suspend fun clearDynamicRoutes() = router.current().clearDynamicRoutes()
+    override suspend fun injectLinkFailure(peer: NodeId, durationMs: Long) = router.current().injectLinkFailure(peer, durationMs)
+    override suspend fun setLabLinkPolicy(peer: NodeId, preset: LabLinkPreset, durationMs: Long) = router.current().setLabLinkPolicy(peer, preset, durationMs)
+    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        val previous = settings.value
+        val requested = transform(previous)
+        val updated = if (!requested.rememberTrustedNode) requested.copy(autoReconnect = false) else requested
+        settingsStore.write(updated)
+        if (previous.rememberTrustedNode && !updated.rememberTrustedNode) dao.clearTrustedDevices()
+        if (previous.autoReconnect && !updated.autoReconnect) cancelReconnect()
     }
-    override suspend fun clearLocalHistory() = clearSessionSensitiveHistory()
+
+    private suspend fun clearSessionSensitiveHistory(preserveMessages: Boolean = false) {
+        dao.clearEvents()
+        if (!preserveMessages) dao.clearMessages()
+        dao.clearKnownNodes()
+        dao.clearFieldTests()
+        dao.clearPositions()
+    }
+
+    override suspend fun clearLocalHistory() {
+        val owner = localHistoryOwnerNodeId.value
+        clearSessionSensitiveHistory(preserveMessages = true)
+        if (owner == null) dao.clearMessages() else dao.clearMessagesForNode(owner)
+    }
 
     override suspend fun exportEventsCsv(): String = observeEvents().first().joinToString("\n", "timestamp,category,node,title,details\n") { e -> listOf(e.timestampEpochMs,e.category,e.nodeId.orEmpty(),e.title,e.details).joinToString(",") { csv(it.toString()) } }
     override suspend fun exportEventsJson(): String = observeEvents().first().joinToString(",\n", "[\n", "\n]") { e -> "  {\"id\":${json(e.id)},\"timestamp\":${e.timestampEpochMs},\"category\":${json(e.category.name)},\"nodeId\":${jsonNullable(e.nodeId)},\"title\":${json(e.title)},\"details\":${json(e.details)}}" }
@@ -213,7 +278,55 @@ class SecureMeshRepositoryImpl(
 
 private fun MeshEvent.toEntity() = EventEntity(id,timestampEpochMs,category.name,title,details,nodeId)
 private fun EventEntity.toDomain() = MeshEvent(id,timestampEpochMs,EventCategory.valueOf(category),title,details,nodeId)
-private fun MeshMessage.toEntity() = MessageEntity(id,origin,destination,payload,createdAtEpochMs,progressState.name,observedRoute().joinToString(">"),hopTrace.size,totalRetries() ?: 0,deliveredAtEpochMs,failureReason)
+private fun MeshMessage.toEntity() = MessageEntity(
+    key = stableKey(),
+    id = id,
+    origin = origin,
+    destination = destination,
+    payload = payload,
+    createdAtEpochMs = createdAtEpochMs,
+    state = progressState.name,
+    route = observedRoute().joinToString(">"),
+    hops = hopTrace.size,
+    retries = totalRetries() ?: 0,
+    deliveredAtEpochMs = deliveredAtEpochMs,
+    failureReason = failureReason,
+)
+private fun MessageEntity.toDomain(): MeshMessage {
+    val progress = runCatching { MessageDeliveryState.valueOf(state) }.getOrDefault(MessageDeliveryState.QUEUED)
+    val routeNodes = route.split(">").filter(String::isNotBlank)
+    val syntheticHops = routeNodes.zipWithNext().mapIndexed { index, pair ->
+        TransmissionHop(
+            from = pair.first,
+            to = pair.second,
+            frameId = null,
+            ackState = HopAckState.UNAVAILABLE,
+            retries = this.retries.takeIf { index == routeNodes.size - 2 && it > 0 },
+            rssi = null,
+            snr = null,
+            timestampEpochMs = createdAtEpochMs,
+        )
+    }
+    val finalState = when {
+        deliveredAtEpochMs != null || progress == MessageDeliveryState.DELIVERED -> MessageFinalState.DELIVERED
+        progress == MessageDeliveryState.FAILED -> MessageFinalState.FAILED
+        progress == MessageDeliveryState.EXPIRED -> MessageFinalState.EXPIRED
+        progress == MessageDeliveryState.FINAL_CONFIRMATION_PENDING -> MessageFinalState.UNKNOWN
+        else -> MessageFinalState.PENDING
+    }
+    return MeshMessage(
+        id = id,
+        origin = origin,
+        destination = destination,
+        payload = payload,
+        createdAtEpochMs = createdAtEpochMs,
+        progressState = progress,
+        finalState = finalState,
+        hopTrace = syntheticHops,
+        deliveredAtEpochMs = deliveredAtEpochMs,
+        failureReason = failureReason,
+    )
+}
 private fun MeshNode.toEntity() = KnownNodeEntity(id,name,role.name,firmwareVersion ?: "UNKNOWN",protocolVersion ?: -1,lastSeenEpochMs)
 private fun NodePosition.toEntity() = PositionEntity("$nodeId:$timestampEpochMs",nodeId,latitude,longitude,timestampEpochMs,satellites ?: -1,hdop,speedMps,valid)
 private fun PositionEntity.toDomain() = NodePosition(nodeId,latitude,longitude,timestampEpochMs,satellites.takeIf { it >= 0 },hdop,speedMps,valid)

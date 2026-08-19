@@ -2,7 +2,6 @@
     <style name="Theme.SecureMesh" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowBackground">#030A10</item>
         <item name="android:statusBarColor">#030A10</item>
         <item name="android:navigationBarColor">#030A10</item>

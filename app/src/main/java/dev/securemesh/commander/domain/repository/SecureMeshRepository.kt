@@ -17,8 +17,15 @@ interface SecureMeshRepository {
     val activeFieldTest: StateFlow<FieldTestSession?>
     val activeSos: StateFlow<SosAlert?>
     val bleDiagnostics: StateFlow<BleDiagnostics?>
+    val deviceUiState: StateFlow<DeviceUiState?>
+    val knownNodeIds: StateFlow<List<NodeId>>
+    val networkManifest: StateFlow<VanguardManifest?>
+    val vanguardDiagnostics: StateFlow<VanguardDiagnostics?>
+    val labLinkPolicies: StateFlow<List<LabLinkPolicy>>
     val settings: StateFlow<AppSettings>
+    val localHistoryOwnerNodeId: StateFlow<NodeId?>
 
+    fun observeMessageHistory(): Flow<List<MeshMessage>>
     fun observeEvents(): Flow<List<MeshEvent>>
     fun observeFieldTestHistory(): Flow<List<FieldTestSession>>
     fun observePositionHistory(nodeId: NodeId? = null): Flow<List<NodePosition>>
@@ -36,8 +43,16 @@ interface SecureMeshRepository {
     suspend fun addStaticRoute(destination: NodeId, via: NodeId): Result<Unit>
     suspend fun removeRoute(destination: NodeId): Result<Unit>
     suspend fun startFieldTest(config: FieldTestConfig): Result<String>
-    suspend fun stopFieldTest()
+    suspend fun stopFieldTest(): Result<Unit>
     suspend fun acknowledgeSos(id: String)
+    suspend fun refreshDeviceUiState(): Result<DeviceUiState>
+    suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState>
+    suspend fun refreshVanguardState(): Result<Unit>
+    suspend fun setManifest(epoch: Long, nodes: List<NodeId>): Result<VanguardManifest>
+    suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean = true): Result<VanguardDiagnostics>
+    suspend fun clearDynamicRoutes(): Result<VanguardDiagnostics>
+    suspend fun injectLinkFailure(peer: NodeId, durationMs: Long): Result<VanguardDiagnostics>
+    suspend fun setLabLinkPolicy(peer: NodeId, preset: LabLinkPreset, durationMs: Long): Result<List<LabLinkPolicy>>
     suspend fun updateSettings(transform: (AppSettings) -> AppSettings)
     suspend fun clearLocalHistory()
     suspend fun exportEventsCsv(): String

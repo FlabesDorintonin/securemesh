@@ -1,0 +1,20 @@
+diff --git a/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt b/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt
+index 1f047ed..f83ec2a 100644
+--- a/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt
++++ b/app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleProtocolV02Test.kt
+@@ -298,6 +298,7 @@ class SecureMeshBleProtocolV02Test {
+         payload[0] = 1
+         var o = 1
+         putU32(payload, o, 0xA1B2C3D4L); o += 4
++        payload[o++] = 1
+         payload[o++] = 0x1F
+         putU16(payload, o, 77); o += 2
+         putU32(payload, o, 1_800_000_000L); o += 4
+@@ -344,6 +345,7 @@ class SecureMeshBleProtocolV02Test {
+         val payload = ByteArray(35)
+         var o = 0
+         putU32(payload, o, 0x01020304); o += 4
++        payload[o++] = 1
+         payload[o++] = 0x0D
+         putU16(payload, o, 9); o += 2
+         putU32(payload, o, 1_800_000_100L); o += 4

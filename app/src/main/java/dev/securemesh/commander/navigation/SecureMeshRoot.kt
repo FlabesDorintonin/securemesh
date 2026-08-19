@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -45,8 +46,11 @@ import dev.securemesh.commander.feature.nodes.*
 import dev.securemesh.commander.feature.routes.*
 import dev.securemesh.commander.feature.search.*
 import dev.securemesh.commander.feature.settings.*
+import dev.securemesh.commander.feature.security.*
 import dev.securemesh.commander.feature.sos.SosOverlay
 import dev.securemesh.commander.feature.welcome.*
+import dev.securemesh.commander.feature.vanguard.*
+import dev.securemesh.commander.feature.deviceui.*
 
 private object RootRoute {
     const val WELCOME = "welcome"
@@ -60,9 +64,10 @@ private data class NavItem(val route: String, val label: String, val icon: Image
 private fun itemsFor(session: SecureMeshSession?): List<NavItem> = buildList {
     add(NavItem("home", "Главная", Icons.Rounded.Home))
     if (UiAccessPolicy.canShowMessages(session)) add(NavItem("messages", "Чаты", Icons.Rounded.ChatBubble))
-    if (UiAccessPolicy.canShowNodes(session)) add(NavItem("nodes", "Узлы", Icons.Rounded.People))
+    if (UiAccessPolicy.canShowNodes(session)) add(NavItem("nodes", "Сеть", Icons.Rounded.People))
     else session?.let { add(NavItem("node/${it.localNodeIdentity.nodeId}", "Мой узел", Icons.Rounded.People)) }
-    add(NavItem("map", "Карта", Icons.Rounded.Map))
+    if (UiAccessPolicy.canShowVanguard(session)) add(NavItem("vanguard", "Пульт", Icons.Rounded.Tune))
+    else add(NavItem("map", "Карта", Icons.Rounded.Map))
     add(NavItem("more", "Ещё", Icons.Rounded.MoreHoriz))
 }
 
@@ -72,17 +77,16 @@ fun SecureMeshRoot(repository: SecureMeshRepository) {
     NavHost(
         navController = nav,
         startDestination = RootRoute.WELCOME,
-        enterTransition = { fadeIn(tween(190)) + slideInHorizontally(animationSpec = spring(dampingRatio = .92f, stiffness = 520f)) { it / 10 } },
-        exitTransition = { fadeOut(tween(130)) + slideOutHorizontally(tween(180)) { -it / 20 } },
-        popEnterTransition = { fadeIn(tween(180)) + slideInHorizontally(animationSpec = spring(dampingRatio = .92f, stiffness = 520f)) { -it / 11 } },
-        popExitTransition = { fadeOut(tween(120)) + slideOutHorizontally(tween(170)) { it / 20 } },
+        enterTransition = { fadeIn(tween(210)) + slideInHorizontally(animationSpec = spring(dampingRatio = .87f, stiffness = 470f)) { it / 11 } },
+        exitTransition = { fadeOut(tween(135)) + slideOutHorizontally(tween(190)) { -it / 22 } },
+        popEnterTransition = { fadeIn(tween(195)) + slideInHorizontally(animationSpec = spring(dampingRatio = .87f, stiffness = 470f)) { -it / 12 } },
+        popExitTransition = { fadeOut(tween(130)) + slideOutHorizontally(tween(185)) { it / 22 } },
     ) {
         composable(RootRoute.WELCOME) {
             val vm: WelcomeViewModel = viewModel(factory = viewModelFactory { WelcomeViewModel(repository) })
             WelcomeScreen(
                 vm,
                 onConnect = { nav.navigate(RootRoute.DISCOVERY) },
-                onDemo = { nav.navigate(RootRoute.MAIN) { popUpTo(RootRoute.WELCOME) { inclusive = true } } },
                 onAutoConnected = { secure -> nav.navigate(if (secure) RootRoute.MAIN else RootRoute.PROTOCOL) },
             )
         }
@@ -103,22 +107,35 @@ fun SecureMeshRoot(repository: SecureMeshRepository) {
             } else {
                 ProtocolUnavailableScreen(
                     connected,
-                    onDisconnect = { vm.disconnect(); nav.popBackStack(RootRoute.DISCOVERY, false) },
-                    onBack = { nav.popBackStack(RootRoute.DISCOVERY, false) },
+                    onDisconnect = vm::disconnect,
+                    onBack = vm::disconnect,
                 )
             }
         }
-        composable(RootRoute.MAIN) { MainShell(repository) }
+        composable(RootRoute.MAIN) {
+            MainShell(repository) {
+                nav.navigate(RootRoute.WELCOME) {
+                    popUpTo(RootRoute.MAIN) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun MainShell(repository: SecureMeshRepository) {
+private fun MainShell(repository: SecureMeshRepository, onSessionEnded: () -> Unit) {
     val nav = rememberNavController()
     val vm: RootViewModel = viewModel(factory = viewModelFactory { RootViewModel(repository) })
     val session by vm.session.collectAsStateWithLifecycle()
     val sos by vm.sos.collectAsStateWithLifecycle()
+    val connection by vm.connection.collectAsStateWithLifecycle()
+    val mode by vm.transportMode.collectAsStateWithLifecycle()
     val items = itemsFor(session)
+
+    LaunchedEffect(mode, session?.authenticationState, connection) {
+        if (shouldExitMainShell(mode, session, connection)) onSessionEnded()
+    }
 
     MeshBackdrop(Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -149,10 +166,10 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
         navController = nav,
         startDestination = "home",
         modifier = Modifier.fillMaxSize(),
-        enterTransition = { fadeIn(tween(170)) + slideInVertically(animationSpec = spring(dampingRatio = .94f, stiffness = 600f)) { it / 22 } },
-        exitTransition = { fadeOut(tween(115)) + slideOutVertically(tween(150)) { -it / 32 } },
-        popEnterTransition = { fadeIn(tween(160)) + slideInVertically(animationSpec = spring(dampingRatio = .94f, stiffness = 600f)) { -it / 24 } },
-        popExitTransition = { fadeOut(tween(110)) + slideOutVertically(tween(145)) { it / 32 } },
+        enterTransition = { fadeIn(tween(185)) + slideInVertically(animationSpec = spring(dampingRatio = .89f, stiffness = 520f)) { it / 24 } },
+        exitTransition = { fadeOut(tween(120)) + slideOutVertically(tween(165)) { -it / 34 } },
+        popEnterTransition = { fadeIn(tween(175)) + slideInVertically(animationSpec = spring(dampingRatio = .89f, stiffness = 520f)) { -it / 26 } },
+        popExitTransition = { fadeOut(tween(115)) + slideOutVertically(tween(160)) { it / 34 } },
     ) {
         composable("home") {
             val vm: DashboardViewModel = viewModel(factory = viewModelFactory { DashboardViewModel(repository) })
@@ -179,17 +196,20 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
         composable("messages") { MessagesScreen(viewModel(factory = viewModelFactory { MessagesViewModel(repository) })) }
         composable("map") { MapScreen(viewModel(factory = viewModelFactory { NetworkViewModel(repository) }), onNode = { nav.navigate("node/$it") }) }
         composable("more") { MoreScreen(session) { nav.navigate(it) } }
+        composable("vanguard") { VanguardControlScreen(viewModel(factory = viewModelFactory { VanguardControlViewModel(repository) })) }
+        composable("devicecontrol") { DeviceControlScreen(viewModel(factory = viewModelFactory { DeviceControlViewModel(repository) })) }
         composable("topology") { TopologyScreen(viewModel(factory = viewModelFactory { NetworkViewModel(repository) })) { nav.navigate("node/$it") } }
         composable("routes") { RoutesScreen(viewModel(factory = viewModelFactory { RoutesViewModel(repository) })) }
         composable("fieldtest") { FieldTestScreen(viewModel(factory = viewModelFactory { FieldTestViewModel(repository) })) }
         composable("events") { EventsScreen(viewModel(factory = viewModelFactory { EventsViewModel(repository) })) }
         composable("diagnostics") { DiagnosticsScreen(viewModel(factory = viewModelFactory { DiagnosticsViewModel(repository) })) }
+        composable("security") { SecurityCenterScreen(viewModel(factory = viewModelFactory { SecurityCenterViewModel(repository) })) }
         composable("settings") { SettingsScreen(viewModel(factory = viewModelFactory { SettingsViewModel(repository) })) }
         composable("search") { SearchScreen(viewModel(factory = viewModelFactory { SearchViewModel(repository) })) { nav.navigate("node/$it") } }
     }
 }
 
-private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "settings", "search")
+private fun isMoreRoute(route: String?): Boolean = route in setOf("more", "topology", "routes", "fieldtest", "events", "diagnostics", "security", "settings", "search", "devicecontrol")
 
 private fun isSelected(current: String?, item: NavItem): Boolean = when {
     item.route == "more" -> isMoreRoute(current)
@@ -210,17 +230,17 @@ private fun PrimaryBar(nav: NavHostController, items: List<NavItem>) {
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
     Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 7.dp)) {
         Surface(
-            color = SecureMeshColors.Navigation.copy(alpha = .96f),
-            shadowElevation = 18.dp,
+            color = SecureMeshColors.Navigation.copy(alpha = .97f),
+            shadowElevation = 22.dp,
             shape = RoundedCornerShape(30.dp),
-            border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .14f)),
+            border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .18f)),
         ) {
             NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
                 items.forEach { item ->
                     val selected = isSelected(current, item)
                     val iconScale by androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = if (selected) 1.10f else 1f,
-                        animationSpec = spring(dampingRatio = .78f, stiffness = 560f),
+                        targetValue = if (selected) 1.12f else 1f,
+                        animationSpec = spring(dampingRatio = .76f, stiffness = 540f),
                         label = "nav-icon-scale-${item.route}",
                     )
                     NavigationBarItem(
@@ -232,7 +252,7 @@ private fun PrimaryBar(nav: NavHostController, items: List<NavItem>) {
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = SecureMeshColors.CyanHot,
                             selectedTextColor = SecureMeshColors.CyanHot,
-                            indicatorColor = SecureMeshColors.Cyan.copy(alpha = .18f),
+                            indicatorColor = SecureMeshColors.Cyan.copy(alpha = .20f),
                             unselectedIconColor = SecureMeshColors.Muted,
                             unselectedTextColor = SecureMeshColors.Muted,
                         ),
@@ -249,9 +269,9 @@ private fun PrimaryRail(nav: NavHostController, items: List<NavItem>, modifier: 
     Surface(
         modifier = modifier.padding(8.dp),
         shape = RoundedCornerShape(28.dp),
-        color = SecureMeshColors.Navigation.copy(alpha = .96f),
-        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .12f)),
-        shadowElevation = 16.dp,
+        color = SecureMeshColors.Navigation.copy(alpha = .97f),
+        border = BorderStroke(1.dp, SecureMeshColors.Cyan.copy(alpha = .16f)),
+        shadowElevation = 18.dp,
     ) {
         NavigationRail(containerColor = Color.Transparent) {
             Spacer(Modifier.height(18.dp))
@@ -265,7 +285,7 @@ private fun PrimaryRail(nav: NavHostController, items: List<NavItem>, modifier: 
                     colors = NavigationRailItemDefaults.colors(
                         selectedIconColor = SecureMeshColors.CyanHot,
                         selectedTextColor = SecureMeshColors.CyanHot,
-                        indicatorColor = SecureMeshColors.Cyan.copy(alpha = .18f),
+                        indicatorColor = SecureMeshColors.Cyan.copy(alpha = .20f),
                         unselectedIconColor = SecureMeshColors.Muted,
                         unselectedTextColor = SecureMeshColors.Muted,
                     ),

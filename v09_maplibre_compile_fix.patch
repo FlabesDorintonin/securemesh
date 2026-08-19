@@ -1,0 +1,79 @@
+diff --git a/app/src/main/java/dev/securemesh/commander/core/map/MapLibreMeshMapProvider.kt b/app/src/main/java/dev/securemesh/commander/core/map/MapLibreMeshMapProvider.kt
+index 03f9b1f..51a0ecf 100644
+--- a/app/src/main/java/dev/securemesh/commander/core/map/MapLibreMeshMapProvider.kt
++++ b/app/src/main/java/dev/securemesh/commander/core/map/MapLibreMeshMapProvider.kt
+@@ -1,6 +1,5 @@
+ package dev.securemesh.commander.core.map
+ 
+-import android.graphics.PointF
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.platform.LocalContext
+@@ -63,6 +62,8 @@ object MapLibreMeshMapProvider : MeshMapProvider {
+         val context = LocalContext.current
+         val lifecycle = LocalLifecycleOwner.current.lifecycle
+         val latestSelect by rememberUpdatedState(onPointSelected)
++        val latestPoints by rememberUpdatedState(state.points)
++        val tapRadiusPx = 52f * context.resources.displayMetrics.density
+         val mapView = remember {
+             MapView(context).apply { onCreate(null) }
+         }
+@@ -139,13 +140,22 @@ object MapLibreMeshMapProvider : MeshMapProvider {
+                     styleReady = true
+                 }
+                 readyMap.addOnMapClickListener { coordinate ->
+-                    val screen: PointF = readyMap.projection.toScreenLocation(coordinate)
+-                    val features = readyMap.queryRenderedFeatures(screen, arrayOf(SOS_LAYER, NODE_LAYER, SELECTED_LAYER))
+-                    val id = features.firstNotNullOfOrNull { feature ->
+-                        feature.getStringProperty("id")?.takeIf { it.isNotBlank() }
+-                    }
+-                    if (id != null) latestSelect(id)
+-                    id != null
++                    val tap = readyMap.projection.toScreenLocation(coordinate)
++                    val radiusSquared = tapRadiusPx * tapRadiusPx
++                    val nearest = latestPoints
++                        .asSequence()
++                        .filter { validMapCoordinate(it.latitude, it.longitude) }
++                        .map { point ->
++                            val projected = readyMap.projection.toScreenLocation(LatLng(point.latitude, point.longitude))
++                            val dx = projected.x - tap.x
++                            val dy = projected.y - tap.y
++                            point to (dx * dx + dy * dy)
++                        }
++                        .filter { (_, distanceSquared) -> distanceSquared <= radiusSquared }
++                        .minByOrNull { (_, distanceSquared) -> distanceSquared }
++                        ?.first
++                    nearest?.let { latestSelect(it.id) }
++                    nearest != null
+                 }
+             }
+         }
+@@ -257,7 +267,7 @@ object MapLibreMeshMapProvider : MeshMapProvider {
+         )
+ 
+         val tracks = state.tracks.mapNotNull { (nodeId, coords) ->
+-            val points = coords.filter { validCoordinate(it.latitude, it.longitude) }
++            val points = coords.filter { validMapCoordinate(it.latitude, it.longitude) }
+             if (points.size < 2) null else Feature.fromGeometry(
+                 LineString.fromLngLats(points.map { Point.fromLngLat(it.longitude, it.latitude) })
+             ).apply { addStringProperty("id", nodeId) }
+@@ -275,7 +285,7 @@ object MapLibreMeshMapProvider : MeshMapProvider {
+     }
+ 
+     private fun fitNetwork(map: MapLibreMap, points: List<MapPoint>, threeDimensional: Boolean) {
+-        val valid = points.filter { validCoordinate(it.latitude, it.longitude) }
++        val valid = points.filter { validMapCoordinate(it.latitude, it.longitude) }
+         if (valid.isEmpty()) return
+         if (valid.size == 1) {
+             val p = valid.first()
+@@ -297,6 +307,10 @@ object MapLibreMeshMapProvider : MeshMapProvider {
+         }
+     }
+ 
++    private fun validMapCoordinate(latitude: Double, longitude: Double): Boolean =
++        latitude.isFinite() && longitude.isFinite() &&
++            latitude in -90.0..90.0 && longitude in -180.0..180.0
++
+     private fun emptyFeatures(): FeatureCollection = FeatureCollection.fromFeatures(emptyList())
+ 
+     private const val DEFAULT_TACTICAL_STYLE = """

@@ -1,0 +1,30 @@
+--- a/app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt
++++ b/app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt
+@@ -193,17 +193,19 @@
+     fun quality(nowEpochMs: Long = System.currentTimeMillis()): LinkQuality {
+         if (lastSeenEpochMs != null && nowEpochMs - lastSeenEpochMs > 30_000L) return LinkQuality.LOST
+         if (rssi == null && snr == null && pdr == null) return LinkQuality.UNKNOWN
+-        val rssiScore = rssi?.let { ((it + 120) * 100.0 / 65.0).coerceIn(0.0, 100.0) }
+-        val snrScore = snr?.let { ((it + 15.0) * 100.0 / 25.0).coerceIn(0.0, 100.0) }
+-        val pdrScore = pdr?.let { (it * 100.0).coerceIn(0.0, 100.0) }
+-        val samples = listOfNotNull(rssiScore, snrScore, pdrScore)
+-        if (samples.isEmpty()) return LinkQuality.UNKNOWN
+-        var score = samples.average()
+-        retries?.let { score -= (it.coerceAtMost(8) * 3.0) }
++        val weighted = buildList<Pair<Double, Double>> {
++            rssi?.let { add(((it + 120) * 100.0 / 65.0).coerceIn(0.0, 100.0) to 0.25) }
++            snr?.let { add(((it + 15.0) * 100.0 / 25.0).coerceIn(0.0, 100.0) to 0.25) }
++            pdr?.let { add((it * 100.0).coerceIn(0.0, 100.0) to 0.40) }
++        }
++        if (weighted.isEmpty()) return LinkQuality.UNKNOWN
++        var score = weighted.sumOf { it.first * it.second } / weighted.sumOf { it.second }
++        retries?.let { score -= (it.coerceAtMost(10) * 2.5) }
+         lastSeenEpochMs?.let {
+             val age = (nowEpochMs - it).coerceAtLeast(0L)
+-            if (age > 10_000L) score -= ((age - 10_000L) / 1000.0).coerceAtMost(20.0)
++            if (age > 8_000L) score -= ((age - 8_000L) / 1000.0).coerceAtMost(18.0)
+         }
++        score = score.coerceIn(0.0, 100.0)
+         return when {
+             score >= 85.0 -> LinkQuality.EXCELLENT
+             score >= 70.0 -> LinkQuality.GOOD

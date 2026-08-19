@@ -1,0 +1,174 @@
+name: One-shot SecureMesh 0.8.3 hardening
+
+on:
+  push:
+    branches:
+      - agent/0.8.3-release-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  apply-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout hardening branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Decode and verify reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tools/release_patch_chunks/* > /tmp/release-hardening.patch.gz.b64
+          test "$(wc -c < /tmp/release-hardening.patch.gz.b64)" -eq 43252
+          echo "425a75f4d8ae3b798dbfcc24e15dc25f71ff8eb563bdf6d604bba72af7c5cff9  /tmp/release-hardening.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/release-hardening.patch.gz.b64 | gzip -d > /tmp/release-hardening.patch
+          echo "0138ffd8e53a6e49e450bdccf1c576e07328943d4feb46e9eb6fd73d7a58416c  /tmp/release-hardening.patch" | sha256sum -c -
+          echo "1a1626a7f4941ccd00c361063aa078e27b38d3e8104cdc616284132bfc60577d  tools/release_hardening_lintfix.patch" | sha256sum -c -
+          echo "759c0bf23036607db22948541fd889021b6fd41440b73d6f037b97e407a468b8  tools/release_hardening_themefix.patch" | sha256sum -c -
+          git apply --check /tmp/release-hardening.patch
+          git apply /tmp/release-hardening.patch
+          git apply --check tools/release_hardening_lintfix.patch
+          git apply tools/release_hardening_lintfix.patch
+          git apply --check tools/release_hardening_themefix.patch
+          git apply tools/release_hardening_themefix.patch
+          rm -rf tools/release_patch_chunks tools/release_hardening.patch.gz.b64 tools/release_hardening_lintfix.patch tools/release_hardening_themefix.patch
+          cat > .gitignore <<'EOF'
+          .gradle/
+          **/build/
+          local.properties
+          .idea/
+          *.iml
+          .DS_Store
+          .cxx/
+          .externalNativeBuild/
+          captures/
+          *.jks
+          *.keystore
+          *.log
+          apk-sha256.txt
+          source-sha256.txt
+          verified-commit.txt
+          SecureMesh-0.8.3-source.zip
+          EOF
+          sed -i 's/^          //' .gitignore
+          git diff --check
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+
+      - name: Architecture and security gate
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate.log
+
+      - name: Android lint
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace --console=plain lintDebug 2>&1 | tee lint-debug.log
+
+      - name: JVM unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace --console=plain testDebugUnitTest 2>&1 | tee test-debug.log
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --stacktrace --console=plain assembleDebug 2>&1 | tee assemble-debug.log
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee apk-sha256.txt
+
+      - name: Create verified release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "SecureMesh Hardening Bot"
+          git config user.email "actions@users.noreply.github.com"
+          # The GitHub Actions token must not self-publish workflow changes.
+          # The normal CI workflow is updated separately through the GitHub connector.
+          git checkout HEAD -- .github/workflows/blank.yml
+          git add -A
+          if git ls-files | grep -E '(^|/)(build|\.gradle)/' ; then
+            echo 'Build output unexpectedly tracked' >&2
+            exit 1
+          fi
+          git commit -m "Release hardening 0.8.3"
+          git rev-parse HEAD | tee verified-commit.txt
+
+      - name: Package verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=zip --output=SecureMesh-0.8.3-source.zip HEAD
+          zip -d SecureMesh-0.8.3-source.zip '.github/workflows/one-shot-release-hardening.yml' >/dev/null || true
+          sha256sum SecureMesh-0.8.3-source.zip | tee source-sha256.txt
+          test "$(stat -c%s SecureMesh-0.8.3-source.zip)" -lt 5000000
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-0.8.3-hardening-apk-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            apk-sha256.txt
+            verified-commit.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload verified source
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-0.8.3-hardening-source-${{ github.run_number }}
+          path: |
+            SecureMesh-0.8.3-source.zip
+            source-sha256.txt
+            verified-commit.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish verified release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:refs/heads/release/securemesh-0.8.3-hardening
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-0.8.3-hardening-failure-${{ github.run_number }}
+          path: |
+            alignment-gate.log
+            lint-debug.log
+            app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            app/build/reports/lint-results-debug.html
+            test-debug.log
+            assemble-debug.log
+            apk-sha256.txt
+            verified-commit.txt
+          if-no-files-found: ignore
+          retention-days: 7

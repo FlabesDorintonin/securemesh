@@ -1,0 +1,16 @@
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+.cxx/
+.externalNativeBuild/
+captures/
+*.jks
+*.keystore
+*.log
+apk-sha256.txt
+source-sha256.txt
+verified-commit.txt
+SecureMesh-0.8.3-source.zip

@@ -89,6 +89,16 @@ class BleTransport(
     override val activeSos = _activeSos.asStateFlow()
     private val _bleDiagnostics = MutableStateFlow<BleDiagnostics?>(BleDiagnostics())
     override val bleDiagnostics = _bleDiagnostics.asStateFlow()
+    private val _deviceUiState = MutableStateFlow<DeviceUiState?>(null)
+    override val deviceUiState = _deviceUiState.asStateFlow()
+    private val _knownNodeIds = MutableStateFlow<List<NodeId>>(emptyList())
+    override val knownNodeIds = _knownNodeIds.asStateFlow()
+    private val _networkManifest = MutableStateFlow<VanguardManifest?>(null)
+    override val networkManifest = _networkManifest.asStateFlow()
+    private val _vanguardDiagnostics = MutableStateFlow<VanguardDiagnostics?>(null)
+    override val vanguardDiagnostics = _vanguardDiagnostics.asStateFlow()
+    private val _labLinkPolicies = MutableStateFlow<List<LabLinkPolicy>>(emptyList())
+    override val labLinkPolicies = _labLinkPolicies.asStateFlow()
 
     override suspend fun start() {
         _connectionState.value = environmentState()
@@ -100,6 +110,7 @@ class BleTransport(
         requestManager.failAll(IllegalStateException("SecureMesh BLE transport stopped"))
         resetProtocolState()
         closeGatt()
+        releaseBondReceiver()
         connectingDevice = null
         _session.value = null
         _demoProfile.value = null
@@ -154,6 +165,7 @@ class BleTransport(
         closeGatt()
         connectingDevice = device
         _session.value = null
+        clearFirmwareExtensionState()
         _connectionState.value = MeshConnectionState.Connecting(device)
         updateDiagnostics {
             BleDiagnostics(
@@ -292,14 +304,103 @@ class BleTransport(
         status.testId.toString()
     }
 
-    override suspend fun stopFieldTest() {
-        val result = command(SecureMeshBleCommand.StopFieldTest)
-        result.onSuccess(::requireOk)
-        if (result.isSuccess) syncFieldTestStatus()
+    override suspend fun stopFieldTest(): Result<Unit> = runCatching {
+        val response = command(SecureMeshBleCommand.StopFieldTest).getOrThrow()
+        requireOk(response)
+        syncFieldTestStatus()
     }
 
     override suspend fun acknowledgeSos(id: String) {
         // Protocol v0.1 has no SOS command/capability.
+    }
+
+    override suspend fun refreshDeviceUiState(): Result<DeviceUiState> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.UI_OS)) { "Firmware does not advertise UI_OS capability" }
+        val response = command(SecureMeshBleCommand.GetUiState).getOrThrow()
+        val payload = codec.parseUiState(response).getOrThrow()
+        require(payload.localNodeId == session.localNodeIdentity.nodeId) { "GET_UI_STATE local node mismatch" }
+        SecureMeshBleV01DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
+    }
+
+    override suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.UI_OS)) { "Firmware does not advertise UI_OS capability" }
+        val response = command(SecureMeshBleCommand.UiAction(action.wire)).getOrThrow()
+        val payload = codec.parseUiState(response, BleOpcode.UI_ACTION).getOrThrow()
+        require(payload.localNodeId == session.localNodeIdentity.nodeId) { "UI_ACTION local node mismatch" }
+        SecureMeshBleV01DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
+    }
+
+    override suspend fun refreshVanguardState(): Result<Unit> = runCatching {
+        requireReadySession()
+        syncMutex.withLock {
+            syncKnownNodesUnlocked()
+            syncManifestUnlocked()
+            syncRoutingDiagnosticsUnlocked()
+            syncLabPoliciesUnlocked()
+            syncNeighborsUnlocked()
+            syncRoutesUnlocked()
+        }
+    }
+
+    override suspend fun setManifest(epoch: Long, nodes: List<NodeId>): Result<VanguardManifest> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.MANIFEST)) { "Firmware does not advertise MANIFEST capability" }
+        require(nodes.contains(session.localNodeIdentity.nodeId)) { "Manifest must contain the connected local node" }
+        val response = command(SecureMeshBleCommand.SetManifest(epoch, nodes.distinct())).getOrThrow()
+        codec.parseManifest(response, BleOpcode.SET_MANIFEST).getOrThrow().let(SecureMeshBleV01DomainMapping::manifest).also {
+            _networkManifest.value = it
+            syncRoutingDiagnostics()
+            syncRoutes()
+        }
+    }
+
+    override suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean): Result<VanguardDiagnostics> = runCatching {
+        requireReadySession().also { require(it.supports(DeviceCapability.VANGUARD)) { "Firmware does not advertise VANGUARD capability" } }
+        val response = command(SecureMeshBleCommand.DiscoverRoute(destination, forceFresh)).getOrThrow()
+        codec.parseRoutingDiagnostics(response, BleOpcode.DISCOVER_ROUTE).getOrThrow().let { SecureMeshBleV01DomainMapping.diagnostics(it, now()) }.also {
+            _vanguardDiagnostics.value = it
+            syncRoutes()
+        }
+    }
+
+    override suspend fun clearDynamicRoutes(): Result<VanguardDiagnostics> = runCatching {
+        requireReadySession().also { require(it.supports(DeviceCapability.VANGUARD)) { "Firmware does not advertise VANGUARD capability" } }
+        val response = command(SecureMeshBleCommand.ClearDynamicRoutes).getOrThrow()
+        codec.parseRoutingDiagnostics(response, BleOpcode.CLEAR_DYNAMIC_ROUTES).getOrThrow().let { SecureMeshBleV01DomainMapping.diagnostics(it, now()) }.also {
+            _vanguardDiagnostics.value = it
+            syncRoutes()
+        }
+    }
+
+    override suspend fun injectLinkFailure(peer: NodeId, durationMs: Long): Result<VanguardDiagnostics> = runCatching {
+        requireReadySession().also { require(it.supports(DeviceCapability.FAULT_LAB)) { "Firmware does not advertise FAULT_LAB capability" } }
+        val response = command(SecureMeshBleCommand.InjectLinkFailure(peer, durationMs)).getOrThrow()
+        codec.parseRoutingDiagnostics(response, BleOpcode.INJECT_LINK_FAILURE).getOrThrow().let { SecureMeshBleV01DomainMapping.diagnostics(it, now()) }.also {
+            _vanguardDiagnostics.value = it
+            syncLabPolicies()
+            syncNeighbors()
+            syncRoutes()
+        }
+    }
+
+    override suspend fun setLabLinkPolicy(peer: NodeId, preset: LabLinkPreset, durationMs: Long): Result<List<LabLinkPolicy>> = runCatching {
+        requireReadySession().also { require(it.supports(DeviceCapability.FAULT_LAB)) { "Firmware does not advertise FAULT_LAB capability" } }
+        val (flags, reliability, eca) = when (preset) {
+            LabLinkPreset.CLEAR -> Triple(0, 24575, 65536L)
+            LabLinkPreset.BLOCK -> Triple(1, 24575, 65536L)
+            LabLinkPreset.SOFT_WEAK -> Triple(2, (0.72 * 32767).toInt(), (2.8 * 65536).toLong())
+            LabLinkPreset.VERY_WEAK -> Triple(2, (0.48 * 32767).toInt(), (3.8 * 65536).toLong())
+        }
+        val actualDuration = if (preset == LabLinkPreset.CLEAR) 0L else durationMs
+        val response = command(SecureMeshBleCommand.SetLabLinkPolicy(peer, flags, actualDuration, reliability, eca)).getOrThrow()
+        codec.parseLabLinkPolicies(response, BleOpcode.SET_LAB_LINK_POLICY).getOrThrow().let(SecureMeshBleV01DomainMapping::labPolicies).also {
+            _labLinkPolicies.value = it
+            syncRoutingDiagnostics()
+            syncNeighbors()
+            syncRoutes()
+        }
     }
 
     private suspend fun command(command: SecureMeshBleCommand): Result<SecureMeshBleFrame.Response> {
@@ -355,6 +456,10 @@ class BleTransport(
                 @Suppress("DEPRECATION")
                 currentGatt.writeCharacteristic(characteristic)
             }
+        } catch (security: SecurityException) {
+            synchronized(stateLock) { if (writeAwaiter === waiter) writeAwaiter = null }
+            _connectionState.value = MeshConnectionState.PermissionRequired(requiredPermissions())
+            throw security
         } catch (t: Throwable) {
             synchronized(stateLock) { if (writeAwaiter === waiter) writeAwaiter = null }
             throw t
@@ -444,6 +549,7 @@ class BleTransport(
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(callbackGatt: BluetoothGatt, status: Int, newState: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             val device = connectingDevice ?: return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 requestManager.failAll(IllegalStateException("GATT status $status"))
@@ -476,6 +582,7 @@ class BleTransport(
         }
 
         override fun onServicesDiscovered(callbackGatt: BluetoothGatt, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 markProtocolUnavailable("Service discovery status $status")
                 return
@@ -499,6 +606,7 @@ class BleTransport(
         }
 
         override fun onMtuChanged(callbackGatt: BluetoothGatt, mtu: Int, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (status == BluetoothGatt.GATT_SUCCESS && mtu >= 23) negotiatedMtu = mtu
             updateDiagnostics { it.copy(mtu = negotiatedMtu) }
             if (handshakePhase == HandshakePhase.REQUESTING_MTU) {
@@ -508,6 +616,7 @@ class BleTransport(
         }
 
         override fun onDescriptorWrite(callbackGatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 failAndClose(MeshErrorCode.PROTOCOL_MISMATCH, "CCCD write status $status", "Не удалось включить SecureMesh notifications")
                 return
@@ -528,25 +637,30 @@ class BleTransport(
 
         @Deprecated("Deprecated in Android 13")
         override fun onCharacteristicRead(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             @Suppress("DEPRECATION")
             handleCharacteristicRead(characteristic.uuid, characteristic.value ?: byteArrayOf(), status)
         }
 
         override fun onCharacteristicRead(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             handleCharacteristicRead(characteristic.uuid, value, status)
         }
 
         @Deprecated("Deprecated in Android 13")
         override fun onCharacteristicChanged(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            if (!isCurrentGatt(callbackGatt)) return
             @Suppress("DEPRECATION")
             handleNotification(characteristic.uuid, characteristic.value ?: byteArrayOf())
         }
 
         override fun onCharacteristicChanged(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            if (!isCurrentGatt(callbackGatt)) return
             handleNotification(characteristic.uuid, value)
         }
 
         override fun onCharacteristicWrite(callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (!isCurrentGatt(callbackGatt)) return
             if (characteristic.uuid != config.commandCharacteristicUuid) return
             synchronized(stateLock) { writeAwaiter }?.complete(status)
         }
@@ -554,8 +668,15 @@ class BleTransport(
 
     private suspend fun beginSystemBonding(device: BluetoothDevice) {
         val uiDevice = connectingDevice ?: return
-        updateDiagnostics { it.copy(gattState = "SERVICE_VERIFIED", bonded = device.bondState == BluetoothDevice.BOND_BONDED) }
-        when (device.bondState) {
+        val bondState = try {
+            device.bondState
+        } catch (_: SecurityException) {
+            _connectionState.value = MeshConnectionState.PermissionRequired(requiredPermissions())
+            closeGatt()
+            return
+        }
+        updateDiagnostics { it.copy(gattState = "SERVICE_VERIFIED", bonded = bondState == BluetoothDevice.BOND_BONDED) }
+        when (bondState) {
             BluetoothDevice.BOND_BONDED -> continueAfterBond()
             BluetoothDevice.BOND_BONDING -> waitForBond(uiDevice)
             else -> {
@@ -760,15 +881,24 @@ class BleTransport(
 
     private suspend fun initialSync() = syncMutex.withLock {
         syncStatusUnlocked()
+        syncKnownNodesUnlocked()
         syncNeighborsUnlocked()
         syncRoutesUnlocked()
         syncFieldTestStatusUnlocked()
+        if (_session.value?.supports(DeviceCapability.UI_OS) == true) syncDeviceUiStateUnlocked()
+        if (_session.value?.supports(DeviceCapability.MANIFEST) == true) syncManifestUnlocked()
+        if (_session.value?.supports(DeviceCapability.VANGUARD) == true) syncRoutingDiagnosticsUnlocked()
+        if (_session.value?.supports(DeviceCapability.FAULT_LAB) == true) syncLabPoliciesUnlocked()
     }
 
     private suspend fun syncStatus() = syncMutex.withLock { syncStatusUnlocked() }
     private suspend fun syncNeighbors() = syncMutex.withLock { syncNeighborsUnlocked() }
     private suspend fun syncRoutes() = syncMutex.withLock { syncRoutesUnlocked() }
     private suspend fun syncFieldTestStatus() = syncMutex.withLock { syncFieldTestStatusUnlocked() }
+    private suspend fun syncDeviceUiState() = syncMutex.withLock { syncDeviceUiStateUnlocked() }
+    private suspend fun syncManifest() = syncMutex.withLock { syncManifestUnlocked() }
+    private suspend fun syncRoutingDiagnostics() = syncMutex.withLock { syncRoutingDiagnosticsUnlocked() }
+    private suspend fun syncLabPolicies() = syncMutex.withLock { syncLabPoliciesUnlocked() }
 
     private suspend fun syncStatusUnlocked() {
         val response = command(SecureMeshBleCommand.GetStatus).getOrNull() ?: return
@@ -792,7 +922,15 @@ class BleTransport(
         val local = _nodes.value.firstOrNull { it.id == localId }
             ?: MeshNode(session.localNodeIdentity, true, now())
         val neighborNodes = neighbors.map { SecureMeshBleV01DomainMapping.neighborNode(it, now()) }
-        _nodes.value = listOf(local.copy(online = true, lastSeenEpochMs = now())) + neighborNodes.filter { it.id != localId }
+        val visibleIds = neighborNodes.map { it.id }.toSet() + localId
+        val rememberedNodes = _knownNodeIds.value.filterNot { it in visibleIds }.map { nodeId ->
+            MeshNode(
+                identity = NodeIdentity(nodeId, "Узел $nodeId", NodeRole.UNKNOWN, null, null, emptySet()),
+                online = false,
+                lastSeenEpochMs = 0L,
+            )
+        }
+        _nodes.value = listOf(local.copy(online = true, lastSeenEpochMs = now())) + neighborNodes.filter { it.id != localId } + rememberedNodes
         val links = neighbors.filter { it.nodeId != localId }.map { SecureMeshBleV01DomainMapping.neighborLink(localId, it, now()) }
         _topology.value = MeshTopology(_nodes.value.map { it.id }.distinct(), links, now())
     }
@@ -808,6 +946,43 @@ class BleTransport(
         val status = codec.parseFieldTestStatus(response).getOrNull() ?: return
         val localId = _session.value?.localNodeIdentity?.nodeId ?: return
         _activeFieldTest.value = SecureMeshBleV01DomainMapping.fieldTest(status, localId, _activeFieldTest.value, now())
+    }
+
+    private suspend fun syncDeviceUiStateUnlocked() {
+        val session = _session.value ?: return
+        if (!session.supports(DeviceCapability.UI_OS)) { _deviceUiState.value = null; return }
+        val response = command(SecureMeshBleCommand.GetUiState).getOrNull() ?: return
+        val payload = codec.parseUiState(response).getOrNull() ?: return
+        if (payload.localNodeId != session.localNodeIdentity.nodeId) { incrementMalformed("GET_UI_STATE local node mismatch"); return }
+        _deviceUiState.value = SecureMeshBleV01DomainMapping.deviceUiState(payload, now())
+    }
+
+    private suspend fun syncKnownNodesUnlocked() {
+        val session = _session.value ?: return
+        if (!session.supports(DeviceCapability.VANGUARD) && !session.supports(DeviceCapability.MANIFEST)) return
+        val response = command(SecureMeshBleCommand.GetKnownNodes).getOrNull() ?: return
+        _knownNodeIds.value = codec.parseKnownNodes(response).getOrNull().orEmpty().distinct()
+    }
+
+    private suspend fun syncManifestUnlocked() {
+        val session = _session.value ?: return
+        if (!session.supports(DeviceCapability.MANIFEST)) { _networkManifest.value = null; return }
+        val response = command(SecureMeshBleCommand.GetManifest).getOrNull() ?: return
+        _networkManifest.value = codec.parseManifest(response).getOrNull()?.let(SecureMeshBleV01DomainMapping::manifest)
+    }
+
+    private suspend fun syncRoutingDiagnosticsUnlocked() {
+        val session = _session.value ?: return
+        if (!session.supports(DeviceCapability.VANGUARD)) { _vanguardDiagnostics.value = null; return }
+        val response = command(SecureMeshBleCommand.GetRoutingDiagnostics).getOrNull() ?: return
+        _vanguardDiagnostics.value = codec.parseRoutingDiagnostics(response).getOrNull()?.let { SecureMeshBleV01DomainMapping.diagnostics(it, now()) }
+    }
+
+    private suspend fun syncLabPoliciesUnlocked() {
+        val session = _session.value ?: return
+        if (!session.supports(DeviceCapability.FAULT_LAB)) { _labLinkPolicies.value = emptyList(); return }
+        val response = command(SecureMeshBleCommand.GetLabLinkPolicies).getOrNull() ?: return
+        _labLinkPolicies.value = codec.parseLabLinkPolicies(response).getOrNull()?.let(SecureMeshBleV01DomainMapping::labPolicies).orEmpty()
     }
 
     private fun handleNotification(uuid: UUID, fragment: ByteArray) {
@@ -863,8 +1038,9 @@ class BleTransport(
             }
             is BleDecodedEvent.HopAck -> {
                 val id = wireId(event.messageId)
+                val localNodeId = _session.value?.localNodeIdentity?.nodeId
                 _messages.value = _messages.value.map { message ->
-                    if (message.id != id) message else {
+                    if (message.id != id || message.origin != localNodeId) message else {
                         val local = message.origin
                         val existing = message.hopTrace.firstOrNull { it.to == event.neighborId }
                         val hop = (existing ?: TransmissionHop(local, event.neighborId, null, HopAckState.PENDING, 0, null, null, now())).copy(
@@ -883,8 +1059,9 @@ class BleTransport(
             }
             is BleDecodedEvent.Retry -> {
                 val id = wireId(event.messageId)
+                val localNodeId = _session.value?.localNodeIdentity?.nodeId
                 _messages.value = _messages.value.map { message ->
-                    if (message.id != id) message else {
+                    if (message.id != id || message.origin != localNodeId) message else {
                         val local = message.origin
                         val existing = message.hopTrace.firstOrNull { it.to == event.neighborId }
                         val hop = (existing ?: TransmissionHop(local, event.neighborId, null, HopAckState.PENDING, 0, null, null, now())).copy(
@@ -946,6 +1123,29 @@ class BleTransport(
             }
             is BleDecodedEvent.Error -> addEvent(EventCategory.SYSTEM, "ERROR", "context=${event.context} status=${event.status ?: event.rawStatus} related=${event.relatedId}")
             is BleDecodedEvent.NoReturnRoute -> addEvent(EventCategory.ROUTING, "NO_RETURN_ROUTE", "origin=${event.origin} test=${event.testId} seq=${event.sequence}", event.origin)
+            is BleDecodedEvent.UiChanged -> {
+                val session = _session.value
+                if (session == null || event.state.localNodeId != session.localNodeIdentity.nodeId) incrementMalformed("UI_CHANGED local node mismatch")
+                else _deviceUiState.value = SecureMeshBleV01DomainMapping.deviceUiState(event.state, now())
+            }
+            is BleDecodedEvent.VanguardRuntime -> {
+                val runtime = VanguardRuntimeEventType.fromWire(event.runtimeType)
+                addEvent(EventCategory.ROUTING, event.type.name, "${runtime.name}: ${event.destination} via ${event.nextHop} · tag/req=${event.requestIdOrPathTag} · v=${event.routeVersion}", event.destination)
+                scope.launch {
+                    syncRoutes()
+                    syncRoutingDiagnostics()
+                }
+            }
+            is BleDecodedEvent.ManifestChanged -> {
+                _networkManifest.value = SecureMeshBleV01DomainMapping.manifest(event.manifest)
+                addEvent(EventCategory.ROUTING, "MANIFEST_CHANGED", "epoch=${event.manifest.networkEpoch} digest=${event.manifest.digest}")
+                scope.launch { syncRoutingDiagnostics() }
+            }
+            is BleDecodedEvent.KnownNodeAdded -> {
+                _knownNodeIds.value = (_knownNodeIds.value + event.nodeId).distinct()
+                addEvent(EventCategory.SYSTEM, "KNOWN_NODE_ADDED", "Node ${event.nodeId}", event.nodeId)
+                scope.launch { syncNeighbors() }
+            }
         }
     }
 
@@ -962,6 +1162,8 @@ class BleTransport(
 
     private fun markProtocolUnavailable(technical: String) {
         val device = connectingDevice ?: return
+        connectionTimeoutJob?.cancel()
+        connectionTimeoutJob = null
         handshakePhase = HandshakePhase.IDLE
         _session.value = null
         _connectionState.value = MeshConnectionState.Connected(
@@ -987,12 +1189,32 @@ class BleTransport(
     }
 
     private fun environmentState(): MeshConnectionState {
-        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) return MeshConnectionState.BluetoothUnavailable
-        val a = adapter ?: return MeshConnectionState.BluetoothUnavailable
-        if (!a.isEnabled) return MeshConnectionState.BluetoothDisabled
-        val missing = requiredPermissions().filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            return MeshConnectionState.BluetoothUnavailable
+        }
+
+        // Android 12+ protects several adapter operations with BLUETOOTH_CONNECT.
+        // Check runtime permissions *before* touching adapter state. Some OEM stacks
+        // (notably MIUI/HyperOS builds) enforce this more aggressively than others.
+        val missing = requiredPermissions().filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
         if (missing.isNotEmpty()) return MeshConnectionState.PermissionRequired(missing)
-        return MeshConnectionState.Idle
+
+        val a = adapter ?: return MeshConnectionState.BluetoothUnavailable
+        return try {
+            if (a.isEnabled) MeshConnectionState.Idle else MeshConnectionState.BluetoothDisabled
+        } catch (_: SecurityException) {
+            MeshConnectionState.PermissionRequired(requiredPermissions())
+        } catch (t: Throwable) {
+            MeshConnectionState.Error(
+                MeshError(
+                    MeshErrorCode.BLUETOOTH_UNAVAILABLE,
+                    "Bluetooth adapter state failed: ${t.message ?: t::class.java.simpleName}",
+                    "Не удалось проверить состояние Bluetooth",
+                )
+            )
+        }
     }
 
     private fun requiredPermissions(): List<String> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -1032,7 +1254,16 @@ class BleTransport(
         mtuFallbackJob?.cancel(); mtuFallbackJob = null
     }
 
+    private fun clearFirmwareExtensionState() {
+        _deviceUiState.value = null
+        _knownNodeIds.value = emptyList()
+        _networkManifest.value = null
+        _vanguardDiagnostics.value = null
+        _labLinkPolicies.value = emptyList()
+    }
+
     private fun resetProtocolState() {
+        clearFirmwareExtensionState()
         handshakePhase = HandshakePhase.IDLE
         secureService = null
         infoCharacteristic = null
@@ -1051,9 +1282,24 @@ class BleTransport(
         }
     }
 
+    private fun isCurrentGatt(callbackGatt: BluetoothGatt): Boolean = callbackGatt === gatt
+
+    private fun releaseBondReceiver() {
+        if (!bondReceiverRegistered) return
+        try { context.unregisterReceiver(bondReceiver) } catch (_: IllegalArgumentException) { }
+        bondReceiverRegistered = false
+    }
+
     private fun closeGatt() {
-        try { gatt?.close() } catch (_: Throwable) { }
-        gatt = null
+        try {
+            gatt?.close()
+        } catch (_: SecurityException) {
+            // BLUETOOTH_CONNECT can be revoked while a GATT session is alive.
+        } catch (_: Throwable) {
+            // OEM Bluetooth stacks may throw while tearing down an already-dead GATT.
+        } finally {
+            gatt = null
+        }
     }
 
     private fun allocateTransportId(): Int = synchronized(stateLock) {
@@ -1080,7 +1326,7 @@ class BleTransport(
     }
 
     private fun upsertMessage(items: List<MeshMessage>, message: MeshMessage): List<MeshMessage> =
-        (items.filterNot { it.id == message.id } + message).sortedByDescending { it.createdAtEpochMs }.take(500)
+        (items.filterNot { it.stableKey() == message.stableKey() } + message).sortedByDescending { it.createdAtEpochMs }.take(500)
 
     private fun wireId(value: Long): String = value.toString(16).uppercase().padStart(8, '0')
 

@@ -6,6 +6,12 @@ on:
     branches:
       - main
       - master
+      - product/0.8.0-hardening
+      - agent/premium-motion-polish
+      - agent/firmware-0.8.2-vanguard-console
+      - agent/0.9.1-contact-vault
+      - agent/0.9.2-offline-map-manager
+      - agent/0.9.3-contacts-diagnostics-radar
   pull_request:
     branches:
       - main
@@ -42,11 +48,101 @@ jobs:
         with:
           gradle-version: '8.13'
 
+      - name: Assemble v0.9 patch transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G 'v09_patch_parts/part*.txt' > /dev/null; then
+            cat v09_patch_parts/part*.txt > v09_android.patch.gz.b64
+            test "$(wc -c < v09_android.patch.gz.b64)" -eq 33500
+          fi
+
       - name: Architecture alignment gate
         shell: bash
         run: |
           set -o pipefail
           python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate.log
+          git diff --check
+
+      - name: Apply MapLibre v13 compile fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v09_maplibre_compile_fix.patch
+          git apply v09_maplibre_compile_fix.patch
+          git diff --check
+
+      - name: Apply BLE v0.2 GPS test fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v09_test_decode_fix.patch
+          git apply v09_test_decode_fix.patch
+          git diff --check
+
+      - name: Apply POSITION v0.2 fixture fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v09_position_fixture_fix.patch
+          git apply v09_position_fixture_fix.patch
+          git diff --check
+
+      - name: Apply v0.9.1 Contact Vault + GPS visibility patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat v091_full_patch_parts/part*.txt > v091_full.patch.gz.b64
+          test "$(wc -c < v091_full.patch.gz.b64)" -eq 24468
+          base64 -d v091_full.patch.gz.b64 > v091_full.patch.gz
+          gzip -dc v091_full.patch.gz > v091_full.patch
+          git apply --check v091_full.patch
+          git apply v091_full.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py
+
+      - name: Apply v0.9.1 security interface compile fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v091_security_interface_fix.patch
+          git apply v091_security_interface_fix.patch
+          git diff --check
+
+      - name: Apply v0.9.2 offline maps patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat v092_patch_parts/part*.txt > v092_offline_maps.patch.gz.b64
+          test "$(wc -c < v092_offline_maps.patch.gz.b64)" -eq 27728
+          base64 -d v092_offline_maps.patch.gz.b64 > v092_offline_maps.patch.gz
+          gzip -dc v092_offline_maps.patch.gz > v092_offline_maps.patch
+          git apply --check v092_offline_maps.patch
+          git apply v092_offline_maps.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py
+
+      - name: Apply v0.9.3 contacts diagnostics radar patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat v093_patch_parts/part*.txt > v093_android.patch.gz.b64
+          test "$(wc -c < v093_android.patch.gz.b64)" -eq 32392
+          base64 -d v093_android.patch.gz.b64 > v093_android.patch.gz
+          gzip -dc v093_android.patch.gz > v093_android.patch
+          git apply --check v093_android.patch
+          git apply v093_android.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py
+
+      - name: Align v0.9.3 human link health scoring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v093_link_quality_consistency_fix.patch
+          git apply v093_link_quality_consistency_fix.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py
 
       - name: Upload alignment failure log
         if: failure()
@@ -79,6 +175,30 @@ jobs:
         with:
           name: SecureMesh-test-failure-log-${{ github.run_number }}
           path: test-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Android lint
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace --console=plain lintDebug > lint-debug.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "----- concise Android lint failure -----"
+            grep -E "^(e: |FAILURE:|\* What went wrong:|Execution failed for task|Caused by:|> Task .* FAILED)" lint-debug.log | head -n 200 || true
+            tail -n 100 lint-debug.log
+          else
+            tail -n 30 lint-debug.log
+          fi
+          exit "$code"
+
+      - name: Upload lint failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-lint-failure-log-${{ github.run_number }}
+          path: lint-debug.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -119,8 +239,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Package source snapshot
-        run: git archive --format=zip --output=SecureMesh-source-${{ github.run_number }}.zip HEAD
+      - name: Package applied v0.9 source snapshot
+        shell: bash
+        run: |
+          rm -rf .git .gradle app/build build
+          zip -qr SecureMesh-source-${{ github.run_number }}.zip . -x 'SecureMesh-source-*.zip'
 
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4

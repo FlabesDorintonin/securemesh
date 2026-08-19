@@ -2,7 +2,6 @@ package dev.securemesh.commander.feature.diagnostics
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,14 +36,13 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
                 DiagnosticRow("Версия", BuildConfig.VERSION_NAME)
                 DiagnosticRow("Сборка", BuildConfig.VERSION_CODE.toString())
                 DiagnosticRow("Транспорт", state.mode.ruLabel())
-                DiagnosticRow("Демо-профиль", state.profile?.ruLabel() ?: "Не активен")
             }
         }
         item {
             TechnicalCard("Телефон") {
                 DiagnosticRow("Bluetooth", phoneStateLabel(state.phoneBluetooth))
                 DiagnosticRow("Разрешение BLE", permissionStateLabel(state.blePermission))
-                Text("Неизвестные значения остаются «Нет данных» — REAL BLE не подмешивает demo telemetry.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+                Text("Показываются только значения, подтверждённые текущим соединением; неизвестные данные остаются «Нет данных».", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
             }
         }
         if (state.mode == TransportMode.BLE) {
@@ -86,34 +84,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
             }
         }
 
-        if (state.settings.developerMode) {
-            item {
-                TechnicalCard("Для разработчика") {
-                    if (state.mode == TransportMode.MOCK) {
-                        Text("Сценарии демо", fontWeight = FontWeight.SemiBold)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            item { AssistChip({ viewModel.scenario("NORMAL") }, { Text("Норма") }) }
-                            item { AssistChip({ viewModel.scenario("WEAK LINK") }, { Text("Слабая связь") }) }
-                            item { AssistChip({ viewModel.scenario("RELAY LOST") }, { Text("Потеря relay") }) }
-                            item { AssistChip({ viewModel.scenario("GPS LOST") }, { Text("Потеря GPS") }) }
-                            item { AssistChip({ viewModel.scenario("MESSAGE RETRY") }, { Text("Повтор сообщения") }) }
-                            item { AssistChip({ viewModel.scenario("SOS") }, { Text("SOS") }) }
-                        }
-                        HorizontalDivider(color = SecureMeshColors.Divider)
-                    }
-                    Text("Последние события", fontWeight = FontWeight.SemiBold)
-                    if (state.events.isEmpty()) Text("Системные события недоступны", color = SecureMeshColors.Muted)
-                    else state.events.take(10).forEach { event ->
-                        Text(
-                            "${clockLabel(event.timestampEpochMs)} · ${event.category.ruLabel()} · ${localizedTechnicalText(event.title)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = SecureMeshColors.TextSecondary,
-                        )
-                    }
-                    OutlinedButton(onClick = viewModel::clearHistory, modifier = Modifier.fillMaxWidth()) { Text("Очистить локальную историю") }
-                }
-            }
-        }
+
     }
 }
 
