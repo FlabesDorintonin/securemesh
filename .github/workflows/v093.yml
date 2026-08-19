@@ -127,16 +127,16 @@ jobs:
           git diff --check
           python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate-v093.log
 
-      - name: Apply v0.9.3 compile completion layer
+      - name: Overlay exact v0.9.3 completion source
         shell: bash
         run: |
           set -euo pipefail
-          cat v093_compile_fix_parts/part*.txt > v093_compile_fix.patch.gz.b64
-          test "$(wc -c < v093_compile_fix.patch.gz.b64)" -eq 11296
-          base64 -d v093_compile_fix.patch.gz.b64 > v093_compile_fix.patch.gz
-          gzip -dc v093_compile_fix.patch.gz > v093_compile_fix.patch
-          git apply --check v093_compile_fix.patch
-          git apply v093_compile_fix.patch
+          cat v093_source_overlay_parts/part*.txt > v093_source_overlay.tar.gz.b64
+          test "$(wc -c < v093_source_overlay.tar.gz.b64)" -eq 29168
+          base64 -d v093_source_overlay.tar.gz.b64 > v093_source_overlay.tar.gz
+          echo "d810adb76d8f9b65dedb9d0318e4a75e223b78eeb464deeb31433a139020b5a4  v093_source_overlay.tar.gz" | sha256sum -c -
+          tar -xzf v093_source_overlay.tar.gz
+          sha256sum -c v093_source_overlay.sha256
           git diff --check
           python3 tools/domain_alignment_gate.py 2>&1 | tee alignment-gate-v093-final.log
 
