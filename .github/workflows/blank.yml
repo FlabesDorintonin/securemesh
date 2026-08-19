@@ -135,6 +135,15 @@ jobs:
           git diff --check
           python3 tools/domain_alignment_gate.py
 
+      - name: Align v0.9.3 human link health scoring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check v093_link_quality_consistency_fix.patch
+          git apply v093_link_quality_consistency_fix.patch
+          git diff --check
+          python3 tools/domain_alignment_gate.py
+
       - name: Upload alignment failure log
         if: failure()
         uses: actions/upload-artifact@v4
