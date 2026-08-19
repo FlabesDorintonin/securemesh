@@ -35,7 +35,7 @@ import kotlin.math.sin
 @Composable
 fun BleRadarScreen(viewModel: BleRadarViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions(), viewModel::permissionResult)
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants -> viewModel.permissionResult(grants) }
 
     LaunchedEffect(Unit) { viewModel.startScan() }
     DisposableEffect(Unit) { onDispose { viewModel.stopScan() } }
@@ -55,9 +55,7 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
             }
         }
 
-        item {
-            RadarCanvas(state.devices, state.selectedAddress)
-        }
+        item { RadarCanvas(state.devices, state.selectedAddress) }
 
         item {
             TechnicalCard("Как читать радар") {
@@ -66,9 +64,7 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
             }
         }
 
-        state.selected?.let { selected ->
-            item { FocusDeviceCard(selected) { viewModel.select(null) } }
-        }
+        state.selected?.let { selected -> item { FocusDeviceCard(selected) { viewModel.select(null) } } }
 
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -89,9 +85,7 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
         if (state.devices.isEmpty()) {
             item { EmptyState(if (state.scanning) "Идёт поиск" else "Ничего не найдено", "BLE работает на небольшой дистанции. Поднеси телефон ближе и повтори поиск.") }
         } else {
-            items(state.devices, key = { it.address }) { device ->
-                RadarDeviceRow(device, selected = device.address == state.selectedAddress) { viewModel.select(device.address) }
-            }
+            items(state.devices, key = { it.address }) { device -> RadarDeviceRow(device, selected = device.address == state.selectedAddress) { viewModel.select(device.address) } }
         }
         item { Spacer(Modifier.height(10.dp)) }
     }
@@ -123,7 +117,7 @@ private fun RadarCanvas(devices: List<RadarDevice>, selectedAddress: String?) {
                         BleProximity.VERY_FAR -> .94f
                         BleProximity.UNKNOWN -> .88f
                     }
-                    val p = Offset(center.x + cos(hashAngle) * maxR * normalized, center.y + sin(hashAngle) * maxR * normalized)
+                    val p = Offset(center.x + cos(hashAngle.toDouble()).toFloat() * maxR * normalized, center.y + sin(hashAngle.toDouble()).toFloat() * maxR * normalized)
                     val color = if (device.secureMesh) SecureMeshColors.Healthy else SecureMeshColors.Blue
                     drawCircle(color.copy(alpha = .18f), if (device.address == selectedAddress) 15f else 11f, p)
                     drawCircle(color, if (device.address == selectedAddress) 7f else 5f, p)
