@@ -1,0 +1,2 @@
+SecureMesh v0.9.3 Field Awareness CI trigger
+2026-08-19
