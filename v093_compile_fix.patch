@@ -57,3 +57,24 @@ index 78f053d..29b79a9 100644
                  trusted = device.classification == DeviceClassification.TRUSTED_SECUREMESH,
              )
          }.filter { !onlySecure || it.secureMesh }.sortedByDescending { it.rssi }
+diff --git a/app/src/test/java/dev/securemesh/commander/domain/model/DomainAlignmentTest.kt b/app/src/test/java/dev/securemesh/commander/domain/model/DomainAlignmentTest.kt
+index f8e973b..2e70e10 100644
+--- a/app/src/test/java/dev/securemesh/commander/domain/model/DomainAlignmentTest.kt
++++ b/app/src/test/java/dev/securemesh/commander/domain/model/DomainAlignmentTest.kt
+@@ -74,13 +74,14 @@ class DomainAlignmentTest {
+     }
+ 
+     @Test fun `directional link metrics can differ between same pair`() {
++        val now = 12L
+         val node = MeshNode(identity(), true, 1L, null, null, null, null)
+         val forward = MeshLink(node.id, "SM-REMOTE", -96, -2.0, .81, 3, 10L)
+         val reverse = MeshLink("SM-REMOTE", node.id, -67, 8.0, .99, 0, 11L)
+         assertNotEquals(forward.rssi, reverse.rssi)
+         assertNotEquals(forward.snr, reverse.snr)
+-        assertEquals(LinkQuality.DEGRADED, forward.quality())
+-        assertEquals(LinkQuality.EXCELLENT, reverse.quality())
++        assertEquals(LinkQuality.CRITICAL, forward.quality(now))
++        assertEquals(LinkQuality.EXCELLENT, reverse.quality(now))
+     }
+ 
+     @Test fun `topology contains network identities not screen coordinates`() {
