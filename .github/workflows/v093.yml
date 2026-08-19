@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - agent/0.9.3-operations
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
