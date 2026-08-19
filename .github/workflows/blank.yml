@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - agent/0.9.3-field-awareness
+  pull_request:
+    branches:
+      - agent/0.9.3-field-awareness
 
 permissions:
   contents: read
@@ -58,7 +61,8 @@ jobs:
         run: |
           set -euo pipefail
           cat v091_full_patch_parts/part*.txt > v091_full.patch.gz.b64
-          test "$(wc -c < v091_full.patch.gz.b64)" -eq 24468
+          test "$(wc -c < v091_full_patch_parts/part*.txt >/dev/null 2>&1; cat v091_full_patch_parts/part*.txt | wc -c)" -eq 24468
+          cat v091_full_patch_parts/part*.txt > v091_full.patch.gz.b64
           base64 -d v091_full.patch.gz.b64 > v091_full.patch.gz
           gzip -dc v091_full.patch.gz > v091_full.patch
           git apply --check v091_full.patch
