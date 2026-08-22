@@ -181,8 +181,8 @@ private fun permissionStateLabel(value: String): String = when (value.uppercase(
 
 private fun secureSessionLabel(value: SecureSessionState?): String = when (value) {
     SecureSessionState.ESTABLISHED -> "Готова"
-    SecureSessionState.NEGOTIATING -> "Проверяется"
-    SecureSessionState.FAILED -> "Есть проблема"
+    SecureSessionState.AUTHENTICATING -> "Проверяется"
+    SecureSessionState.NOT_CONFIGURED -> "Настраивается"
     SecureSessionState.NOT_AUTHENTICATED, null -> "Не подтверждена"
 }
 
