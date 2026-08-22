@@ -13,10 +13,10 @@ import org.junit.Test
 class SecureMeshBleProtocolV01Test {
     private val codec = SecureMeshBleProtocolV01Codec()
 
-    @Test fun `GET_INFO command matches protocol example`() {
+    @Test fun `GET_INFO command matches firmware v1_0_4 application protocol v2`() {
         val packet = codec.encodeCommand(0x1234, SecureMeshBleCommand.GetInfo).getOrThrow()
         assertArrayEquals(
-            byteArrayOf(0x53, 0x4D, 0x01, 0x01, 0x34, 0x12, 0x01, 0x00, 0x00, 0x00),
+            byteArrayOf(0x53, 0x4D, 0x02, 0x01, 0x34, 0x12, 0x01, 0x00, 0x00, 0x00),
             packet,
         )
     }
@@ -27,9 +27,9 @@ class SecureMeshBleProtocolV01Test {
         assertTrue(codec.decodeApplicationPacket(packet).isFailure)
     }
 
-    @Test fun `wrong version is rejected`() {
+    @Test fun `old application protocol version is rejected`() {
         val packet = response(1, BleOpcode.GET_STATUS, byteArrayOf())
-        packet[2] = 2
+        packet[2] = 1
         assertTrue(codec.decodeApplicationPacket(packet).isFailure)
     }
 
@@ -49,12 +49,12 @@ class SecureMeshBleProtocolV01Test {
 
     @Test fun `INFO parses little endian identity capabilities and security`() {
         val payload = ByteArray(23)
-        payload[0] = 1
+        payload[0] = 2
         payload[1] = 3
         payload[2] = 2
-        payload[3] = 0
-        payload[4] = 6
-        payload[5] = 1
+        payload[3] = 1
+        payload[4] = 0
+        payload[5] = 4
         putU32(payload, 6, 0xA1B2C3D4L)
         payload[10] = 1
         putU32(payload, 11, 0b1_1111)
@@ -65,7 +65,8 @@ class SecureMeshBleProtocolV01Test {
         val frame = codec.decodeApplicationPacket(response(0, BleOpcode.GET_INFO, payload)).getOrThrow() as SecureMeshBleFrame.Response
         val info = codec.parseInfo(frame).getOrThrow()
         assertEquals("A1B2C3D4", info.localNodeId)
-        assertEquals("0.6.1", info.firmwareVersion)
+        assertEquals("1.0.4", info.firmwareVersion)
+        assertEquals(2, info.bleProtocolVersion)
         assertTrue(info.authenticated)
         assertTrue(info.bonded)
         assertEquals(5, SecureMeshBleV01DomainMapping.capabilities(info.capabilityMask).size)
@@ -75,19 +76,19 @@ class SecureMeshBleProtocolV01Test {
     }
 
     @Test fun `name alone is not SecureMesh identity`() {
-        val matcher = SecureMeshDeviceMatcher(BleProtocolConfig.ProtocolV01)
+        val matcher = SecureMeshDeviceMatcher(BleProtocolConfig.FirmwareV104)
         val nameOnly = matcher.match(AdvertisementSnapshot("SecureMesh", emptySet(), emptyMap()))
         assertEquals(DeviceClassification.UNKNOWN_BLE, nameOnly.classification)
-        val byService = matcher.match(AdvertisementSnapshot("anything", setOf(BleProtocolConfig.ProtocolV01.serviceUuid), emptyMap()))
+        val byService = matcher.match(AdvertisementSnapshot("anything", setOf(BleProtocolConfig.FirmwareV104.serviceUuid), emptyMap()))
         assertEquals(DeviceClassification.SECUREMESH_CANDIDATE, byService.classification)
     }
 
-    @Test fun `MTU 23 fragments protocol example sequentially`() {
+    @Test fun `MTU 23 keeps fragment transport v1 while carrying application v2`() {
         val packet = codec.encodeCommand(0x1234, SecureMeshBleCommand.GetInfo).getOrThrow()
         val fragments = SecureMeshBleFragmentation.fragment(packet, 23, 1).getOrThrow()
         assertEquals(2, fragments.size)
         assertArrayEquals(
-            byteArrayOf(0x53,0x46,0x01,0x01,0x00,0x00,0x02,0x0A,0x00,0x00,0x00,0x08,0x53,0x4D,0x01,0x01,0x34,0x12,0x01,0x00),
+            byteArrayOf(0x53,0x46,0x01,0x01,0x00,0x00,0x02,0x0A,0x00,0x00,0x00,0x08,0x53,0x4D,0x02,0x01,0x34,0x12,0x01,0x00),
             fragments[0],
         )
         assertArrayEquals(
@@ -100,9 +101,9 @@ class SecureMeshBleProtocolV01Test {
         assertArrayEquals(packet, complete.packet)
     }
 
-    @Test fun `out of order fragment is rejected because v0_1 requires sequential order`() {
+    @Test fun `out of order fragment is rejected because transport requires sequential order`() {
         val packet = ByteArray(100) { it.toByte() }.also {
-            it[0] = 0x53; it[1] = 0x4D; it[2] = 1; it[3] = 2
+            it[0] = 0x53; it[1] = 0x4D; it[2] = 2; it[3] = 2
         }
         val fragments = SecureMeshBleFragmentation.fragment(packet, 23, 9).getOrThrow()
         val r = SecureMeshBleFragmentation.Reassembler()
@@ -113,7 +114,6 @@ class SecureMeshBleProtocolV01Test {
     @Test fun `overlap or impossible fragment bounds are rejected`() {
         val packet = codec.encodeCommand(1, SecureMeshBleCommand.GetInfo).getOrThrow()
         val fragment = SecureMeshBleFragmentation.fragment(packet, 185, 2).getOrThrow().single().clone()
-        // offset = totalLength, while fragmentLength is still non-zero.
         fragment[9] = 10
         fragment[10] = 0
         val result = SecureMeshBleFragmentation.Reassembler().accept(fragment, 0)
@@ -121,7 +121,7 @@ class SecureMeshBleProtocolV01Test {
     }
 
     @Test fun `incomplete reassembly expires`() {
-        val packet = ByteArray(100) { 0 }.also { it[0]=0x53; it[1]=0x4D; it[2]=1; it[3]=2 }
+        val packet = ByteArray(100) { 0 }.also { it[0]=0x53; it[1]=0x4D; it[2]=2; it[3]=2 }
         val fragments = SecureMeshBleFragmentation.fragment(packet, 23, 3).getOrThrow()
         val r = SecureMeshBleFragmentation.Reassembler(3_000)
         r.accept(fragments[0], 100)
@@ -161,7 +161,7 @@ class SecureMeshBleProtocolV01Test {
         assertEquals("11223344", mapped.currentNextHop)
     }
 
-    @Test fun `START_FIELD_TEST validates documented bounds`() {
+    @Test fun `START_FIELD_TEST validates firmware v1_0_4 bounds`() {
         assertTrue(codec.encodeCommand(1, SecureMeshBleCommand.StartFieldTest("AABBCCDD", 500, 60_000, 70, false)).isSuccess)
         assertTrue(codec.encodeCommand(1, SecureMeshBleCommand.StartFieldTest("AABBCCDD", 501, 1_000, 32, false)).isFailure)
     }
@@ -170,7 +170,7 @@ class SecureMeshBleProtocolV01Test {
 
     private fun responseRaw(requestId: Int, opcode: Int, status: Int, payload: ByteArray): ByteArray = ByteArray(10 + payload.size).also { out ->
         putU16(out, 0, 0x4D53)
-        out[2] = 1
+        out[2] = 2
         out[3] = 2
         putU16(out, 4, requestId)
         out[6] = opcode.toByte()
