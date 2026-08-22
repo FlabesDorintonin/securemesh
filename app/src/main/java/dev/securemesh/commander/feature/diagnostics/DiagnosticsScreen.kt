@@ -19,7 +19,10 @@ import dev.securemesh.commander.domain.model.*
 fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     if (!state.allowed) {
-        EmptyState("Диагностика недоступна", "Узел должен поддерживать BLE/сетевую диагностику, а защищённая сессия — разрешать её просмотр.")
+        EmptyState(
+            "Проверка состояния недоступна",
+            "Подключите свой узел SecureMesh и подтвердите доступ.",
+        )
         return
     }
 
@@ -29,72 +32,100 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("Диагностика", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Техническое состояние приложения, BLE protocol и mesh-сети", color = SecureMeshColors.Muted)
+            Text("Проверка устройства", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Показывает, готово ли приложение и подключённый узел к работе.", color = SecureMeshColors.Muted)
         }
+
         item {
             TechnicalCard("Приложение") {
                 DiagnosticRow("Версия", BuildConfig.VERSION_NAME)
-                DiagnosticRow("Сборка", BuildConfig.VERSION_CODE.toString())
-                DiagnosticRow("Транспорт", state.mode.ruLabel())
-                DiagnosticRow("Демо-профиль", state.profile?.ruLabel() ?: "Не активен")
+                DiagnosticRow("Состояние", if (state.connection is MeshConnectionState.Connected) "Готово" else connectionLabel(state.connection))
             }
         }
+
         item {
             TechnicalCard("Телефон") {
                 DiagnosticRow("Bluetooth", phoneStateLabel(state.phoneBluetooth))
-                DiagnosticRow("Разрешение BLE", permissionStateLabel(state.blePermission))
-                Text("Неизвестные значения остаются «Нет данных» — REAL BLE не подмешивает demo telemetry.", color = SecureMeshColors.Muted, style = MaterialTheme.typography.bodySmall)
+                DiagnosticRow("Доступ к устройствам", permissionStateLabel(state.blePermission))
             }
         }
-        if (state.mode == TransportMode.BLE) {
-            item {
-                val ble = state.ble
-                TechnicalCard("SecureMesh BLE v0.1") {
-                    DiagnosticRow("Node ID", ble?.nodeId ?: "Нет данных")
-                    DiagnosticRow("BLE address", ble?.bleAddress ?: "Нет данных")
-                    DiagnosticRow("GATT state", ble?.gattState ?: "Нет данных")
-                    DiagnosticRow("Bonded", ble?.bonded?.let { if (it) "Да" else "Нет" } ?: "Нет данных")
-                    DiagnosticRow("Protocol version", ble?.protocolVersion?.toString() ?: "Нет данных")
-                    DiagnosticRow("Firmware", ble?.firmwareVersion ?: "Нет данных")
-                    DiagnosticRow("MTU", ble?.mtu?.toString() ?: "Нет данных")
-                    DiagnosticRow("RESPONSE subscription", if (ble?.responseSubscribed == true) "Да" else "Нет")
-                    DiagnosticRow("EVENT subscription", if (ble?.eventSubscribed == true) "Да" else "Нет")
-                    DiagnosticRow("Secure session", ble?.secureSessionState.ruLabel())
-                    DiagnosticRow("Последний requestId", ble?.lastCommandRequestId?.toString() ?: "Нет данных")
-                    DiagnosticRow("Последний RESPONSE", ble?.lastResponse ?: "Нет данных")
-                    DiagnosticRow("Ошибки reassembly", ble?.reassemblyErrors?.toString() ?: "0")
-                    DiagnosticRow("Malformed packets", ble?.malformedPacketCount?.toString() ?: "0")
+
+        item {
+            val ble = state.ble
+            TechnicalCard("Связь с узлом") {
+                DiagnosticRow("Подключение", connectionLabel(state.connection))
+                DiagnosticRow("Доступ", if (state.session != null) "Подтверждён" else "Не подтверждён")
+                DiagnosticRow(
+                    "Устройство",
+                    state.session?.localNodeIdentity?.displayName?.let(::deviceDisplayName) ?: "Не определено",
+                )
+                if (state.mode == TransportMode.BLE) {
+                    DiagnosticRow("Версия устройства", ble?.firmwareVersion ?: "Нет данных")
+                    DiagnosticRow("Защита", secureSessionLabel(ble?.secureSessionState))
                 }
             }
         }
+
         item {
-            TechnicalCard("Локальный узел SecureMesh") {
-                DiagnosticRow("Соединение", connectionLabel(state.connection))
-                DiagnosticRow("ID", state.session?.localNodeIdentity?.nodeId ?: "Не определён")
-                DiagnosticRow("Доступ", state.session?.authenticationState.ruLabel())
-                DiagnosticRow("Роль", state.session?.localNodeIdentity?.role.ruLabel())
-            }
-        }
-        item {
-            TechnicalCard("Mesh-сеть") {
-                DiagnosticRow("Видимых узлов", state.nodes.toString())
-                DiagnosticRow("Направленных связей", state.links.toString())
-                DiagnosticRow("Маршрутов", state.routes.toString())
-                DiagnosticRow("Сообщений", state.messages.toString())
-                DiagnosticRow("Последнее событие", state.events.firstOrNull()?.let { ageLabel(it.timestampEpochMs) } ?: "Нет данных")
+            TechnicalCard("Сеть") {
+                DiagnosticRow("Узлов доступно", state.nodes.toString())
+                DiagnosticRow("Связей", state.links.toString())
+                DiagnosticRow("Путей", state.routes.toString())
+                DiagnosticRow(
+                    "Последнее изменение",
+                    state.events.firstOrNull()?.let { ageLabel(it.timestampEpochMs) } ?: "Нет данных",
+                )
             }
         }
 
         if (state.settings.developerMode) {
             item {
+                Text(
+                    "Инженерный режим",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = SecureMeshColors.Warning,
+                )
+                Text(
+                    "Данные ниже нужны только для разработки и поиска неисправностей.",
+                    color = SecureMeshColors.Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            if (state.mode == TransportMode.BLE) {
+                item {
+                    val ble = state.ble
+                    TechnicalCard("Инженерные данные соединения") {
+                        DiagnosticRow("Node ID", ble?.nodeId ?: "Нет данных")
+                        DiagnosticRow("BLE address", ble?.bleAddress ?: "Нет данных")
+                        DiagnosticRow("GATT state", ble?.gattState ?: "Нет данных")
+                        DiagnosticRow("Bonded", ble?.bonded?.let { if (it) "Да" else "Нет" } ?: "Нет данных")
+                        DiagnosticRow("Application protocol", ble?.protocolVersion?.toString() ?: "Нет данных")
+                        DiagnosticRow("Firmware", ble?.firmwareVersion ?: "Нет данных")
+                        DiagnosticRow("MTU", ble?.mtu?.toString() ?: "Нет данных")
+                        DiagnosticRow("RESPONSE subscription", if (ble?.responseSubscribed == true) "Да" else "Нет")
+                        DiagnosticRow("EVENT subscription", if (ble?.eventSubscribed == true) "Да" else "Нет")
+                        DiagnosticRow("Secure session", ble?.secureSessionState.ruLabel())
+                        DiagnosticRow("Последний requestId", ble?.lastCommandRequestId?.toString() ?: "Нет данных")
+                        DiagnosticRow("Последний RESPONSE", ble?.lastResponse ?: "Нет данных")
+                        DiagnosticRow("Ошибки reassembly", ble?.reassemblyErrors?.toString() ?: "0")
+                        DiagnosticRow("Malformed packets", ble?.malformedPacketCount?.toString() ?: "0")
+                    }
+                }
+            }
+
+            item {
                 TechnicalCard("Для разработчика") {
+                    DiagnosticRow("Сборка", BuildConfig.VERSION_CODE.toString())
+                    DiagnosticRow("Транспорт", state.mode.ruLabel())
+                    DiagnosticRow("Демо-профиль", state.profile?.ruLabel() ?: "Не активен")
                     if (state.mode == TransportMode.MOCK) {
                         Text("Сценарии демо", fontWeight = FontWeight.SemiBold)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             item { AssistChip({ viewModel.scenario("NORMAL") }, { Text("Норма") }) }
                             item { AssistChip({ viewModel.scenario("WEAK LINK") }, { Text("Слабая связь") }) }
-                            item { AssistChip({ viewModel.scenario("RELAY LOST") }, { Text("Потеря relay") }) }
+                            item { AssistChip({ viewModel.scenario("RELAY LOST") }, { Text("Потеря ретранслятора") }) }
                             item { AssistChip({ viewModel.scenario("GPS LOST") }, { Text("Потеря GPS") }) }
                             item { AssistChip({ viewModel.scenario("MESSAGE RETRY") }, { Text("Повтор сообщения") }) }
                             item { AssistChip({ viewModel.scenario("SOS") }, { Text("SOS") }) }
@@ -102,15 +133,20 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
                         HorizontalDivider(color = SecureMeshColors.Divider)
                     }
                     Text("Последние события", fontWeight = FontWeight.SemiBold)
-                    if (state.events.isEmpty()) Text("Системные события недоступны", color = SecureMeshColors.Muted)
-                    else state.events.take(10).forEach { event ->
-                        Text(
-                            "${clockLabel(event.timestampEpochMs)} · ${event.category.ruLabel()} · ${localizedTechnicalText(event.title)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = SecureMeshColors.TextSecondary,
-                        )
+                    if (state.events.isEmpty()) {
+                        Text("Системные события недоступны", color = SecureMeshColors.Muted)
+                    } else {
+                        state.events.take(10).forEach { event ->
+                            Text(
+                                "${clockLabel(event.timestampEpochMs)} · ${event.category.ruLabel()} · ${localizedTechnicalText(event.title)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SecureMeshColors.TextSecondary,
+                            )
+                        }
                     }
-                    OutlinedButton(onClick = viewModel::clearHistory, modifier = Modifier.fillMaxWidth()) { Text("Очистить локальную историю") }
+                    OutlinedButton(onClick = viewModel::clearHistory, modifier = Modifier.fillMaxWidth()) {
+                        Text("Очистить локальную историю")
+                    }
                 }
             }
         }
@@ -119,7 +155,11 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
 
 @Composable
 private fun DiagnosticRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(label, color = SecureMeshColors.Muted, modifier = Modifier.weight(1f))
         Text(value, fontWeight = FontWeight.Medium)
     }
@@ -139,18 +179,25 @@ private fun permissionStateLabel(value: String): String = when (value.uppercase(
     else -> "Нет данных"
 }
 
+private fun secureSessionLabel(value: SecureSessionState?): String = when (value) {
+    SecureSessionState.ESTABLISHED -> "Готова"
+    SecureSessionState.AUTHENTICATING -> "Проверяется"
+    SecureSessionState.NOT_CONFIGURED -> "Настраивается"
+    SecureSessionState.NOT_AUTHENTICATED, null -> "Не подтверждена"
+}
+
 private fun connectionLabel(state: MeshConnectionState): String = when (state) {
-    is MeshConnectionState.Connected -> if (state.secureSession == SecureSessionState.ESTABLISHED) "PROTOCOL_READY" else "Только GATT"
+    is MeshConnectionState.Connected -> if (state.secureSession == SecureSessionState.ESTABLISHED) "Готово" else "Настройка соединения"
     is MeshConnectionState.Connecting -> "Подключение"
-    is MeshConnectionState.PairingRequired -> "Системное pairing"
-    is MeshConnectionState.Authenticating -> "Аутентификация"
-    is MeshConnectionState.DiscoveringServices -> "Service discovery"
-    is MeshConnectionState.IdentifyingSecureMesh -> "INFO handshake"
-    is MeshConnectionState.SyncingSession -> "Session sync"
+    is MeshConnectionState.PairingRequired -> "Подтвердите телефон"
+    is MeshConnectionState.Authenticating -> "Проверка доступа"
+    is MeshConnectionState.DiscoveringServices,
+    is MeshConnectionState.IdentifyingSecureMesh,
+    is MeshConnectionState.SyncingSession -> "Настройка соединения"
     is MeshConnectionState.Scanning, is MeshConnectionState.DeviceFound -> "Поиск устройств"
     is MeshConnectionState.Reconnecting -> "Переподключение"
     is MeshConnectionState.Error -> "Ошибка"
     is MeshConnectionState.Disconnected -> "Отключено"
     MeshConnectionState.Idle -> "Не подключено"
-    else -> "Подготовка соединения"
+    else -> "Подготовка"
 }

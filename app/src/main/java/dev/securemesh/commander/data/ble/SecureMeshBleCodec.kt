@@ -183,6 +183,10 @@ sealed interface BleDecodedEvent {
     data class NoReturnRoute(val origin: NodeId, val testId: Long, val sequence: Long) : BleDecodedEvent { override val type = BleEventType.NO_RETURN_ROUTE }
 }
 
+/**
+ * Historical class name retained for source compatibility. The application envelope
+ * implemented by this codec is SecureMesh v2 as used by firmware v1.0.4.
+ */
 class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
     override val configured: Boolean = true
 
@@ -362,7 +366,7 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
 
     companion object {
         const val MAGIC = 0x4D53
-        const val VERSION = 1
+        const val VERSION = 2
         const val HEADER_SIZE = 10
         const val MAX_PACKET_SIZE = 384
 
