@@ -68,11 +68,13 @@ for value in [
 ]:
     check(f"Exact protocol UUID {value[:8]}", value in CONFIG)
 check("Real codec configured", "class SecureMeshBleProtocolV01Codec" in CODEC and "override val configured: Boolean = true" in CODEC)
+check("Firmware v1.0.4 application protocol v2", "VERSION = 2" in CODEC and "supportedProtocolVersions = setOf(2)" in CONFIG)
+check("Fragment transport stays version 1", "VERSION = 1" in FRAG)
 check("No JSON on BLE wire", "JSONObject" not in CODEC and "kotlinx.serialization" not in CODEC and "Gson" not in CODEC)
 check("10-byte application envelope", "HEADER_SIZE = 10" in CODEC and "MAGIC = 0x4D53" in CODEC and "MAX_PACKET_SIZE = 384" in CODEC)
 check("Strict application validation", all(x in CODEC for x in ["wrong SecureMesh BLE magic", "unsupported SecureMesh BLE protocol version", "payloadLength mismatch", "trailing bytes"]))
-check("Known v0.1 command set present", all(x in CODEC for x in ["GET_INFO(1)", "GET_STATUS(2)", "GET_NEIGHBORS(3)", "GET_ROUTES(4)", "SEND_MESSAGE(5)", "ADD_STATIC_ROUTE(6)", "REMOVE_STATIC_ROUTE(7)", "START_FIELD_TEST(8)", "STOP_FIELD_TEST(9)", "GET_FIELD_TEST_STATUS(10)"]))
-check("Known v0.1 events present", all(x in CODEC for x in ["NODE_DISCOVERED(1)", "HOP_ACK(4)", "MESSAGE_LOCAL_RECEIVED(6)", "TEST_PONG_RECEIVED(10)", "TEST_FINISHED(13)", "ERROR(16)", "NO_RETURN_ROUTE(17)"]))
+check("Stable base command set present", all(x in CODEC for x in ["GET_INFO(1)", "GET_STATUS(2)", "GET_NEIGHBORS(3)", "GET_ROUTES(4)", "SEND_MESSAGE(5)", "ADD_STATIC_ROUTE(6)", "REMOVE_STATIC_ROUTE(7)", "START_FIELD_TEST(8)", "STOP_FIELD_TEST(9)", "GET_FIELD_TEST_STATUS(10)"]))
+check("Stable base event set present", all(x in CODEC for x in ["NODE_DISCOVERED(1)", "HOP_ACK(4)", "MESSAGE_LOCAL_RECEIVED(6)", "TEST_PONG_RECEIVED(10)", "TEST_FINISHED(13)", "ERROR(16)", "NO_RETURN_ROUTE(17)"]))
 
 check("Fragment protocol exact constants", all(x in FRAG for x in ["MAGIC = 0x4653", "HEADER_SIZE = 12", "MAX_FRAGMENT_DATA = 180", "MAX_FRAGMENT_COUNT = 48", "MAX_APPLICATION_PACKET = 384", "REASSEMBLY_TIMEOUT_MS = 3_000L"]))
 check("Fragment sizing uses negotiated MTU", "negotiatedMtu - 3 - HEADER_SIZE" in FRAG)
@@ -99,27 +101,32 @@ check("Reconnect verifies authenticated nodeId", "verified.localNodeIdentity.nod
 check("Local history remains scoped by authenticated nodeId", "localHistoryOwnerNodeId" in REPO and "session.localNodeIdentity.nodeId == ownerNodeId" in REPO)
 
 MAPPING = (MAIN/"data/ble/BleDomainMapping.kt").read_text()
-check("v0.6 capability bits map only defined features", all(x in MAPPING for x in ["MESSAGING", "STATIC_ROUTING", "RELAY", "FIELD_TEST", "BLE_CONTROL"]))
+check("Defined capability bits remain bounded", all(x in MAPPING for x in ["MESSAGING", "STATIC_ROUTING", "RELAY", "FIELD_TEST", "BLE_CONTROL"]))
 capability_body = MAPPING.split("fun capabilities",1)[1].split("fun permissions",1)[0]
-check("Real capability mapper does not add GPS SOS OTA", all(x not in capability_body for x in ["GPS", "SOS", "OTA"]))
+check("Capability mapper does not invent GPS SOS OTA", all(x not in capability_body for x in ["GPS", "SOS", "OTA"]))
 check("Mock transport retained", (MAIN/"data/mock/MockTransport.kt").exists())
 check("Future demo remains explicit", "FUTURE_DEMO" in MODEL and "FUTURE_DEMO" in MOCK)
 
 FIELD_SCREEN = (MAIN/"feature/fieldtest/FieldTestScreen.kt").read_text()
-check("Field UI names first-hop ACK separately", "First-hop ACK" in FIELD_SCREEN and "First-hop fail" in FIELD_SCREEN)
-check("Field UI names E2E PONG separately", "E2E PONG" in FIELD_SCREEN and "RTT по DIAG_PONG" in FIELD_SCREEN)
+check("Operator link check uses human labels", all(x in FIELD_SCREEN for x in ["Проверка связи", "Доставлено", "Потеряно", "Надёжность", "Ответ"]))
+check("Operator link check hides radio jargon", all(x not in FIELD_SCREEN for x in ["First-hop ACK", "E2E PONG", "PDR E2E", "RTT по", "RSSI ·", "SNR ·", "1-hop RSSI", "1-hop SNR"]))
 check("Field status maps E2E counters to final results", "confirmedReceived = status.endToEndReplies" in MAPPING)
-check("Field status keeps first-hop counters separate", "firstHopAcked = status.firstHopAcked" in MAPPING)
+check("Field status keeps first-hop counters separate internally", "firstHopAcked = status.firstHopAcked" in MAPPING)
+
+DIAGNOSTICS_SCREEN = (MAIN/"feature/diagnostics/DiagnosticsScreen.kt").read_text()
+check("Operator diagnostics has human surface", all(x in DIAGNOSTICS_SCREEN for x in ["Проверка устройства", "Связь с узлом", "Защита", "Узлов доступно"]))
+check("Technical diagnostics gated behind developer mode", "if (state.settings.developerMode)" in DIAGNOSTICS_SCREEN and "Инженерные данные соединения" in DIAGNOSTICS_SCREEN)
 
 check("BLE diagnostics include required counters", all(x in MODEL for x in ["lastCommandRequestId", "lastResponse", "reassemblyErrors", "malformedPacketCount", "responseSubscribed", "eventSubscribed"]))
 check("No unsafe high-arity casts", "UNCHECKED_CAST" not in DASHBOARD_VM and "UNCHECKED_CAST" not in DIAGNOSTICS_VM)
 check("No unsafe 6-flow combine in NodesViewModel", "private val controls = combine(query, filters, sort)" in NODES_VM and "repository.session, controls" in NODES_VM)
-check("Protocol integration tests present", all(x in TEST_TEXT for x in ["wrong magic is rejected", "payload length mismatch is rejected", "out of order fragment is rejected", "EVENT never completes pending request", "field test first hop ACK is not end to end success", "name alone is not SecureMesh identity"]))
+check("Protocol integration tests present", all(x in TEST_TEXT for x in ["wrong magic is rejected", "payload length mismatch is rejected", "out of order fragment is rejected", "EVENT never completes pending request", "field test first hop ACK is not end to end success", "name alone is not SecureMesh identity", "old application protocol version is rejected"]))
 check("Core regression tests retained", all(x in TEST_TEXT for x in ["role is not permission", "directional link metrics", "hop ack alone never manufactures", "future demo", "trusted record uses SecureMesh node identity"]))
 check("Compose smoke test retained", any((ROOT/"app/src/androidTest").rglob("*Test.kt")))
 check("App surface is named SecureMesh", '<string name="app_name">SecureMesh</string>' in (ROOT/"app/src/main/res/values/strings.xml").read_text())
+check("Android release version is 1.0.4 operator", 'versionName = "1.0.4-operator-android"' in (ROOT/"app/build.gradle.kts").read_text())
 
-print("SecureMesh Android BLE Protocol v0.1 alignment gate")
+print("SecureMesh Android firmware v1.0.4 / application protocol v2 alignment gate")
 for name, detail in passes:
     print(f"PASS  {name}" + (f" — {detail}" if detail else ""))
 for name, detail in failures:
