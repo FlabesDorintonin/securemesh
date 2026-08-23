@@ -30,6 +30,16 @@ jobs:
           base64 -d tools/v104_full.patch.gz.b64 | gzip -dc > /tmp/v104-full.patch
           git apply --check /tmp/v104-full.patch
           git apply /tmp/v104-full.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt')
+          text = p.read_text(encoding='utf-8')
+          old = 'import dev.securemesh.commander.domain.model.NodeId\n'
+          new = 'import dev.securemesh.commander.domain.model.*\n'
+          if old not in text:
+              raise SystemExit('expected NodeId import not found')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           git diff --check
           git diff --stat
           git diff > FULL_PARITY_APPLIED.patch
