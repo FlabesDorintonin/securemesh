@@ -15,6 +15,10 @@ object SecureMeshBleV01DomainMapping {
         if (mask and (1L shl 2) != 0L) add(DeviceCapability.RELAY)
         if (mask and (1L shl 3) != 0L) add(DeviceCapability.FIELD_TEST)
         if (mask and (1L shl 4) != 0L) add(DeviceCapability.BLE_CONTROL)
+        if (mask and (1L shl 6) != 0L) add(DeviceCapability.ROUTING)
+        if (mask and (1L shl 9) != 0L) add(DeviceCapability.GPS)
+        if (mask and (1L shl 10) != 0L) add(DeviceCapability.SOS)
+        if (mask and ((1L shl 13) or (1L shl 14)) != 0L) add(DeviceCapability.NETWORK_DIAGNOSTICS)
     }
 
     /**
@@ -34,6 +38,14 @@ object SecureMeshBleV01DomainMapping {
         if (mask and (1L shl 1) != 0L) add(SessionPermission.SEND_MESSAGE)
         if (mask and (1L shl 2) != 0L) add(SessionPermission.MANAGE_ROUTES)
         if (mask and (1L shl 3) != 0L) add(SessionPermission.RUN_FIELD_TEST)
+        if (mask and (1L shl 4) != 0L) {
+            add(SessionPermission.VIEW_OWN_POSITION)
+            add(SessionPermission.VIEW_TEAM_POSITIONS)
+        }
+        if (mask and (1L shl 5) != 0L) {
+            add(SessionPermission.VIEW_SOS)
+            add(SessionPermission.ACKNOWLEDGE_SOS)
+        }
     }
 
     fun identity(info: BleInfoPayload): NodeIdentity = NodeIdentity(
@@ -72,8 +84,43 @@ object SecureMeshBleV01DomainMapping {
 
     fun route(route: BleRoutePayload, nowMs: Long): MeshRoute? = when (route.source) {
         1 -> MeshRoute(route.destination, route.nextHop, RouteType.DIRECT, updatedAtEpochMs = nowMs)
-        2 -> MeshRoute(route.destination, route.nextHop, RouteType.STATIC, updatedAtEpochMs = nowMs)
+        2, 3 -> MeshRoute(route.destination, route.nextHop, RouteType.DYNAMIC, updatedAtEpochMs = nowMs)
+        4 -> MeshRoute(route.destination, route.nextHop, RouteType.STATIC, updatedAtEpochMs = nowMs)
         else -> null
+    }
+
+    fun position(position: BlePositionPayload, nowMs: Long): NodePosition = NodePosition(
+        nodeId = position.nodeId,
+        latitude = position.latitudeE7 / 1e7,
+        longitude = position.longitudeE7 / 1e7,
+        timestampEpochMs = if (position.gpsEpochSec > 0) position.gpsEpochSec * 1000L else
+            (nowMs - position.receivedAgeMs - position.fixAgeMs).coerceAtLeast(0L),
+        satellites = position.satellites,
+        hdop = if (position.flags and 0x08 != 0) position.hdopX100 / 100.0 else null,
+        speedMps = if (position.flags and 0x04 != 0) position.speedCms / 100.0 else null,
+        valid = position.hasFix,
+    )
+
+    fun sos(event: BleDecodedEvent.SosRaised, nowMs: Long): SosAlert {
+        val hasPosition = event.positionAgeMs != 0xFFFF_FFFFL &&
+            event.latitudeE7 in -900_000_000..900_000_000 &&
+            event.longitudeE7 in -1_800_000_000..1_800_000_000
+        val position = if (hasPosition) NodePosition(
+            nodeId = event.origin,
+            latitude = event.latitudeE7 / 1e7,
+            longitude = event.longitudeE7 / 1e7,
+            timestampEpochMs = (nowMs - event.positionAgeMs).coerceAtLeast(0L),
+            satellites = null, hdop = null, speedMps = null, valid = event.flags and 0x01 != 0,
+        ) else null
+        return SosAlert(
+            id = event.sosId.toString(16).uppercase().padStart(8, '0'),
+            nodeId = event.origin,
+            raisedAtEpochMs = if (event.raisedEpochSec > 0) event.raisedEpochSec * 1000L else nowMs,
+            position = position,
+            batteryPercent = event.batteryPercent,
+            networkStatus = "Тревога получена через SecureMesh",
+            acknowledged = false,
+        )
     }
 
     fun fieldTest(
