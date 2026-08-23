@@ -23,6 +23,17 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v7
 
+      - name: Apply v1.0.4 full-parity patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d tools/v104_full.patch.gz.b64 | gzip -dc > /tmp/v104-full.patch
+          git apply --check /tmp/v104-full.patch
+          git apply /tmp/v104-full.patch
+          git diff --check
+          git diff --stat
+          git diff > FULL_PARITY_APPLIED.patch
+
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -53,7 +64,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SecureMesh-alignment-failure-log-${{ github.run_number }}
-          path: alignment-gate.log
+          path: |
+            alignment-gate.log
+            FULL_PARITY_APPLIED.patch
           if-no-files-found: ignore
           retention-days: 7
 
@@ -78,7 +91,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SecureMesh-test-failure-log-${{ github.run_number }}
-          path: test-debug.log
+          path: |
+            test-debug.log
+            FULL_PARITY_APPLIED.patch
           if-no-files-found: ignore
           retention-days: 7
 
@@ -101,7 +116,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SecureMesh-build-failure-log-${{ github.run_number }}
-          path: assemble-debug.log
+          path: |
+            assemble-debug.log
+            FULL_PARITY_APPLIED.patch
           if-no-files-found: ignore
           retention-days: 7
 
@@ -109,23 +126,30 @@ jobs:
         run: |
           test -f app/build/outputs/apk/debug/app-debug.apk
           ls -lh app/build/outputs/apk/debug/app-debug.apk
-          sha256sum app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee APK_SHA256.txt
 
       - name: Upload SecureMesh APK
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-debug-apk-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: SecureMesh-v1.0.4-operator-full-apk-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            APK_SHA256.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Package source snapshot
-        run: git archive --format=zip --output=SecureMesh-source-${{ github.run_number }}.zip HEAD
+      - name: Package patched source snapshot
+        shell: bash
+        run: |
+          rm -f SecureMesh-source-${{ github.run_number }}.zip
+          zip -qr SecureMesh-source-${{ github.run_number }}.zip . \
+            -x '.git/*' '.gradle/*' 'app/build/*' '*.log' 'SecureMesh-source-*'
+          unzip -t SecureMesh-source-${{ github.run_number }}.zip >/dev/null
 
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-source-${{ github.run_number }}
+          name: SecureMesh-v1.0.4-operator-full-source-${{ github.run_number }}
           path: SecureMesh-source-${{ github.run_number }}.zip
           if-no-files-found: error
           retention-days: 14
