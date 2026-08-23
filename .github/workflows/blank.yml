@@ -11,7 +11,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-debug-apk:
@@ -22,30 +22,6 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
-
-      - name: Apply v1.0.4 full-parity patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          base64 -d tools/v104_full.patch.gz.b64 | gzip -dc > /tmp/v104-full.patch
-          git apply --check /tmp/v104-full.patch
-          git apply /tmp/v104-full.patch
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt')
-          text = p.read_text(encoding='utf-8')
-          old = 'import dev.securemesh.commander.domain.model.NodeId\n'
-          new = 'import dev.securemesh.commander.domain.model.*\n'
-          if old not in text:
-              raise SystemExit('expected NodeId import not found')
-          p.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-          git diff --check
-          git diff --stat
-          git diff > FULL_PARITY_APPLIED.patch
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -77,9 +53,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SecureMesh-alignment-failure-log-${{ github.run_number }}
-          path: |
-            alignment-gate.log
-            FULL_PARITY_APPLIED.patch
+          path: alignment-gate.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -104,9 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SecureMesh-test-failure-log-${{ github.run_number }}
-          path: |
-            test-debug.log
-            FULL_PARITY_APPLIED.patch
+          path: test-debug.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -129,9 +101,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SecureMesh-build-failure-log-${{ github.run_number }}
-          path: |
-            assemble-debug.log
-            FULL_PARITY_APPLIED.patch
+          path: assemble-debug.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -139,57 +109,23 @@ jobs:
         run: |
           test -f app/build/outputs/apk/debug/app-debug.apk
           ls -lh app/build/outputs/apk/debug/app-debug.apk
-          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee APK_SHA256.txt
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload SecureMesh APK
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-v1.0.4-operator-full-apk-${{ github.run_number }}
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            APK_SHA256.txt
+          name: SecureMesh-debug-apk-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Package patched source snapshot
-        shell: bash
-        run: |
-          rm -f SecureMesh-source-${{ github.run_number }}.zip
-          zip -qr SecureMesh-source-${{ github.run_number }}.zip . \
-            -x '.git/*' '.gradle/*' 'app/build/*' '*.log' 'SecureMesh-source-*'
-          unzip -t SecureMesh-source-${{ github.run_number }}.zip >/dev/null
+      - name: Package source snapshot
+        run: git archive --format=zip --output=SecureMesh-source-${{ github.run_number }}.zip HEAD
 
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-v1.0.4-operator-full-source-${{ github.run_number }}
+          name: SecureMesh-source-${{ github.run_number }}
           path: SecureMesh-source-${{ github.run_number }}.zip
           if-no-files-found: error
           retention-days: 14
-
-      - name: Materialize verified full-parity source
-        if: github.event_name == 'pull_request' && github.head_ref == 'release/v1.0.4-operator-android-full'
-        shell: bash
-        env:
-          TARGET_BRANCH: ${{ github.head_ref }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            app/src/main/java/dev/securemesh/commander/data/ble/BleDomainMapping.kt \
-            app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt \
-            app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt \
-            app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt \
-            app/src/main/java/dev/securemesh/commander/domain/model/OperationalModels.kt \
-            app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt \
-            app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleV104ExtendedTest.kt \
-            tools/domain_alignment_gate.py
-          git rm -f tools/v104_full.patch.gz.b64
-          git fetch origin main
-          git show origin/main:.github/workflows/blank.yml > .github/workflows/blank.yml
-          git add .github/workflows/blank.yml
-          git diff --cached --check
-          git status --short
-          git commit -m "Android v1.0.4 OPERATOR: materialize full firmware parity"
-          git push origin HEAD:${TARGET_BRANCH}

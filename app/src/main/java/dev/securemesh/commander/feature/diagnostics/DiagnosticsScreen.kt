@@ -78,6 +78,43 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
             }
         }
 
+        state.ble?.operationalHealth?.let { health ->
+            item {
+                TechnicalCard("Готовность сети") {
+                    DiagnosticRow("Общая оценка", "${health.score}% · ${operationalLevelLabel(health.level)}")
+                    DiagnosticRow("Радиосвязь", scoreLabel(health.radioScore))
+                    DiagnosticRow("Сеть", scoreLabel(health.meshScore))
+                    DiagnosticRow("Пути", scoreLabel(health.routingScore))
+                    DiagnosticRow("Запасных путей", health.backupRouteCount.toString())
+                }
+            }
+        }
+
+        state.ble?.selfCheck?.let { check ->
+            item {
+                TechnicalCard("Проверка узла") {
+                    DiagnosticRow("Радиомодуль", readinessLabel(check.radioReady))
+                    DiagnosticRow("Защита", readinessLabel(check.protectionReady))
+                    DiagnosticRow("Связь с телефоном", readinessLabel(check.phoneLinkReady))
+                    DiagnosticRow("GPS", gpsCheckLabel(check.gpsState))
+                    DiagnosticRow("Экран", readinessLabel(check.displayReady))
+                }
+            }
+        }
+
+        state.ble?.radar?.let { radar ->
+            item {
+                TechnicalCard("Радар устройств") {
+                    DiagnosticRow("Сканирование", if (radar.scanning) "Работает" else if (radar.configured) "Ожидание" else "Недоступно")
+                    DiagnosticRow("Устройств рядом", radar.devices.size.toString())
+                    radar.devices.maxByOrNull { it.signalDbm }?.let { strongest ->
+                        DiagnosticRow("Самый заметный сигнал", strongest.advertisedName ?: "Неизвестное устройство")
+                        DiagnosticRow("Изменение сигнала", signalTrendLabel(strongest.signalTrendDb))
+                    }
+                }
+            }
+        }
+
         if (state.settings.developerMode) {
             item {
                 Text(
@@ -184,6 +221,34 @@ private fun secureSessionLabel(value: SecureSessionState?): String = when (value
     SecureSessionState.AUTHENTICATING -> "Проверяется"
     SecureSessionState.NOT_CONFIGURED -> "Настраивается"
     SecureSessionState.NOT_AUTHENTICATED, null -> "Не подтверждена"
+}
+
+private fun operationalLevelLabel(level: OperationalLevel): String = when (level) {
+    OperationalLevel.EXCELLENT -> "Отлично"
+    OperationalLevel.GOOD -> "Хорошо"
+    OperationalLevel.DEGRADED -> "Нестабильно"
+    OperationalLevel.CRITICAL -> "Критично"
+}
+
+private fun scoreLabel(score: Int): String = when {
+    score >= 86 -> "Отлично"
+    score >= 68 -> "Хорошо"
+    score >= 42 -> "Нестабильно"
+    else -> "Плохо"
+}
+
+private fun readinessLabel(ready: Boolean): String = if (ready) "Исправно" else "Есть проблема"
+
+private fun gpsCheckLabel(state: Int): String = when (state) {
+    2 -> "Готов"
+    1 -> "Ищет спутники"
+    else -> "Недоступен"
+}
+
+private fun signalTrendLabel(trendDb: Int): String = when {
+    trendDb >= 4 -> "Усиливается"
+    trendDb <= -4 -> "Ослабевает"
+    else -> "Стабильно"
 }
 
 private fun connectionLabel(state: MeshConnectionState): String = when (state) {

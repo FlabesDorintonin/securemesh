@@ -49,6 +49,7 @@ class BleTransport(
     private var disconnectTimeoutJob: Job? = null
     private var pairingTimeoutJob: Job? = null
     private var mtuFallbackJob: Job? = null
+    private var telemetryPollJob: Job? = null
     private var gatt: BluetoothGatt? = null
     private var connectingDevice: DiscoveredDevice? = null
     private var secureService: BluetoothGattService? = null
@@ -299,7 +300,12 @@ class BleTransport(
     }
 
     override suspend fun acknowledgeSos(id: String) {
-        // Protocol v0.1 has no SOS command/capability.
+        val active = _activeSos.value ?: return
+        if (active.id != id) return
+        val sosId = id.toLongOrNull(16) ?: return
+        val response = command(SecureMeshBleCommand.AckSos(active.nodeId, sosId)).getOrNull() ?: return
+        requireOk(response)
+        _activeSos.value = active.copy(acknowledged = true)
     }
 
     private suspend fun command(command: SecureMeshBleCommand): Result<SecureMeshBleFrame.Response> {
@@ -755,7 +761,10 @@ class BleTransport(
             )
         }
         addEvent(EventCategory.SECURITY, "SECUREMESH SESSION ESTABLISHED", "Node ${identity.nodeId} · BLE protocol ${info.bleProtocolVersion}", identity.nodeId)
-        scope.launch { initialSync() }
+        scope.launch {
+            initialSync()
+            startTelemetryPolling()
+        }
     }
 
     private suspend fun initialSync() = syncMutex.withLock {
@@ -763,12 +772,18 @@ class BleTransport(
         syncNeighborsUnlocked()
         syncRoutesUnlocked()
         syncFieldTestStatusUnlocked()
+        syncPositionsUnlocked()
+        syncOperationalHealthUnlocked()
+        syncSelfDiagnosticsUnlocked()
+        syncBleRadarUnlocked()
     }
 
     private suspend fun syncStatus() = syncMutex.withLock { syncStatusUnlocked() }
     private suspend fun syncNeighbors() = syncMutex.withLock { syncNeighborsUnlocked() }
     private suspend fun syncRoutes() = syncMutex.withLock { syncRoutesUnlocked() }
     private suspend fun syncFieldTestStatus() = syncMutex.withLock { syncFieldTestStatusUnlocked() }
+    private suspend fun syncPositions() = syncMutex.withLock { syncPositionsUnlocked() }
+    private suspend fun syncOperationalHealth() = syncMutex.withLock { syncOperationalHealthUnlocked() }
 
     private suspend fun syncStatusUnlocked() {
         val response = command(SecureMeshBleCommand.GetStatus).getOrNull() ?: return
@@ -808,6 +823,68 @@ class BleTransport(
         val status = codec.parseFieldTestStatus(response).getOrNull() ?: return
         val localId = _session.value?.localNodeIdentity?.nodeId ?: return
         _activeFieldTest.value = SecureMeshBleV01DomainMapping.fieldTest(status, localId, _activeFieldTest.value, now())
+    }
+
+    private suspend fun syncPositionsUnlocked() {
+        val response = command(SecureMeshBleCommand.GetPositions).getOrNull() ?: return
+        val positions = codec.parsePositions(response).getOrNull() ?: return
+        positions.forEach { updatePosition(SecureMeshBleV01DomainMapping.position(it, now())) }
+    }
+
+    private suspend fun syncOperationalHealthUnlocked() {
+        val response = command(SecureMeshBleCommand.GetOperationalHealth).getOrNull() ?: return
+        val health = codec.parseOperationalHealth(response).getOrNull() ?: return
+        updateDiagnostics { it.copy(operationalHealth = health) }
+    }
+
+    private suspend fun syncSelfDiagnosticsUnlocked() {
+        val response = command(SecureMeshBleCommand.GetSelfDiagnostics).getOrNull() ?: return
+        val check = codec.parseSelfDiagnostics(response).getOrNull() ?: return
+        updateDiagnostics { it.copy(selfCheck = check) }
+    }
+
+    private suspend fun syncBleRadarUnlocked() {
+        val response = command(SecureMeshBleCommand.GetBleRadar).getOrNull() ?: return
+        val radar = codec.parseBleRadar(response).getOrNull() ?: return
+        updateDiagnostics { it.copy(radar = radar) }
+    }
+
+    private fun startTelemetryPolling() {
+        telemetryPollJob?.cancel()
+        telemetryPollJob = scope.launch {
+            var cycle = 0
+            while (isActive && handshakePhase == HandshakePhase.READY) {
+                delay(5_000L)
+                if (handshakePhase != HandshakePhase.READY) break
+                syncMutex.withLock {
+                    syncStatusUnlocked()
+                    syncPositionsUnlocked()
+                    syncOperationalHealthUnlocked()
+                    if (cycle % 3 == 0) {
+                        syncSelfDiagnosticsUnlocked()
+                        syncBleRadarUnlocked()
+                    }
+                }
+                cycle++
+            }
+        }
+    }
+
+    private fun updatePosition(position: NodePosition) {
+        val existing = _nodes.value.firstOrNull { it.id == position.nodeId }
+        val identity = existing?.identity ?: NodeIdentity(
+            nodeId = position.nodeId,
+            displayName = "Узел ${position.nodeId}",
+            role = NodeRole.UNKNOWN,
+            firmwareVersion = null,
+            protocolVersion = null,
+            capabilities = emptySet(),
+        )
+        val updated = (existing ?: MeshNode(identity, online = true, lastSeenEpochMs = position.timestampEpochMs))
+            .copy(online = true, lastSeenEpochMs = maxOf(existing?.lastSeenEpochMs ?: 0L, position.timestampEpochMs), position = position)
+        _nodes.value = listOf(updated) + _nodes.value.filter { it.id != updated.id }
+        val ids = (_topology.value.nodes + updated.id).distinct()
+        _topology.value = _topology.value.copy(nodes = ids, updatedAtEpochMs = now())
     }
 
     private fun handleNotification(uuid: UUID, fragment: ByteArray) {
@@ -946,6 +1023,24 @@ class BleTransport(
             }
             is BleDecodedEvent.Error -> addEvent(EventCategory.SYSTEM, "ERROR", "context=${event.context} status=${event.status ?: event.rawStatus} related=${event.relatedId}")
             is BleDecodedEvent.NoReturnRoute -> addEvent(EventCategory.ROUTING, "NO_RETURN_ROUTE", "origin=${event.origin} test=${event.testId} seq=${event.sequence}", event.origin)
+            is BleDecodedEvent.PositionUpdated -> {
+                updatePosition(SecureMeshBleV01DomainMapping.position(event.position, now()))
+                addEvent(EventCategory.GPS, "POSITION_UPDATED", "Позиция обновлена", event.position.nodeId)
+            }
+            is BleDecodedEvent.SosRaised -> {
+                val alert = SecureMeshBleV01DomainMapping.sos(event, now())
+                _activeSos.value = alert
+                alert.position?.let(::updatePosition)
+                addEvent(EventCategory.SOS, "SOS_RAISED", "Получен сигнал SOS", event.origin)
+            }
+            is BleDecodedEvent.SosAcknowledged -> {
+                _activeSos.value = _activeSos.value?.takeIf { it.id.equals(wireId(event.sosId), ignoreCase = true) }?.copy(acknowledged = true) ?: _activeSos.value
+                addEvent(EventCategory.SOS, "SOS_ACKNOWLEDGED", "Сигнал SOS подтверждён", event.origin)
+            }
+            is BleDecodedEvent.OperationalHealthChanged -> {
+                addEvent(EventCategory.SYSTEM, "OPERATIONAL_HEALTH_CHANGED", "Готовность сети ${event.score}%")
+                scope.launch { syncOperationalHealth() }
+            }
         }
     }
 
@@ -1030,6 +1125,7 @@ class BleTransport(
         disconnectTimeoutJob?.cancel(); disconnectTimeoutJob = null
         pairingTimeoutJob?.cancel(); pairingTimeoutJob = null
         mtuFallbackJob?.cancel(); mtuFallbackJob = null
+        telemetryPollJob?.cancel(); telemetryPollJob = null
     }
 
     private fun resetProtocolState() {
@@ -1049,6 +1145,7 @@ class BleTransport(
             writeAwaiter?.complete(BluetoothGatt.GATT_FAILURE)
             writeAwaiter = null
         }
+        updateDiagnostics { it.copy(operationalHealth = null, selfCheck = null, radar = null) }
     }
 
     private fun closeGatt() {

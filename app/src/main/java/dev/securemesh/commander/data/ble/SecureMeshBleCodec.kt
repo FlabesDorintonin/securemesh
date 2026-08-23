@@ -1,6 +1,6 @@
 package dev.securemesh.commander.data.ble
 
-import dev.securemesh.commander.domain.model.NodeId
+import dev.securemesh.commander.domain.model.*
 import java.nio.charset.StandardCharsets
 
 interface SecureMeshBleCodec {
@@ -18,7 +18,9 @@ enum class BlePacketType(val wire: Int) {
 enum class BleOpcode(val wire: Int) {
     GET_INFO(1), GET_STATUS(2), GET_NEIGHBORS(3), GET_ROUTES(4), SEND_MESSAGE(5),
     ADD_STATIC_ROUTE(6), REMOVE_STATIC_ROUTE(7), START_FIELD_TEST(8), STOP_FIELD_TEST(9),
-    GET_FIELD_TEST_STATUS(10), PING_LOCAL(11), CLEAR_STATS(12);
+    GET_FIELD_TEST_STATUS(10), PING_LOCAL(11), CLEAR_STATS(12),
+    GET_POSITIONS(24), RAISE_SOS(25), ACK_SOS(26), GET_BLE_RADAR(28), CLEAR_BLE_RADAR(29),
+    GET_OPERATIONAL_HEALTH(30), GET_SELF_DIAGNOSTICS(31);
 
     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
 }
@@ -35,7 +37,8 @@ enum class BleEventType(val wire: Int) {
     NODE_DISCOVERED(1), NODE_STALE(2), MESSAGE_QUEUED(3), HOP_ACK(4), RETRY(5),
     MESSAGE_LOCAL_RECEIVED(6), ROUTE_CHANGED(7), TEST_STARTED(8), TEST_PACKET_SENT(9),
     TEST_PONG_RECEIVED(10), TEST_PACKET_TIMEOUT(11), TEST_PROGRESS(12), TEST_FINISHED(13),
-    RADIO_RECOVERY(14), BLE_STATE(15), ERROR(16), NO_RETURN_ROUTE(17);
+    RADIO_RECOVERY(14), BLE_STATE(15), ERROR(16), NO_RETURN_ROUTE(17),
+    POSITION_UPDATED(28), SOS_RAISED(29), SOS_ACKNOWLEDGED(30), OPERATIONAL_HEALTH_CHANGED(32);
 
     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
 }
@@ -82,6 +85,13 @@ sealed interface SecureMeshBleCommand {
     data object GetFieldTestStatus : SecureMeshBleCommand { override val opcode = BleOpcode.GET_FIELD_TEST_STATUS }
     data object PingLocal : SecureMeshBleCommand { override val opcode = BleOpcode.PING_LOCAL }
     data object ClearStats : SecureMeshBleCommand { override val opcode = BleOpcode.CLEAR_STATS }
+    data object GetPositions : SecureMeshBleCommand { override val opcode = BleOpcode.GET_POSITIONS }
+    data class RaiseSos(val type: Int = 1) : SecureMeshBleCommand { override val opcode = BleOpcode.RAISE_SOS }
+    data class AckSos(val origin: NodeId, val sosId: Long) : SecureMeshBleCommand { override val opcode = BleOpcode.ACK_SOS }
+    data object GetBleRadar : SecureMeshBleCommand { override val opcode = BleOpcode.GET_BLE_RADAR }
+    data object ClearBleRadar : SecureMeshBleCommand { override val opcode = BleOpcode.CLEAR_BLE_RADAR }
+    data object GetOperationalHealth : SecureMeshBleCommand { override val opcode = BleOpcode.GET_OPERATIONAL_HEALTH }
+    data object GetSelfDiagnostics : SecureMeshBleCommand { override val opcode = BleOpcode.GET_SELF_DIAGNOSTICS }
 }
 
 data class BleInfoPayload(
@@ -163,6 +173,23 @@ data class BleFieldTestStatusPayload(
     val averageFirstHopSnrDb: Double,
 )
 
+data class BlePositionPayload(
+    val nodeId: NodeId,
+    val flags: Int,
+    val sequence: Int,
+    val gpsEpochSec: Long,
+    val latitudeE7: Int,
+    val longitudeE7: Int,
+    val altitudeCm: Int,
+    val speedCms: Int,
+    val hdopX100: Int,
+    val satellites: Int,
+    val fixAgeMs: Int,
+    val receivedAgeMs: Long,
+) {
+    val hasFix: Boolean get() = flags and 0x01 != 0
+}
+
 sealed interface BleDecodedEvent {
     val type: BleEventType
     data class Node(override val type: BleEventType, val nodeId: NodeId) : BleDecodedEvent
@@ -181,6 +208,13 @@ sealed interface BleDecodedEvent {
     data class BleState(val state: Int) : BleDecodedEvent { override val type = BleEventType.BLE_STATE }
     data class Error(val context: Int, val status: BleCommandStatus?, val rawStatus: Int, val relatedId: Long) : BleDecodedEvent { override val type = BleEventType.ERROR }
     data class NoReturnRoute(val origin: NodeId, val testId: Long, val sequence: Long) : BleDecodedEvent { override val type = BleEventType.NO_RETURN_ROUTE }
+    data class PositionUpdated(val position: BlePositionPayload) : BleDecodedEvent { override val type = BleEventType.POSITION_UPDATED }
+    data class SosRaised(
+        val origin: NodeId, val sosId: Long, val sosType: Int, val flags: Int, val raisedEpochSec: Long,
+        val latitudeE7: Int, val longitudeE7: Int, val positionAgeMs: Long, val batteryPercent: Int?,
+    ) : BleDecodedEvent { override val type = BleEventType.SOS_RAISED }
+    data class SosAcknowledged(val origin: NodeId, val sosId: Long, val acknowledgedBy: NodeId) : BleDecodedEvent { override val type = BleEventType.SOS_ACKNOWLEDGED }
+    data class OperationalHealthChanged(val score: Int, val level: OperationalLevel, val flags: Int) : BleDecodedEvent { override val type = BleEventType.OPERATIONAL_HEALTH_CHANGED }
 }
 
 /**
@@ -302,6 +336,79 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             )
         }
 
+    fun parsePositions(frame: SecureMeshBleFrame.Response): Result<List<BlePositionPayload>> =
+        parseOk(frame, BleOpcode.GET_POSITIONS) { bytes ->
+            val r = Reader(bytes)
+            val count = r.u8()
+            require(r.remaining == count * POSITION_RECORD_SIZE) { "GET_POSITIONS length mismatch" }
+            buildList(count) { repeat(count) { add(readPositionRecord(r)) } }
+        }
+
+    fun parseBleRadar(frame: SecureMeshBleFrame.Response): Result<BleRadarState> =
+        parseOk(frame, BleOpcode.GET_BLE_RADAR) { bytes ->
+            require(bytes.size >= BLE_RADAR_HEADER_SIZE) { "GET_BLE_RADAR too short" }
+            val r = Reader(bytes)
+            require(r.u8() == 1) { "unsupported BLE radar payload version" }
+            val configured = r.u8() != 0
+            val scanning = r.u8() != 0
+            val count = r.u8()
+            val scanCycle = r.u32()
+            val totalDetections = r.u32()
+            require(r.remaining == count * BLE_RADAR_RECORD_SIZE) { "GET_BLE_RADAR length mismatch" }
+            val devices = buildList(count) {
+                repeat(count) {
+                    val addressHash = r.u32()
+                    val ageMs = r.u32()
+                    val presenceMs = r.u32()
+                    val signalDbm = r.i8()
+                    val peakSignalDbm = r.i8()
+                    val signalTrendDb = r.i8()
+                    val detections = r.u8()
+                    val hasName = r.u8() != 0
+                    val nameLen = r.u8()
+                    require(nameLen <= 12) { "BLE radar name length invalid" }
+                    val nameBytes = r.bytes(12)
+                    add(
+                        NearbyBleDevice(
+                            addressHash = addressHash,
+                            ageMs = ageMs,
+                            presenceMs = presenceMs,
+                            signalDbm = signalDbm,
+                            peakSignalDbm = peakSignalDbm,
+                            signalTrendDb = signalTrendDb,
+                            detections = detections,
+                            advertisedName = if (hasName && nameLen > 0) nameBytes.copyOf(nameLen).utf8OrReplacement().trimEnd('\u0000') else null,
+                        )
+                    )
+                }
+            }
+            BleRadarState(configured, scanning, scanCycle, totalDetections, devices)
+        }
+
+    fun parseOperationalHealth(frame: SecureMeshBleFrame.Response): Result<OperationalHealth> =
+        parseResponse(frame, BleOpcode.GET_OPERATIONAL_HEALTH, 17) { r ->
+            require(r.u8() == 1) { "unsupported operational health payload version" }
+            OperationalHealth(
+                score = r.u8(), level = operationalLevel(r.u8()), flags = r.u16(),
+                radioScore = r.u8(), meshScore = r.u8(), routingScore = r.u8(), memoryScore = r.u8(),
+                queueScore = r.u8(), gpsScore = r.u8(), bleScore = r.u8(), freshNeighbors = r.u8(),
+                routeCount = r.u8(), backupRouteCount = r.u8(), queueUsed = r.u8(), queueCapacity = r.u8(),
+            )
+        }
+
+    fun parseSelfDiagnostics(frame: SecureMeshBleFrame.Response): Result<DeviceSelfCheck> =
+        parseResponse(frame, BleOpcode.GET_SELF_DIAGNOSTICS, 43) { r ->
+            require(r.u8() == 1) { "unsupported self-diagnostics payload version" }
+            DeviceSelfCheck(
+                score = r.u8(), level = operationalLevel(r.u8()), flags = r.u16(),
+                radioReady = r.u8() != 0, protectionReady = r.u8() != 0, phoneLinkReady = r.u8() != 0,
+                gpsState = r.u8(), displayReady = r.u8() != 0, freshNeighbors = r.u8(), routeCount = r.u8(),
+                backupRouteCount = r.u8(), queueUsed = r.u8(), queueCapacity = r.u8(),
+                freeHeapBytes = r.u32(), largestHeapBlockBytes = r.u32(), successfulHopAcks = r.u32(),
+                hopAckTimeouts = r.u32(), transmitErrors = r.u32(), radioRecoveries = r.u32(), authenticationFailures = r.u32(),
+            )
+        }
+
     fun parseEvent(frame: SecureMeshBleFrame.Event): Result<BleDecodedEvent?> = runCatching {
         val type = frame.eventType ?: return@runCatching null
         val r = Reader(frame.payload)
@@ -328,6 +435,17 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
             BleEventType.BLE_STATE -> { requireSize(frame.payload, 1); BleDecodedEvent.BleState(r.u8()) }
             BleEventType.ERROR -> { requireSize(frame.payload, 6); val context=r.u8(); val raw=r.u8(); BleDecodedEvent.Error(context, BleCommandStatus.fromWire(raw), raw, r.u32()) }
             BleEventType.NO_RETURN_ROUTE -> { requireSize(frame.payload, 12); BleDecodedEvent.NoReturnRoute(nodeId(r.u32()), r.u32(), r.u32()) }
+            BleEventType.POSITION_UPDATED -> { requireSize(frame.payload, POSITION_RECORD_SIZE); BleDecodedEvent.PositionUpdated(readPositionRecord(r)) }
+            BleEventType.SOS_RAISED -> {
+                requireSize(frame.payload, 29)
+                val origin = nodeId(r.u32())
+                require(r.u8() == 1) { "unsupported SOS payload version" }
+                val sosType = r.u8(); val flags = r.u8(); r.u8() // reserved
+                val sosId = r.u32(); val raised = r.u32(); val lat = r.i32(); val lon = r.i32(); val age = r.u32(); val batteryRaw = r.u8()
+                BleDecodedEvent.SosRaised(origin, sosId, sosType, flags, raised, lat, lon, age, batteryRaw.takeUnless { it == 0xFF })
+            }
+            BleEventType.SOS_ACKNOWLEDGED -> { requireSize(frame.payload, 12); BleDecodedEvent.SosAcknowledged(nodeId(r.u32()), r.u32(), nodeId(r.u32())) }
+            BleEventType.OPERATIONAL_HEALTH_CHANGED -> { requireSize(frame.payload, 4); BleDecodedEvent.OperationalHealthChanged(r.u8(), operationalLevel(r.u8()), r.u16()) }
         }
         require(r.remaining == 0) { "event trailing bytes" }
         decoded
@@ -336,7 +454,9 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
     private fun encodePayload(command: SecureMeshBleCommand): ByteArray = when (command) {
         SecureMeshBleCommand.GetInfo, SecureMeshBleCommand.GetStatus, SecureMeshBleCommand.GetNeighbors,
         SecureMeshBleCommand.GetRoutes, SecureMeshBleCommand.StopFieldTest, SecureMeshBleCommand.GetFieldTestStatus,
-        SecureMeshBleCommand.PingLocal, SecureMeshBleCommand.ClearStats -> byteArrayOf()
+        SecureMeshBleCommand.PingLocal, SecureMeshBleCommand.ClearStats, SecureMeshBleCommand.GetPositions,
+        SecureMeshBleCommand.GetBleRadar, SecureMeshBleCommand.ClearBleRadar, SecureMeshBleCommand.GetOperationalHealth,
+        SecureMeshBleCommand.GetSelfDiagnostics -> byteArrayOf()
 
         is SecureMeshBleCommand.SendMessage -> {
             require(command.bytes.size in 1..70) { "SEND_MESSAGE length must be 1..70" }
@@ -352,6 +472,8 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
                 u32(nodeIdValue(command.target)); u16(command.count); u32(command.intervalMs); u8(command.size); u8(if (command.directOnly) 1 else 0)
             }.toByteArray()
         }
+        is SecureMeshBleCommand.RaiseSos -> { require(command.type in 0..0xFF); byteArrayOf(command.type.toByte()) }
+        is SecureMeshBleCommand.AckSos -> Writer(8).apply { u32(nodeIdValue(command.origin)); u32(command.sosId) }.toByteArray()
     }
 
     private fun <T> parseResponse(frame: SecureMeshBleFrame.Response, opcode: BleOpcode, exactLength: Int, block: (Reader) -> T): Result<T> =
@@ -380,15 +502,52 @@ class SecureMeshBleProtocolV01Codec : SecureMeshBleCodec {
     }
 }
 
+private const val POSITION_RECORD_SIZE = 35
+private const val BLE_RADAR_HEADER_SIZE = 12
+private const val BLE_RADAR_RECORD_SIZE = 30
+
+private fun operationalLevel(raw: Int): OperationalLevel = when (raw) {
+    0 -> OperationalLevel.CRITICAL
+    1 -> OperationalLevel.DEGRADED
+    2 -> OperationalLevel.GOOD
+    3 -> OperationalLevel.EXCELLENT
+    else -> error("unknown operational level $raw")
+}
+
+private fun readPositionRecord(r: Reader): BlePositionPayload {
+    val nodeId = SecureMeshBleProtocolV01Codec.nodeId(r.u32())
+    require(r.u8() == 1) { "unsupported position payload version" }
+    val flags = r.u8()
+    return BlePositionPayload(
+        nodeId = nodeId,
+        flags = flags,
+        sequence = r.u16(),
+        gpsEpochSec = r.u32(),
+        latitudeE7 = r.i32(),
+        longitudeE7 = r.i32(),
+        altitudeCm = r.i32(),
+        speedCms = r.u16(),
+        hdopX100 = r.u16(),
+        satellites = r.u8(),
+        fixAgeMs = r.u16(),
+        receivedAgeMs = r.u32(),
+    ).also {
+        require(it.latitudeE7 in -900_000_000..900_000_000) { "latitude out of range" }
+        require(it.longitudeE7 in -1_800_000_000..1_800_000_000) { "longitude out of range" }
+    }
+}
+
 private fun requireSize(bytes: ByteArray, exact: Int) { require(bytes.size == exact) { "payload size ${bytes.size}, expected $exact" } }
 
 private class Reader(private val data: ByteArray) {
     private var offset = 0
     val remaining: Int get() = data.size - offset
     fun u8(): Int { require(remaining >= 1) { "truncated u8" }; return data[offset++].toInt() and 0xFF }
+    fun i8(): Int { val v=u8(); return if (v and 0x80 != 0) v - 0x100 else v }
     fun u16(): Int { require(remaining >= 2) { "truncated u16" }; val v=(data[offset].toInt() and 0xFF) or ((data[offset+1].toInt() and 0xFF) shl 8); offset += 2; return v }
     fun i16(): Int { val v=u16(); return if (v and 0x8000 != 0) v - 0x10000 else v }
     fun u32(): Long { require(remaining >= 4) { "truncated u32" }; var v=0L; repeat(4) { i -> v = v or ((data[offset+i].toLong() and 0xFF) shl (8*i)) }; offset += 4; return v }
+    fun i32(): Int = u32().toInt()
     fun bytes(count: Int): ByteArray { require(count >= 0 && remaining >= count) { "truncated bytes" }; return data.copyOfRange(offset, offset + count).also { offset += count } }
 }
 

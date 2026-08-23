@@ -75,6 +75,9 @@ check("10-byte application envelope", "HEADER_SIZE = 10" in CODEC and "MAGIC = 0
 check("Strict application validation", all(x in CODEC for x in ["wrong SecureMesh BLE magic", "unsupported SecureMesh BLE protocol version", "payloadLength mismatch", "trailing bytes"]))
 check("Stable base command set present", all(x in CODEC for x in ["GET_INFO(1)", "GET_STATUS(2)", "GET_NEIGHBORS(3)", "GET_ROUTES(4)", "SEND_MESSAGE(5)", "ADD_STATIC_ROUTE(6)", "REMOVE_STATIC_ROUTE(7)", "START_FIELD_TEST(8)", "STOP_FIELD_TEST(9)", "GET_FIELD_TEST_STATUS(10)"]))
 check("Stable base event set present", all(x in CODEC for x in ["NODE_DISCOVERED(1)", "HOP_ACK(4)", "MESSAGE_LOCAL_RECEIVED(6)", "TEST_PONG_RECEIVED(10)", "TEST_FINISHED(13)", "ERROR(16)", "NO_RETURN_ROUTE(17)"]))
+check("Firmware v1.0.4 operational command set present", all(x in CODEC for x in ["GET_POSITIONS(24)", "ACK_SOS(26)", "GET_BLE_RADAR(28)", "GET_OPERATIONAL_HEALTH(30)", "GET_SELF_DIAGNOSTICS(31)"]))
+check("Firmware v1.0.4 operational events present", all(x in CODEC for x in ["POSITION_UPDATED(28)", "SOS_RAISED(29)", "SOS_ACKNOWLEDGED(30)", "OPERATIONAL_HEALTH_CHANGED(32)"]))
+check("Exact extended wire sizes retained", all(x in CODEC for x in ["POSITION_RECORD_SIZE = 35", "BLE_RADAR_HEADER_SIZE = 12", "BLE_RADAR_RECORD_SIZE = 30", "GET_OPERATIONAL_HEALTH, 17", "GET_SELF_DIAGNOSTICS, 43"]))
 
 check("Fragment protocol exact constants", all(x in FRAG for x in ["MAGIC = 0x4653", "HEADER_SIZE = 12", "MAX_FRAGMENT_DATA = 180", "MAX_FRAGMENT_COUNT = 48", "MAX_APPLICATION_PACKET = 384", "REASSEMBLY_TIMEOUT_MS = 3_000L"]))
 check("Fragment sizing uses negotiated MTU", "negotiatedMtu - 3 - HEADER_SIZE" in FRAG)
@@ -103,7 +106,8 @@ check("Local history remains scoped by authenticated nodeId", "localHistoryOwner
 MAPPING = (MAIN/"data/ble/BleDomainMapping.kt").read_text()
 check("Defined capability bits remain bounded", all(x in MAPPING for x in ["MESSAGING", "STATIC_ROUTING", "RELAY", "FIELD_TEST", "BLE_CONTROL"]))
 capability_body = MAPPING.split("fun capabilities",1)[1].split("fun permissions",1)[0]
-check("Capability mapper does not invent GPS SOS OTA", all(x not in capability_body for x in ["GPS", "SOS", "OTA"]))
+check("Firmware v1.0.4 capability mapper exposes GPS SOS diagnostics", all(x in capability_body for x in ["GPS", "SOS", "NETWORK_DIAGNOSTICS"]))
+check("Capability mapper still does not invent OTA", "OTA" not in capability_body)
 check("Mock transport retained", (MAIN/"data/mock/MockTransport.kt").exists())
 check("Future demo remains explicit", "FUTURE_DEMO" in MODEL and "FUTURE_DEMO" in MOCK)
 
@@ -116,11 +120,12 @@ check("Field status keeps first-hop counters separate internally", "firstHopAcke
 DIAGNOSTICS_SCREEN = (MAIN/"feature/diagnostics/DiagnosticsScreen.kt").read_text()
 check("Operator diagnostics has human surface", all(x in DIAGNOSTICS_SCREEN for x in ["Проверка устройства", "Связь с узлом", "Защита", "Узлов доступно"]))
 check("Technical diagnostics gated behind developer mode", "if (state.settings.developerMode)" in DIAGNOSTICS_SCREEN and "Инженерные данные соединения" in DIAGNOSTICS_SCREEN)
+check("Operational intelligence is operator-readable", all(x in DIAGNOSTICS_SCREEN for x in ["Готовность сети", "Проверка узла", "Радар устройств", "Усиливается", "Ослабевает", "Стабильно"]))
 
 check("BLE diagnostics include required counters", all(x in MODEL for x in ["lastCommandRequestId", "lastResponse", "reassemblyErrors", "malformedPacketCount", "responseSubscribed", "eventSubscribed"]))
 check("No unsafe high-arity casts", "UNCHECKED_CAST" not in DASHBOARD_VM and "UNCHECKED_CAST" not in DIAGNOSTICS_VM)
 check("No unsafe 6-flow combine in NodesViewModel", "private val controls = combine(query, filters, sort)" in NODES_VM and "repository.session, controls" in NODES_VM)
-check("Protocol integration tests present", all(x in TEST_TEXT for x in ["wrong magic is rejected", "payload length mismatch is rejected", "out of order fragment is rejected", "EVENT never completes pending request", "field test first hop ACK is not end to end success", "name alone is not SecureMesh identity", "old application protocol version is rejected"]))
+check("Protocol integration tests present", all(x in TEST_TEXT for x in ["wrong magic is rejected", "payload length mismatch is rejected", "out of order fragment is rejected", "EVENT never completes pending request", "field test first hop ACK is not end to end success", "name alone is not SecureMesh identity", "old application protocol version is rejected", "extended operational payload sizes decode exactly"]))
 check("Core regression tests retained", all(x in TEST_TEXT for x in ["role is not permission", "directional link metrics", "hop ack alone never manufactures", "future demo", "trusted record uses SecureMesh node identity"]))
 check("Compose smoke test retained", any((ROOT/"app/src/androidTest").rglob("*Test.kt")))
 check("App surface is named SecureMesh", '<string name="app_name">SecureMesh</string>' in (ROOT/"app/src/main/res/values/strings.xml").read_text())

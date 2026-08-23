@@ -400,4 +400,7 @@ data class BleDiagnostics(
     val lastResponse: String? = null,
     val reassemblyErrors: Int = 0,
     val malformedPacketCount: Int = 0,
+    val operationalHealth: OperationalHealth? = null,
+    val selfCheck: DeviceSelfCheck? = null,
+    val radar: BleRadarState? = null,
 )
