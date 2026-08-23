@@ -11,7 +11,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-debug-apk:
@@ -22,6 +22,9 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: Apply v1.0.4 full-parity patch
         shell: bash
@@ -163,3 +166,30 @@ jobs:
           path: SecureMesh-source-${{ github.run_number }}.zip
           if-no-files-found: error
           retention-days: 14
+
+      - name: Materialize verified full-parity source
+        if: github.event_name == 'pull_request' && github.head_ref == 'release/v1.0.4-operator-android-full'
+        shell: bash
+        env:
+          TARGET_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            app/src/main/java/dev/securemesh/commander/data/ble/BleDomainMapping.kt \
+            app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt \
+            app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt \
+            app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt \
+            app/src/main/java/dev/securemesh/commander/domain/model/OperationalModels.kt \
+            app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt \
+            app/src/test/java/dev/securemesh/commander/data/ble/SecureMeshBleV104ExtendedTest.kt \
+            tools/domain_alignment_gate.py
+          git rm -f tools/v104_full.patch.gz.b64
+          git fetch origin main
+          git show origin/main:.github/workflows/blank.yml > .github/workflows/blank.yml
+          git add .github/workflows/blank.yml
+          git diff --cached --check
+          git status --short
+          git commit -m "Android v1.0.4 OPERATOR: materialize full firmware parity"
+          git push origin HEAD:${TARGET_BRANCH}
