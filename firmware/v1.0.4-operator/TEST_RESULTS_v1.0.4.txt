@@ -1,0 +1,36 @@
+SecureMesh v1.0.4 OPERATOR — FINAL RELEASE CHECK
+Date: 2026-08-22
+
+OPERATOR UX
+- Operator vocabulary gate: PASS
+- Planned/roadmap functions hidden from OLED operator menus: PASS
+- OLED centered literal width check (128x64): PASS
+- VANGUARD remains the only protocol name exposed to operator: PASS
+
+COMMANDER
+- JavaScript syntax: PASS
+- Service Worker syntax: PASS
+- manifest.webmanifest JSON: PASS
+- Operational Intelligence check: PASS
+- Signal Intelligence check: PASS
+- HTML IDs: PASS (86 unique)
+- Responsive/runtime browser smoke: PASS (8 tabs x 5 widths = 40/40 states)
+- Browser JS runtime errors: 0
+- Widths checked: 1440, 1024, 768, 412, 360 px
+- PWA HTTP asset smoke: PASS (/, index, app.js, styles.css, manifest, sw.js, icons => HTTP 200)
+
+VANGUARD NATIVE REGRESSION
+- Header compile: PASS
+- Runtime compile: PASS
+- Airtime: PASS
+- Core invariant fuzz: PASS (200,000 operations, seed 0xC001D00D)
+- Core: PASS
+- Manifest: PASS
+- Protocol: PASS
+- Runtime: PASS
+- Runtime safety: PASS
+- Three-radio lab scenario: PASS
+
+RELEASE BOUNDARY
+- Full Arduino/ESP32-S3 compilation is NOT claimed in this environment because the exact Arduino/PlatformIO ESP32 + RadioLib + NimBLE toolchain is unavailable.
+- Hardware verification still requires compiling this .ino locally, flashing the ESP32-S3 nodes, then testing LoRa + BLE + OLED simultaneously.

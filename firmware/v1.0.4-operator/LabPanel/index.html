@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#070b11" />
+  <title>SecureMesh Commander v1.0.4</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">SM</div>
+        <div><strong>SecureMesh Commander</strong><span>Протокол VANGUARD · операторский режим</span></div>
+      </div>
+      <div class="top-actions">
+        <span id="secureContextBadge" class="pill warn">ТЕЛЕФОН</span>
+        <span id="lastSyncBadge" class="pill">НЕТ ДАННЫХ</span>
+        <span id="nodeCountBadge" class="pill">0 / 3 УЗЛА</span>
+        <button id="installBtn" class="btn ghost install-btn" hidden>Установить</button>
+        <button id="connectBtn" class="btn primary connect-cta"><span>＋</span> Подключить</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <div class="sidebar-title">Полевые узлы</div>
+      <div id="nodeList" class="node-list"></div>
+      <button id="refreshAllBtn" class="btn ghost full refresh-btn">↻ Обновить данные</button>
+      <div class="sidebar-hint">До трёх узлов SecureMesh. Имена, закрепление и состояние сохраняются на этом устройстве.</div>
+    </aside>
+
+    <main class="main">
+      <nav class="tabs" id="tabs">
+        <button data-tab="overview" class="tab active">Сеть</button>
+        <button data-tab="topology" class="tab">Схема сети</button>
+        <button data-tab="routing" class="tab">Пути связи</button>
+        <button data-tab="fault" class="tab">Проверка резерва</button>
+        <button data-tab="field" class="tab">Проверка связи</button>
+        <button data-tab="model" class="tab">Учебная схема</button>
+        <button data-tab="radar" class="tab">Радар устройств</button>
+        <button data-tab="events" class="tab">Журнал</button>
+      </nav>
+
+      <section id="tab-overview" class="panel-tab active">
+        <div class="hero-row">
+          <div>
+            <div class="eyebrow">SECUREMESH COMMANDER</div>
+            <h1>Состояние группы и связь между узлами</h1>
+            <p>Здесь видно, кто на связи, где связь ухудшается, есть ли запасной путь и исправны ли устройства.</p>
+          </div>
+          <div id="manifestHealth" class="health-card unknown">
+            <span>Запасной путь</span><strong>НЕ ПРОВЕРЕН</strong><small>Подключи узлы и обнови список</small>
+          </div>
+        </div>
+        <div id="operationalHealth" class="operational-health unknown"><div><span>ГОТОВНОСТЬ СЕТИ</span><strong>НЕ ПОДКЛЮЧЕНО</strong><small>Подключи узлы SecureMesh</small></div><b>0</b></div>
+        <div id="overviewMetrics" class="metric-grid"></div>
+        <div class="mission-card">
+          <div class="mission-copy">
+            <div class="eyebrow">АВТОМАТИЧЕСКАЯ ПРОВЕРКА</div>
+            <h2>Проверка основной и запасной связи</h2>
+            <p>Система сама проверит три узла, создаст основной и запасной путь, передаст контрольные сообщения и проверит переход на резерв.</p>
+          </div>
+          <div class="mission-actions">
+            <button id="autoTestBtn" class="btn primary glow">Начать автоматическую проверку</button>
+            <button id="abortAutoTestBtn" class="btn danger" disabled>Остановить</button>
+          </div>
+          <div id="autoTestProgress" class="test-progress">
+            <div class="test-progress-head"><span>Сценарий не запущен</span><strong>0%</strong></div>
+            <div class="progress-track"><i style="width:0%"></i></div>
+            <div id="autoTestSteps" class="test-steps"></div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h2>Состояние узлов</h2><button id="provisionManifestBtn" class="btn small">Обновить список узлов</button></div>
+            <div id="overviewNodes" class="table-wrap"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Последние события</h2><button data-goto="events" class="link-btn">Открыть журнал</button></div>
+            <div id="eventPreview" class="timeline compact"></div>
+          </div>
+        </div>
+        <div class="card self-diag-panel">
+          <div class="card-head"><div><h2>Проверка исправности узлов</h2><small>Каждый узел сам проверяет связь, защиту, экран и подключение к телефону.</small></div></div>
+          <div id="selfDiagCards" class="diag-grid"></div>
+        </div>
+      </section>
+
+      <section id="tab-topology" class="panel-tab">
+        <div class="section-head">
+          <div><div class="eyebrow">СХЕМА СВЯЗИ</div><h1>Кто с кем сейчас имеет связь</h1></div>
+          <div class="legend"><span class="dot good"></span>связь есть <span class="dot weak"></span>ослаблена <span class="dot bad"></span>оборвана</div>
+        </div>
+        <div class="grid-topology">
+          <div class="card topology-card"><svg id="topologySvg" viewBox="0 0 760 480" aria-label="Топология сети"></svg></div>
+          <div class="card">
+            <div class="card-head"><h2>Связь между двумя узлами</h2></div>
+            <label>Узел A<select id="linkNodeA"></select></label>
+            <label>Узел B<select id="linkNodeB"></select></label>
+            <label>Длительность<select id="linkDuration"><option value="5000">5 сек</option><option value="30000" selected>30 сек</option><option value="120000">120 сек</option><option value="4294967295">До ручной отмены</option></select></label>
+            <div class="button-grid">
+              <button id="linkClearBtn" class="btn ghost">Нормальная связь</button>
+              <button id="linkWeakBtn" class="btn warn">Ослабить</button>
+              <button id="linkVeryWeakBtn" class="btn warn">Сильно ослабить</button>
+              <button id="linkBlockBtn" class="btn danger">Оборвать</button>
+            </div>
+            <div class="mini-note">Используется только для проверки поведения сети. Можно искусственно ухудшить или оборвать связь между выбранными узлами.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-routing" class="panel-tab">
+        <div class="section-head">
+          <div><div class="eyebrow">ПРОТОКОЛ VANGUARD</div><h1>Основные и запасные пути связи</h1></div>
+          <div class="toolbar-inline"><select id="routingSource"></select><button id="refreshRoutingBtn" class="btn">Обновить</button></div>
+        </div>
+        <div id="routingSummary" class="metric-grid"></div>
+        <div class="card"><div id="routingTable" class="table-wrap"></div></div>
+      </section>
+
+      <section id="tab-fault" class="panel-tab">
+        <div class="section-head"><div><div class="eyebrow">ПРОВЕРКА УСТОЙЧИВОСТИ</div><h1>Проверка перехода на запасной путь</h1></div></div>
+        <div class="preset-grid">
+          <button id="presetTriangle" class="preset"><strong>Все связи доступны</strong><span>Три узла могут связываться напрямую</span></button>
+          <button id="presetChain" class="preset"><strong>Связь через посредника</strong><span>Прямая связь A↔C временно отключается</span></button>
+          <button id="presetG2" class="preset accent"><strong>Основной + запасной путь</strong><span>Сеть должна выбрать путь через B и сохранить прямую связь как резерв</span></button>
+          <button id="failPrimaryBtn" class="preset danger"><strong>Оборвать основной путь</strong><span>Искусственно отключает первый участок текущего основного пути</span></button>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Сценарий проверки</h2><button id="clearAllLabBtn" class="btn ghost">Снять все правила</button></div>
+          <div class="scenario">
+            <div><b>1</b><span>Обнови список узлов</span></div><div><b>2</b><span>Выбери «Основной + запасной путь»</span></div><div><b>3</b><span>Выбери начальный и конечный узел</span></div><div><b>4</b><span>Нажми «Перестроить путь»</span></div><div><b>5</b><span>Запусти проверку связи</span></div><div><b>6</b><span>Оборви основной путь и проверь переход на резерв</span></div>
+          </div>
+          <div class="toolbar-inline wrap">
+            <select id="faultSource"></select><select id="faultDestination"></select>
+            <button id="forceDiscoveryBtn" class="btn primary">Перестроить путь</button>
+            <button id="clearRoutesBtn" class="btn ghost">Сбросить найденные пути</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-field" class="panel-tab">
+        <div class="section-head"><div><div class="eyebrow">ПРОВЕРКА ДОСТАВКИ</div><h1>Проверка связи</h1></div></div>
+        <div class="grid-2">
+          <div class="card form-card">
+            <label>Откуда проверяем<select id="fieldSource"></select></label>
+            <label>До какого узла<select id="fieldDestination"></select></label>
+            <label>Глубина проверки<select id="fieldPreset"><option value="quick">Быстрая · несколько секунд</option><option value="normal" selected>Обычная · надёжная оценка</option><option value="deep">Глубокая · длительная проверка</option></select></label>
+            <details class="advanced-settings" hidden><summary>Дополнительные настройки</summary>
+              <label>Количество проверок<input id="fieldCount" type="number" min="1" max="500" value="50" /></label>
+              <label>Пауза между проверками<input id="fieldInterval" type="number" min="250" max="60000" value="800" /></label>
+              <label>Размер сообщения<input id="fieldPayload" type="number" min="16" max="70" value="24" /></label>
+              <label>Путь проверки<select id="fieldMode"><option value="0">Через сеть</option><option value="1">Только напрямую</option></select></label>
+            </details>
+            <div class="button-grid"><button id="startFieldBtn" class="btn primary">Начать проверку</button><button id="stopFieldBtn" class="btn danger">Остановить</button></div>
+          </div>
+          <div class="card"><div id="fieldMetrics" class="metric-grid two"></div><div id="fieldStatusText" class="status-box">Тест не запущен.</div></div>
+        </div>
+        <div class="card field-recorder">
+          <div class="card-head"><div><h2>Журнал проверки</h2><small>Автоматически сохраняет качество связи, направление изменения сигнала, доставку и использованный путь.</small></div><div class="toolbar-inline"><button id="exportFieldCsvBtn" class="btn">Сохранить отчёт</button><button id="clearFieldRecordBtn" class="btn ghost">Очистить</button></div></div>
+          <div id="fieldRecorderSummary"></div>
+        </div>
+      </section>
+
+      <section id="tab-model" class="panel-tab">
+        <div class="section-head"><div><div class="eyebrow">УЧЕБНАЯ СХЕМА</div><h1>Модель сети до 5 узлов</h1><p>Позволяет заранее посмотреть, как сеть выберет основной и запасной путь между узлами.</p></div></div>
+        <div class="grid-topology">
+          <div class="card topology-card"><svg id="modelSvg" viewBox="0 0 760 480"></svg></div>
+          <div class="card form-card">
+            <label>Число узлов<select id="modelNodeCount"><option>3</option><option>4</option><option selected>5</option></select></label>
+            <label>Начальный узел<select id="modelSource"></select></label>
+            <label>Конечный узел<select id="modelDestination"></select></label>
+            <div id="modelLinks" class="model-links"></div>
+            <button id="modelSolveBtn" class="btn primary full">Найти основной и запасной путь</button>
+            <div id="modelResult" class="status-box"></div>
+          </div>
+        </div>
+      </section>
+
+
+      <section id="tab-radar" class="panel-tab">
+        <div class="section-head">
+          <div><div class="eyebrow">РАДАР УСТРОЙСТВ</div><h1>Устройства рядом</h1><p>Показывает Bluetooth-устройства рядом с выбранным узлом SecureMesh. Подключение к ним не выполняется.</p></div>
+          <div class="toolbar-inline"><select id="radarSource"></select><button id="radarRefreshBtn" class="btn">Обновить</button><button id="radarClearBtn" class="btn ghost">Очистить</button></div>
+        </div>
+        <div id="radarMetrics" class="metric-grid"></div>
+        <div class="radar-layout">
+          <div class="card radar-card">
+            <div class="radar-shell"><div class="radar-ring r1"></div><div class="radar-ring r2"></div><div class="radar-ring r3"></div><div class="radar-cross x"></div><div class="radar-cross y"></div><div id="radarPlot" class="radar-plot"></div></div>
+            <div id="radarStateText" class="mini-note"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Обнаруженные устройства</h2><span class="pill">без подключения</span></div>
+            <div id="radarDevices" class="radar-devices"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-events" class="panel-tab">
+        <div class="section-head"><div><div class="eyebrow">ЖУРНАЛ</div><h1>События сети по времени</h1></div><div class="toolbar-inline"><button id="exportReportBtn" class="btn">Сохранить отчёт</button><button id="clearEventsBtn" class="btn ghost">Очистить</button></div></div>
+        <div id="eventTimeline" class="timeline"></div>
+      </section>
+    </main>
+
+    <nav class="mobile-nav" aria-label="Навигация">
+      <button data-mobile-tab="overview" class="active"><span>◉</span>Сеть</button>
+      <button data-mobile-tab="topology"><span>◎</span>Схема</button>
+      <button data-mobile-tab="routing"><span>⇄</span>Пути</button>
+      <button data-mobile-tab="fault"><span>⚡</span>Резерв</button>
+      <button data-mobile-tab="field"><span>◌</span>Тест</button>
+      <button data-mobile-tab="model"><span>◇</span>Схема</button>
+      <button data-mobile-tab="radar"><span>⌁</span>Радар</button>
+      <button data-mobile-tab="events"><span>≡</span>Журнал</button>
+    </nav>
+  </div>
+
+
+  <div id="nodeEditModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="nodeEditTitle">
+    <div class="modal-card">
+      <div class="card-head"><div><div class="eyebrow">КАРТОЧКА УЗЛА</div><h2 id="nodeEditTitle">Настройка узла</h2></div><button id="nodeEditCancel" class="icon-btn">×</button></div>
+      <label>Понятное имя<input id="nodeNameInput" maxlength="24" placeholder="Например: Командир, Ретранслятор 1" /></label>
+      <label class="switch-row"><span><strong>Закрепить карточку</strong><small>Узел всегда будет первым в списке</small></span><input id="nodePinInput" type="checkbox" /></label>
+      <button id="nodeEditSave" class="btn primary full">Сохранить</button>
+    </div>
+  </div>
+
+  <div id="toastHost" class="toast-host"></div>
+  <script src="app.js"></script>
+</body>
+</html>
