@@ -1,0 +1,91 @@
+name: Verify SecureMesh Firmware Native Gates
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware-native-v1.0.4.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware-native-v1.0.4.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-regression:
+    name: VANGUARD native regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Compile and run C++ native tests
+        shell: bash
+        working-directory: firmware/v1.0.4-operator
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/securemesh-native
+          for source in tests/*.cpp; do
+            name="$(basename "$source" .cpp)"
+            output="/tmp/securemesh-native/${name}"
+            echo "::group::${{ matrix.compiler }} ${name}"
+            "${{ matrix.compiler }}" -std=c++17 -Wall -Wextra -Wpedantic -I. "$source" -o "$output"
+            "$output"
+            echo "::endgroup::"
+          done
+
+      - name: Operator vocabulary gate
+        if: matrix.compiler == 'g++'
+        working-directory: firmware/v1.0.4-operator
+        run: python3 tests/operator_vocabulary_check.py
+
+      - name: Commander JavaScript syntax
+        if: matrix.compiler == 'g++'
+        working-directory: firmware/v1.0.4-operator
+        run: |
+          node --check LabPanel/app.js
+          node --check LabPanel/sw.js
+
+      - name: Operational Intelligence gate
+        if: matrix.compiler == 'g++'
+        working-directory: firmware/v1.0.4-operator
+        run: node tests/operational_intelligence_check.js
+
+      - name: Signal Intelligence gate
+        if: matrix.compiler == 'g++'
+        working-directory: firmware/v1.0.4-operator
+        run: node tests/signal_intelligence_check.js
+
+      - name: Commander manifest JSON
+        if: matrix.compiler == 'g++'
+        working-directory: firmware/v1.0.4-operator
+        run: python3 -m json.tool LabPanel/manifest.webmanifest >/dev/null
+
+  publication-safety:
+    name: Publication safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Reject tracked real LAB secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e firmware/v1.0.4-operator/SecureMeshSecrets.h
+          grep -q 'SecureMeshSecrets.h' firmware/v1.0.4-operator/.gitignore
+          grep -q '#error "Configure a local LAB key' firmware/v1.0.4-operator/SecureMeshSecrets.example.h
+          if git grep -n 'DEVELOPMENT_GROUP_KEY\[32\]' -- firmware/v1.0.4-operator | grep -v 'SecureMeshSecrets.example.h' | grep -v 'PUBLIC_SYNC_NOTES.md'; then
+            echo 'Tracked firmware contains a DEVELOPMENT_GROUP_KEY definition.' >&2
+            exit 1
+          fi
