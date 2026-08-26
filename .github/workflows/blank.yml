@@ -1,3 +1,4 @@
+# Durable v1.0.4 firmware source synchronization trigger — 2026-08-26
 name: Build and Verify SecureMesh
 
 on:
