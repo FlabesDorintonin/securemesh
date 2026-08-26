@@ -1,4 +1,4 @@
-# Durable v1.0.4 firmware source synchronization trigger — 2026-08-26
+# SecureMesh durable v1.0.4 source + Android verification
 name: Build and Verify SecureMesh
 
 on:
@@ -27,25 +27,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify public source archive SHA-256
+      - name: Reconstruct and verify publication-safe source
         shell: bash
         run: |
           set -euo pipefail
-          expected='baff43e5eaac9d214cd4a22ec8f62d1845080d2f106345d26f06353848b032ff'
-          actual="$(sha256sum artifacts/v1.0.4/SecureMesh_v1_0_4_OPERATOR_PUBLIC_SOURCE.zip | cut -d' ' -f1)"
-          test "$actual" = "$expected"
-          echo "verified public source $actual"
-
-      - name: Materialize firmware/VANGUARD/Commander tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf firmware/v1.0.4-operator
-          mkdir -p firmware/v1.0.4-operator
-          unzip -q artifacts/v1.0.4/SecureMesh_v1_0_4_OPERATOR_PUBLIC_SOURCE.zip -d firmware/v1.0.4-operator
-          test -f firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
-          test -f firmware/v1.0.4-operator/VanguardRuntime.h
-          test -f firmware/v1.0.4-operator/LabPanel/app.js
+          python3 tools/materialize_firmware_v1_0_4.py
 
       - name: Publication safety gate
         shell: bash
@@ -92,7 +78,7 @@ jobs:
           set -euo pipefail
           git add firmware/v1.0.4-operator
           if git diff --cached --quiet; then
-            echo 'firmware tree already matches verified public source'
+            echo 'firmware tree already matches verified publication-safe snapshot'
             exit 0
           fi
           git config user.name 'github-actions[bot]'

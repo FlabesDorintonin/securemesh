@@ -1,15 +1,24 @@
 # SecureMesh v1.0.4 OPERATOR artifacts
 
-This directory keeps durable release identities and the publication-safe firmware source archive.
+This directory keeps durable release identities and a lossless publication-safe
+firmware source snapshot.
 
 Stored in Git:
 
-- `SecureMesh_v1_0_4_OPERATOR_PUBLIC_SOURCE.zip` — sanitized public firmware/VANGUARD/Commander source snapshot.
-- `RELEASE_MANIFEST_v1.0.4.sha256` — hashes for the original release identity, public source snapshot and Android APK.
+- `public-source-b64/` — the exact publication-safe source ZIP represented as
+  ordered Base64 text parts; reconstruction is SHA-256 gated.
+- `RELEASE_MANIFEST_v1.0.4.sha256` — identities of the original firmware ZIP,
+  publication-safe source ZIP, and Android APK.
 
-Not stored in public Git history:
+The publication-safe ZIP identity is
+`baff43e5eaac9d214cd4a22ec8f62d1845080d2f106345d26f06353848b032ff`.
+Run `python3 tools/materialize_firmware_v1_0_4.py` to reconstruct, verify and
+materialize `firmware/v1.0.4-operator/` without relying on chat attachments.
+
+Not stored as public binaries in the current tree:
 
 - the original firmware ZIP, because it contains the LAB development group key;
-- the exact Android APK binary, to avoid treating a chat-supplied debug binary as the long-term distribution channel.
+- the Android debug APK, because CI/source lineage is the durable distribution path.
 
-The Android APK source and build lineage are versioned in this repository. Release identity is preserved by SHA-256 and Notion release records.
+The original firmware and APK identities remain preserved by SHA-256 and Notion
+release/evidence records. Secrets must never be committed.
