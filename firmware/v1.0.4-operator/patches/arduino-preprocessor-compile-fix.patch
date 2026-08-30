@@ -1,0 +1,50 @@
+--- a/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
++++ b/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
+@@ -4171,7 +4171,9 @@
+ constexpr size_t BLE_LAB_POLICY_RECORD_BYTES = 15;
+ constexpr size_t BLE_RADAR_HEADER_BYTES = 12;
+ constexpr size_t BLE_RADAR_RECORD_BYTES = 30;
+-constexpr size_t BLE_OLED_FRAME_BYTES = (OLED_WIDTH * OLED_HEIGHT) / 8;
++constexpr size_t BLE_OLED_FRAME_WIDTH = 128;
++constexpr size_t BLE_OLED_FRAME_HEIGHT = 64;
++constexpr size_t BLE_OLED_FRAME_BYTES = (BLE_OLED_FRAME_WIDTH * BLE_OLED_FRAME_HEIGHT) / 8;
+ constexpr uint16_t BLE_OLED_FRAME_CHUNK_BYTES = 256;
+ constexpr uint8_t BLE_OLED_FRAME_CHUNK_COUNT = static_cast<uint8_t>((BLE_OLED_FRAME_BYTES + BLE_OLED_FRAME_CHUNK_BYTES - 1) / BLE_OLED_FRAME_CHUNK_BYTES);
+ constexpr size_t BLE_OLED_FRAME_HEADER_BYTES = 11;
+@@ -5985,6 +5987,11 @@
+   uint8_t queueUsed = 0;
+ };
+ 
++// Arduino's sketch preprocessor can emit generated prototypes before custom
++// type declarations. Keep an explicit prototype here, after the type exists,
++// so captureOperationalHealth() is not auto-prototyped too early.
++OperationalHealthSnapshot captureOperationalHealth();
++
+ uint8_t scoreFreeHeap(uint32_t freeHeap) {
+   if (freeHeap >= 80000UL) return 100;
+   if (freeHeap >= 50000UL) return 88;
+@@ -7414,9 +7421,10 @@
+ // exists. This keeps the product model stable without pretending future
+ // SecureMesh features are already implemented.
+ 
+-constexpr int OLED_WIDTH = 128;
+-constexpr int OLED_HEIGHT = 64;
++constexpr int OLED_WIDTH = static_cast<int>(BLE_OLED_FRAME_WIDTH);
++constexpr int OLED_HEIGHT = static_cast<int>(BLE_OLED_FRAME_HEIGHT);
+ constexpr int OLED_RESET = -1;
++static_assert(OLED_WIDTH == 128 && OLED_HEIGHT == 64, "OLED geometry must match BLE framebuffer contract");
+ constexpr size_t UI_INBOX_SIZE = 6;
+ constexpr uint8_t UI_MODEL_VERSION = 4;
+ constexpr uint8_t UI_NAV_DEPTH = 5;
+@@ -8742,6 +8750,11 @@
+   UiLinkGrade grade = UiLinkGrade::Lost;
+ };
+ 
++// Explicit prototypes prevent Arduino from generating prototypes before the
++// UiLinkGrade/UiLinkQuality declarations above.
++UiLinkQuality uiEvaluateLink(const NeighborEntry& n);
++const char* uiLinkGradeText(UiLinkGrade grade);
++
+ float uiScaleQuality(float value, float low, float high) {
+   if (high <= low) return 0.0f;
+   return clampFloat((value - low) * 100.0f / (high - low), 0.0f, 100.0f);
