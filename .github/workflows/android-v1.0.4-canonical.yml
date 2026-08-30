@@ -1,0 +1,188 @@
+name: SecureMesh Android v1.0.4 Canonical
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android/1.0.4-offline-maps
+    paths:
+      - '.github/workflows/android-v1.0.4-canonical.yml'
+      - 'android/v1.0.4/migration/**'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  verify-build-materialize:
+    name: Contract, tests, lint, APK, materialize source
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout canonical repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Recover exact hardware-observed v0.9.2 source from CI run 118
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/run118" "$RUNNER_TEMP/securemesh-android-v104"
+          gh run download 32050685790 --repo "$GITHUB_REPOSITORY" --name SecureMesh-source-118 --dir "$RUNNER_TEMP/run118"
+          inner="$RUNNER_TEMP/run118/SecureMesh-source-118.zip"
+          test -f "$inner"
+          expected='0ec89b381b27df435ea6076d2ebbba0c70a80cc2ae6f633f0ae88e5ed0f84a98'
+          actual="$(sha256sum "$inner" | cut -d' ' -f1)"
+          test "$actual" = "$expected"
+          unzip -q "$inner" -d "$RUNNER_TEMP/securemesh-android-v104"
+          echo "ANDROID_SRC=$RUNNER_TEMP/securemesh-android-v104" >> "$GITHUB_ENV"
+
+      - name: Apply reviewed v0.9.2 to v1.0.4 delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_gz="$GITHUB_WORKSPACE/android/v1.0.4/migration/android_v1.0.4_from_v0.9.2.patch.gz"
+          test "$(sha256sum "$patch_gz" | cut -d' ' -f1)" = '6484db7d7059c658d4b7555dfbebe9b897b373c9d18dde9c2130377e1021b543'
+          gzip -dc "$patch_gz" > "$RUNNER_TEMP/android-v104.patch"
+          test "$(sha256sum "$RUNNER_TEMP/android-v104.patch" | cut -d' ' -f1)" = 'aa0a5cc6757e6eed74b8d86401cac0777f7252eba5c8c5fc8fbd708274a238a8'
+          cd "$ANDROID_SRC"
+          git init -q
+          git add -A
+          git -c user.email=ci@securemesh.local -c user.name=SecureMesh-CI commit -q -m baseline
+          git apply --check "$RUNNER_TEMP/android-v104.patch"
+          git apply "$RUNNER_TEMP/android-v104.patch"
+          git diff --check
+          grep -q 'versionName = "1.0.4"' app/build.gradle.kts
+
+      - name: Architecture and v0.9.2 retention gate
+        shell: bash
+        working-directory: ${{ env.ANDROID_SRC }}
+        run: python3 tools/domain_alignment_gate.py
+
+      - name: Firmware-Android BLE cross-contract gate
+        shell: bash
+        working-directory: ${{ env.ANDROID_SRC }}
+        run: >-
+          python3 tools/ble_contract_gate.py
+          --firmware "$GITHUB_WORKSPACE/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
+
+      - name: Gate syntax
+        shell: bash
+        working-directory: ${{ env.ANDROID_SRC }}
+        run: python3 -m py_compile tools/*.py
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: JVM unit tests
+        shell: bash
+        working-directory: ${{ env.ANDROID_SRC }}
+        run: gradle --no-daemon --stacktrace --console=plain testDebugUnitTest
+
+      - name: Android lint
+        shell: bash
+        working-directory: ${{ env.ANDROID_SRC }}
+        run: gradle --no-daemon --stacktrace --console=plain lintDebug
+
+      - name: Assemble debug APK
+        shell: bash
+        working-directory: ${{ env.ANDROID_SRC }}
+        run: gradle --no-daemon --stacktrace --console=plain assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        working-directory: ${{ env.ANDROID_SRC }}
+        run: |
+          set -euo pipefail
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee APK_SHA256.txt
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload Android v1.0.4 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-Android-v1.0.4-${{ github.run_number }}
+          path: |
+            ${{ env.ANDROID_SRC }}/app/build/outputs/apk/debug/app-debug.apk
+            ${{ env.ANDROID_SRC }}/APK_SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Materialize clean canonical Android source into Git
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$GITHUB_WORKSPACE/android/v1.0.4/source"
+          rm -rf "$target"
+          mkdir -p "$target"
+          rsync -a --exclude='.git/' --exclude='.gradle/' --exclude='app/build/' "$ANDROID_SRC/" "$target/"
+          cd "$target"
+          rm -rf tools/__pycache__ v09_patch_parts v091_full_patch_parts v091_patch_parts v092_patch_parts
+          rm -f alignment-gate.log assemble-debug.log lint-debug.log test-debug.log .v09_android.patch
+          rm -f v09_android.patch.gz.b64 v09_android.patch.gz v09_maplibre_compile_fix.patch v09_test_decode_fix.patch v09_position_fixture_fix.patch
+          rm -f v091_full.patch v091_full.patch.gz v091_full.patch.gz.b64 v091_security_interface_fix.patch
+          rm -f v092_offline_maps.patch v092_offline_maps.patch.gz v092_offline_maps.patch.gz.b64
+          rm -f PROJECT_MANIFEST.sha256 APK_SHA256.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('.')
+          rows=[]
+          for p in sorted(root.rglob('*')):
+              if not p.is_file():
+                  continue
+              rel=p.as_posix()
+              if rel == 'PROJECT_MANIFEST.sha256' or rel.startswith('app/build/') or rel.startswith('.gradle/'):
+                  continue
+              rows.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {rel}")
+          Path('PROJECT_MANIFEST.sha256').write_text('\n'.join(rows)+'\n', encoding='utf-8')
+          PY
+          sha256sum -c PROJECT_MANIFEST.sha256 >/dev/null
+          cd "$GITHUB_WORKSPACE"
+          git add android/v1.0.4/source
+          if git diff --cached --quiet; then
+            echo 'canonical materialized source already current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Android v1.0.4: materialize verified canonical source'
+          git push origin HEAD:android/1.0.4-offline-maps
+
+      - name: Package materialized source artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/android/v1.0.4/source"
+          zip -qr "$RUNNER_TEMP/SecureMesh_Android_v1.0.4_CANONICAL_SOURCE.zip" . -x 'app/build/*' '.gradle/*'
+          sha256sum "$RUNNER_TEMP/SecureMesh_Android_v1.0.4_CANONICAL_SOURCE.zip" > "$RUNNER_TEMP/SOURCE_SHA256.txt"
+
+      - name: Upload verified source
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-Android-v1.0.4-source-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/SecureMesh_Android_v1.0.4_CANONICAL_SOURCE.zip
+            ${{ runner.temp }}/SOURCE_SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
