@@ -29,10 +29,21 @@ class SecureMeshRepositoryImplTest {
             assertTrue(repository.connectionState.value is MeshConnectionState.Connected)
             assertNotNull(repository.session.value)
 
-            val target = repository.routes.value.first { it.type == RouteType.STATIC }.destination
+            // StateFlow fan-out is asynchronous. Await the route snapshot instead of
+            // depending on coroutine scheduling order between eager repository flows.
+            val target = withTimeout(2_000L) {
+                repository.routes
+                    .first { routes -> routes.any { it.type == RouteType.STATIC } }
+                    .first { it.type == RouteType.STATIC }
+                    .destination
+            }
             val id = repository.sendMessage(target, "repository test").getOrThrow()
             delay(1_250)
-            val message = repository.messages.value.first { it.id == id }
+            val message = withTimeout(2_000L) {
+                repository.messages
+                    .first { messages -> messages.any { it.id == id } }
+                    .first { it.id == id }
+            }
             assertEquals(MessageDeliveryState.FINAL_CONFIRMATION_PENDING, message.progressState)
             assertEquals(MessageFinalState.UNKNOWN, message.finalState)
             delay(150)
