@@ -1,0 +1,106 @@
+name: SecureMesh v1.0.4 Radio-Degraded OLED UI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android/1.0.4-ui-remote
+    paths:
+      - '.github/workflows/firmware-v1.0.4-radio-degraded-ui.yml'
+      - 'firmware/v1.0.4-operator/patches/radio-degraded-ui-isolation.patch'
+      - 'tools/radio_degraded_ui_gate.py'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-materialize:
+    name: Degraded radio isolation + contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify existing OLED remote baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          fw='firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino'
+          grep -q 'GetOledFrameChunk = 38' "$fw"
+          grep -q 'void uiCommitRemoteAction()' "$fw"
+          grep -q 'private val remoteUiMutex = Mutex()' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlViewModel.kt
+
+      - name: Apply radio-degraded UI isolation fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch='firmware/v1.0.4-operator/patches/radio-degraded-ui-isolation.patch'
+          echo '00b109aa3e2597b3b788e28bcd14afa023e2bebb844e2f2d45b1aeec9464d8a7  '"$patch" | sha256sum -c -
+          if git apply --check "$patch"; then
+            git apply "$patch"
+          elif git apply --reverse --check "$patch"; then
+            echo 'Radio-degraded UI isolation already materialized.'
+          elif grep -q 'if (radioReady && radioIrqFlag)' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
+            && grep -A8 'void processRadioInterrupt()' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino | grep -q 'if (!radioReady) return;'; then
+            echo 'Radio-degraded UI isolation is materialized with later changes; marker verification passed.'
+          else
+            echo 'Radio-degraded UI isolation is neither applicable nor verifiably materialized.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Radio-degraded OLED UI gate
+        run: python3 tools/radio_degraded_ui_gate.py
+
+      - name: Arduino preprocessor declaration-order gate
+        run: python3 tools/firmware_arduino_preprocessor_gate.py
+
+      - name: OLED remote action arbitration gate
+        run: python3 tools/oled_remote_action_gate.py
+
+      - name: Frontend v1.0.4 function audit
+        run: python3 tools/frontend_v1_0_4_gate.py
+
+      - name: Architecture retention gate
+        working-directory: android/v1.0.4/source
+        run: python3 tools/domain_alignment_gate.py
+
+      - name: Firmware-Android BLE cross-contract gate
+        working-directory: android/v1.0.4/source
+        run: python3 tools/ble_contract_gate.py --firmware "$GITHUB_WORKSPACE/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
+
+      - name: Gate syntax
+        run: python3 -m py_compile tools/radio_degraded_ui_gate.py tools/firmware_arduino_preprocessor_gate.py tools/oled_remote_action_gate.py tools/frontend_v1_0_4_gate.py android/v1.0.4/source/tools/*.py
+
+      - name: Record firmware identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/firmware-artifact"
+          cp firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino "$RUNNER_TEMP/firmware-artifact/SecureMesh_v1.0.4_OPERATOR_RADIO_DEGRADED_UI_FIX.ino"
+          sha256sum "$RUNNER_TEMP/firmware-artifact/SecureMesh_v1.0.4_OPERATOR_RADIO_DEGRADED_UI_FIX.ino" | tee "$RUNNER_TEMP/firmware-artifact/SHA256SUMS.txt"
+
+      - name: Materialize verified firmware source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
+          if git diff --cached --quiet; then
+            echo 'Verified radio-degraded UI source already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Firmware v1.0.4: keep OLED control live without radio'
+          git push origin HEAD:android/1.0.4-ui-remote
+
+      - name: Upload verified firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-Firmware-v1.0.4-Radio-Degraded-UI-${{ github.run_number }}
+          path: ${{ runner.temp }}/firmware-artifact/
+          if-no-files-found: error
+          retention-days: 30
