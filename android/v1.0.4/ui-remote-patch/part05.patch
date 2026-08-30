@@ -1,0 +1,254 @@
+BleEventType\s*:\s*uint8_t'), 'EVT_')
+     android_events = parse_kotlin_wire_enum(codec, 'BleEventType')
+@@ -171,6 +172,9 @@ def main() -> int:
+     ok('Android operational health parser expects 17', 'BleOpcode.GET_OPERATIONAL_HEALTH, 17' in codec)
+     ok('Android self diagnostics parser expects 43', 'BleOpcode.GET_SELF_DIAGNOSTICS, 43' in codec)
+     ok('Android radar parser uses 12/30 constants', 'BLE_RADAR_HEADER_SIZE = 12' in codec and 'BLE_RADAR_RECORD_SIZE = 30' in codec)
++    ok('Firmware OLED framebuffer is 1024 bytes', 'BLE_OLED_FRAME_BYTES == 1024' in fw)
++    ok('Firmware OLED chunk payload fits command result', 'BLE_OLED_FRAME_CHUNK_BYTES = 256' in fw and 'BLE_OLED_FRAME_HEADER_BYTES = 11' in fw)
++    ok('Android parses OLED framebuffer chunk', 'parseOledFrameChunk' in codec and 'GET_OLED_FRAME_CHUNK(38)' in codec)
+ 
+     # Capability bits must remain stable. Command Map is intentionally projected onto messaging UI.
+     for cap, bit in EXPECTED_CAP_BITS.items():
+diff --git a/firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md b/firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md
+index 2b6e898..0c5c7e1 100644
+--- a/firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md
++++ b/firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md
+@@ -85,6 +85,7 @@ Status:
+ | 29 | ClearBleRadar | empty |
+ | 30 | GetOperationalHealth | empty |
+ | 31 | GetSelfDiagnostics | empty |
++| 38 | GetOledFrameChunk | `chunkIndex u8`, 0..3 |
+ 
+ `StartFieldTest.mode`: `0=Routed`, `1=DirectOnly`.
+ 
+@@ -96,7 +97,7 @@ Field Test limits v1.0.4: `packetCount=1..500`, `intervalMs=250..60000`, `payloa
+ - variable-size response принимается только если `actual = header + count × record`;
+ - Response обязан совпадать с ожидаемым `requestId + opcode`;
+ - fragment transport version и application protocol version являются разными контрактами (`v1` и `v2` соответственно);
+-- любое изменение wire layout требует одновременного обновления firmware, Commander, этого документа и `tests/ble_contract_check.py`.
++- любое изменение wire layout требует одновременного обновления firmware, Android/Commander, этого документа и cross-contract gates.
+ 
+ ## 5. Главные response payloads
+ 
+@@ -161,6 +162,18 @@ Payload 43 bytes:
+ 
+ `gpsState`: `0=UART unavailable, 1=no fresh fix, 2=fresh fix`.
+ 
++### GetOledFrameChunk (v1.0.4 framebuffer extension)
++
++Команда доступна только если `GetInfo.capabilities` содержит bit15 `OLED_FRAMEBUFFER`. Она читает **реальный 1-bit framebuffer Adafruit_SSD1306 128×64**, а не реконструированное UI-состояние. Четыре последовательных запроса собирают 1024 bytes экрана. `chunkIndex=0` атомарно фиксирует новый snapshot; chunks 1..3 возвращаются из того же кэша и поэтому не рвутся между OLED redraw.
++
++Response header 11 bytes + data:
++
++`snapshotVersion u8 (=1), width u8 (=128), height u8 (=64), snapshotId u32, chunkIndex u8, chunkCount u8 (=4), dataLength u16, data[dataLength]`
++
++Каждый полный chunk содержит 256 bytes. Раскладка совпадает с `Adafruit_SSD1306::getBuffer()`: byte index `x + (y/8)*128`, pixel bit `1 << (y & 7)`. Android обязан собирать только chunks с одинаковым `snapshotId`.
++
++BLE maintenance opcodes 32..37 остаются serial-only и недоступны приложению; opcode 38 является authenticated read-only extension.
++
+ ### Operational health event
+ 
+ Event type `32` отправляется только при смене health-level либо важных fault flags. Payload: `score u8, level u8, flags u16`. Это ограничивает BLE/event spam.
+diff --git a/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino b/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
+index 056b22c..869531d 100644
+--- a/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
++++ b/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
+@@ -4051,12 +4051,13 @@ constexpr uint32_t CAP_COMMAND_MAP    = 1UL << 11;
+ constexpr uint32_t CAP_BLE_RADAR      = 1UL << 12;
+ constexpr uint32_t CAP_OPERATIONAL_HEALTH = 1UL << 13;
+ constexpr uint32_t CAP_SELF_DIAGNOSTICS  = 1UL << 14;
++constexpr uint32_t CAP_OLED_FRAMEBUFFER = 1UL << 15;
+ constexpr uint32_t LOCAL_CAPABILITIES =
+   CAP_MESSAGING | CAP_STATIC_ROUTING | CAP_RELAY |
+   CAP_FIELD_TEST | CAP_BLE_CONTROL | CAP_UI_OS |
+   CAP_VANGUARD | CAP_MANIFEST | CAP_FAULT_LAB |
+   CAP_GPS | CAP_SOS | CAP_COMMAND_MAP | CAP_BLE_RADAR |
+-  CAP_OPERATIONAL_HEALTH | CAP_SELF_DIAGNOSTICS;
++  CAP_OPERATIONAL_HEALTH | CAP_SELF_DIAGNOSTICS | CAP_OLED_FRAMEBUFFER;
+ 
+ constexpr uint8_t DEVICE_ROLE_DEVELOPMENT = 1;
+ constexpr uint32_t DEV_PERMISSION_READ       = 1UL << 0;
+@@ -4107,7 +4108,8 @@ enum class CommandType : uint8_t {
+   BleBonds = 34,
+   BleBondsClear = 35,
+   Broadcast = 36,
+-  Reboot = 37
++  Reboot = 37,
++  GetOledFrameChunk = 38
+ };
+ 
+ enum class CommandSource : uint8_t {
+@@ -4146,6 +4148,7 @@ struct CommandRequest {
+   bool flag = false;
+   uint8_t dataLength = 0;
+   uint8_t uiAction = 0;
++  uint8_t oledChunkIndex = 0;
+   uint8_t data[180] {};
+ };
+ 
+@@ -4168,6 +4171,14 @@ constexpr size_t BLE_ROUTING_DIAG_RECORD_BYTES = 56;
+ constexpr size_t BLE_LAB_POLICY_RECORD_BYTES = 15;
+ constexpr size_t BLE_RADAR_HEADER_BYTES = 12;
+ constexpr size_t BLE_RADAR_RECORD_BYTES = 30;
++constexpr size_t BLE_OLED_FRAME_BYTES = (OLED_WIDTH * OLED_HEIGHT) / 8;
++constexpr uint16_t BLE_OLED_FRAME_CHUNK_BYTES = 256;
++constexpr uint8_t BLE_OLED_FRAME_CHUNK_COUNT = static_cast<uint8_t>((BLE_OLED_FRAME_BYTES + BLE_OLED_FRAME_CHUNK_BYTES - 1) / BLE_OLED_FRAME_CHUNK_BYTES);
++constexpr size_t BLE_OLED_FRAME_HEADER_BYTES = 11;
++
++static_assert(BLE_OLED_FRAME_BYTES == 1024, "OLED framebuffer must be 128x64 monochrome");
++static_assert(BLE_OLED_FRAME_HEADER_BYTES + BLE_OLED_FRAME_CHUNK_BYTES <= COMMAND_RESULT_MAX_PAYLOAD,
++              "OLED framebuffer chunk no longer fits BLE command result");
+ 
+ static_assert(MAX_APP_PAYLOAD <= UINT8_MAX,
+               "application payload length field is uint8_t");
+@@ -4238,6 +4249,7 @@ CommandStatus mapQueueResult(QueueMessageResult result) {
+ uint16_t buildInfoPayload(uint8_t* out, size_t capacity);
+ uint16_t buildStatusPayload(uint8_t* out, size_t capacity);
+ uint16_t buildUiStatePayload(uint8_t* out, size_t capacity);
++uint16_t buildOledFrameChunkPayload(uint8_t chunkIndex, uint8_t* out, size_t capacity);
+ bool uiHandleRemoteAction(uint8_t rawAction);
+ uint16_t buildNeighborsPayload(uint8_t* out, size_t capacity);
+ uint16_t buildRoutesPayload(uint8_t* out, size_t capacity);
+@@ -5127,6 +5139,11 @@ bool parseBleCommandPacket(const uint8_t* packet, uint16_t length, CommandReques
+       request.uiAction = payload[0];
+       return true;
+ 
++    case CommandType::GetOledFrameChunk:
++      if (payloadLength != 1 || payload[0] >= BLE_OLED_FRAME_CHUNK_COUNT) return false;
++      request.oledChunkIndex = payload[0];
++      return true;
++
+     case CommandType::SendMessage:
+       if (payloadLength < 6) return false;
+       request.destination = readU32(payload, 0);
+@@ -6453,7 +6470,8 @@ void dispatchCommand(const CommandRequest& request, CommandResult& result) {
+       return;
+     }
+     // Opcodes 30/31 are v1.0 read-only operational intelligence commands.
+-    // Keep privileged BLE maintenance commands (32+) unavailable over the app API.
++    // Privileged maintenance opcodes 32..37 stay serial-only; opcode 38 is the
++    // authenticated read-only OLED framebuffer extension used by the phone remote.
+   }
+ 
+   switch (request.type) {
+@@ -6579,6 +6597,15 @@ void dispatchCommand(const CommandRequest& request, CommandResult& result) {
+       if (result.payloadLength == 0) result.status = CommandStatus::InternalError;
+       return;
+ 
++    case CommandType::GetOledFrameChunk:
++      if (!oledReady) {
++        result.status = CommandStatus::NotSupported;
++        return;
++      }
++      result.payloadLength = buildOledFrameChunkPayload(request.oledChunkIndex, result.payload, sizeof(result.payload));
++      if (result.payloadLength == 0) result.status = CommandStatus::InternalError;
++      return;
++
+     case CommandType::GetKnownNodes:
+       result.payloadLength = buildKnownNodesPayload(result.payload, sizeof(result.payload));
+       if (result.payloadLength == 0) result.status = CommandStatus::InternalError;
+@@ -8406,6 +8433,10 @@ bool uiHandleRemoteAction(uint8_t rawAction) {
+   return false;
+ }
+ 
++uint8_t bleOledSnapshot[BLE_OLED_FRAME_BYTES] {};
++uint32_t bleOledSnapshotId = 0;
++bool bleOledSnapshotValid = false;
++
+ uint16_t buildUiStatePayload(uint8_t* out, size_t capacity) {
+   BinaryWriter w{out, capacity};
+   uint8_t flags = 0;
+@@ -8440,6 +8471,36 @@ uint16_t buildUiStatePayload(uint8_t* out, size_t capacity) {
+   return w.ok ? static_cast<uint16_t>(w.length) : 0;
+ }
+ 
++uint16_t buildOledFrameChunkPayload(uint8_t chunkIndex, uint8_t* out, size_t capacity) {
++  if (!oledReady || out == nullptr || chunkIndex >= BLE_OLED_FRAME_CHUNK_COUNT) return 0;
++  const uint8_t* live = display.getBuffer();
++  if (live == nullptr) return 0;
++
++  // Chunk 0 atomically starts a new logical snapshot. Remaining chunks are served
++  // from the cached 1024-byte buffer so a redraw between GATT requests cannot tear
++  // the image seen by Android.
++  if (chunkIndex == 0 || !bleOledSnapshotValid) {
++    memcpy(bleOledSnapshot, live, BLE_OLED_FRAME_BYTES);
++    bleOledSnapshotId = (bleOledSnapshotId == UINT32_MAX) ? 1U : (bleOledSnapshotId + 1U);
++    if (bleOledSnapshotId == 0) bleOledSnapshotId = 1U;
++    bleOledSnapshotValid = true;
++  }
++
++  const size_t offset = static_cast<size_t>(chunkIndex) * BLE_OLED_FRAME_CHUNK_BYTES;
++  const size_t remaining = BLE_OLED_FRAME_BYTES - offset;
++  const uint16_t dataLength = static_cast<uint16_t>(min(remaining, static_cast<size_t>(BLE_OLED_FRAME_CHUNK_BYTES)));
++  BinaryWriter w{out, capacity};
++  w.putU8(1); // snapshot payload version
++  w.putU8(static_cast<uint8_t>(OLED_WIDTH));
++  w.putU8(static_cast<uint8_t>(OLED_HEIGHT));
++  w.putU32(bleOledSnapshotId);
++  w.putU8(chunkIndex);
++  w.putU8(BLE_OLED_FRAME_CHUNK_COUNT);
++  w.putU16(dataLength);
++  w.putBytes(bleOledSnapshot + offset, dataLength);
++  return w.ok ? static_cast<uint16_t>(w.length) : 0;
++}
++
+ void initializeUi() {
+   if (!oledReady) return;
+   uiState = UiRuntimeState{};
+diff --git a/tools/frontend_v1_0_4_gate.py b/tools/frontend_v1_0_4_gate.py
+new file mode 100755
+index 0000000..0abf318
+--- /dev/null
++++ b/tools/frontend_v1_0_4_gate.py
+@@ -0,0 +1,125 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import re
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++ANDROID = ROOT / "android/v1.0.4/source"
++APP = ANDROID / "app/src/main/java/dev/securemesh/commander"
++
++failures: list[str] = []
++passes = 0
++
++
++def ok(name: str, cond: bool, detail: str = "") -> None:
++    global passes
++    if cond:
++        passes += 1
++        print(f"PASS  {name}")
++    else:
++        failures.append(f"{name}: {detail}".rstrip(": "))
++        print(f"FAIL  {name}" + (f" — {detail}" if detail else ""))
++
++
++def text(rel: str) -> str:
++    p = APP / rel
++    return p.read_text(encoding="utf-8") if p.is_file() else ""
++
++
++def main() -> int:
++    build = (ANDROID / "app/build.gradle.kts").read_text(encoding="utf-8")
++    root_nav = text("navigation/SecureMeshRoot.kt")
++    more = text("feature/more/MoreScreen.kt")
++    codec = text("data/ble/SecureMeshBleCodec.kt")
++    transport = text("data/ble/BleTransport.kt")
++    repo = text("domain/repository/SecureMeshRepository.kt")
++    control = text("feature/deviceui/DeviceControlScreen.kt")
++    control_vm = text("feature/deviceui/DeviceControlViewModel.kt")
++    vanguard = text("feature/vanguard/VanguardControlScreen.kt")
++
++    ok("APK versionName is 1.0.4", 'versionName = "1.0.4"' in build)
++    ok("APK versionCode is 20", "versionCode = 20" in build)
++
++    production_text = "\n".join(
++        p.read_text(encoding="utf-8", errors="ignore")
++        for p in (APP / "feature").rglob("*.kt")
++    )
++    for stale in ("v0.8.2", "0.6.3", "v0.5", "0.9-demo", "v0.9.0"):
++        ok(f"No stale frontend identity {stale}", stale not in production_text)
