@@ -1,0 +1,35 @@
+name: SecureMesh Android v1.0.4 UI Remote
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android/1.0.4-ui-remote
+    paths:
+      - '.github/workflows/android-v1.0.4-ui-remote.yml'
+      - 'android/v1.0.4/source/**'
+      - 'firmware/v1.0.4-operator/**'
+      - 'tools/frontend_v1_0_4_gate.py'
+
+permissions:
+  contents: read
+
+jobs:
+  source-export:
+    name: Export exact source for reviewed UI work
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package exact source
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino out/
+          cp firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md out/
+          cd android/v1.0.4/source
+          zip -qr "$GITHUB_WORKSPACE/out/SecureMesh_Android_v1.0.4_SOURCE.zip" . -x 'app/build/*' '.gradle/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-v1.0.4-ui-remote-source-${{ github.run_number }}
+          path: out/
+          retention-days: 7
