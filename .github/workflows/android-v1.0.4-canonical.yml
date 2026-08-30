@@ -111,8 +111,10 @@ jobs:
         run: |
           set -euo pipefail
           apk='app/build/outputs/apk/debug/app-debug.apk'
+          aapt_bin="$ANDROID_HOME/build-tools/36.0.0/aapt"
           test -f "$apk"
-          aapt dump badging "$apk" | tee APK_BADGING.txt
+          test -x "$aapt_bin"
+          "$aapt_bin" dump badging "$apk" | tee APK_BADGING.txt
           grep -q "package: name='dev.securemesh.commander'" APK_BADGING.txt
           grep -q "versionName='1.0.4'" APK_BADGING.txt
           sha256sum "$apk" | tee APK_SHA256.txt
