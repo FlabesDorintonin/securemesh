@@ -9,10 +9,13 @@ text = FW.read_text(encoding="utf-8")
 
 
 def body_of(signature: str, next_signature: str) -> str:
-    start = text.find(signature)
+    # Arduino sketches contain generated-safe forward declarations. Match the
+    # actual definition marker so the gate never audits from an earlier prototype.
+    definition = signature + " {"
+    start = text.find(definition)
     if start < 0:
-        raise AssertionError(f"missing {signature}")
-    end = text.find(next_signature, start + len(signature))
+        raise AssertionError(f"missing definition {definition}")
+    end = text.find(next_signature, start + len(definition))
     if end < 0:
         raise AssertionError(f"missing boundary {next_signature}")
     return text[start:end]
@@ -28,7 +31,10 @@ radio_irq = body_of("void processRadioInterrupt()", "void processAckTimeout()")
 ui = body_of("void processUi()", "// ============================================================\n// 21. PERIODIC STATUS")
 ui_action = body_of("bool uiHandleRemoteAction(uint8_t rawAction)", "uint16_t buildUiStatePayload")
 dispatch = body_of("void dispatchCommand(const CommandRequest& request, CommandResult& result)", "void sendBleCommandResponse")
-loop = text[text.find("void loop()") :]
+loop_start = text.find("void loop() {")
+if loop_start < 0:
+    raise AssertionError("missing loop definition")
+loop = text[loop_start:]
 
 # A stale/floating DIO1 from an unavailable/under-powered SX1268 must be consumed
 # without touching RadioLib. The readiness guard must precede TX/RX dispatch.
