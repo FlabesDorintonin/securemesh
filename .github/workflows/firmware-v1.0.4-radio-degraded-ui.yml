@@ -38,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           patch='firmware/v1.0.4-operator/patches/radio-degraded-ui-isolation.patch'
-          echo '00b109aa3e2597b3b788e28bcd14afa023e2bebb844e2f2d45b1aeec9464d8a7  '"$patch" | sha256sum -c -
+          echo '25c6065e4ac955c3b2b542f7ad80c6f8b0303eb1cf62a7cd552063ebe29aea89  '"$patch" | sha256sum -c -
           if git apply --check "$patch"; then
             git apply "$patch"
           elif git apply --reverse --check "$patch"; then
