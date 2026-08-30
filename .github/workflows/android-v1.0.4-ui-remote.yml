@@ -29,7 +29,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Reconstruct and apply reviewed OLED remote patch
+      - name: Reconstruct or verify reviewed OLED remote baseline
         shell: bash
         run: |
           set -euo pipefail
@@ -39,14 +39,18 @@ jobs:
           if git apply --check "$patch"; then
             git apply "$patch"
           elif git apply --reverse --check "$patch"; then
-            echo 'Reviewed patch already materialized; continuing.'
+            echo 'Reviewed OLED remote baseline already materialized.'
+          elif grep -q 'GET_OLED_FRAME_CHUNK' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt \
+            && grep -q 'OledFramebufferSnapshot' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/DeviceUiModels.kt \
+            && grep -q 'GetOledFrameChunk = 38' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino; then
+            echo 'Reviewed OLED remote baseline is materialized with later changes; marker verification passed.'
           else
-            echo 'Patch is neither cleanly applicable nor already applied.' >&2
+            echo 'OLED remote baseline is neither applicable nor verifiably materialized.' >&2
             exit 1
           fi
           git diff --check
 
-      - name: Apply Arduino preprocessor compile fix
+      - name: Apply or verify Arduino preprocessor compile fix
         shell: bash
         run: |
           set -euo pipefail
@@ -55,9 +59,13 @@ jobs:
           if git apply --check "$patch"; then
             git apply "$patch"
           elif git apply --reverse --check "$patch"; then
-            echo 'Arduino compile fix already materialized; continuing.'
+            echo 'Arduino compile fix already materialized.'
+          elif grep -q 'BLE_OLED_FRAME_WIDTH = 128' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
+            && grep -q 'enum class OperationalHealthReason : uint8_t;' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
+            && grep -q 'enum class UiLinkGrade : uint8_t;' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino; then
+            echo 'Arduino compile fix is materialized with later changes; marker verification passed.'
           else
-            echo 'Arduino compile fix is neither cleanly applicable nor already applied.' >&2
+            echo 'Arduino compile fix is neither applicable nor verifiably materialized.' >&2
             exit 1
           fi
           git diff --check
@@ -72,6 +80,9 @@ jobs:
             git apply "$patch"
           elif git apply --reverse --check "$patch"; then
             echo 'OLED remote action fix already materialized; continuing.'
+          elif grep -q 'private val remoteUiMutex = Mutex()' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlViewModel.kt \
+            && grep -q 'void uiCommitRemoteAction()' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino; then
+            echo 'OLED remote action fix is materialized with later changes; marker verification passed.'
           else
             echo 'OLED remote action fix is neither cleanly applicable nor already applied.' >&2
             exit 1
