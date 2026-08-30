@@ -1,0 +1,170 @@
+h
+ data class DeviceControlUiState(
+     val session: SecureMeshSession? = null,
+     val device: DeviceUiState? = null,
++    val oledFramebuffer: OledFramebufferSnapshot? = null,
+     val allowed: Boolean = false,
++    val exactMirrorAvailable: Boolean = false,
+     val busy: Boolean = false,
+     val error: String? = null,
+ )
+ 
+ class DeviceControlViewModel(private val repository: SecureMeshRepository) : ViewModel() {
+     private val busy = MutableStateFlow(false)
++    private val mirrorBusy = MutableStateFlow(false)
+     private val error = MutableStateFlow<String?>(null)
+ 
+     val uiState = combine(
+         repository.session,
+         repository.deviceUiState,
++        repository.oledFramebuffer,
+         busy,
+         error,
+-    ) { session, device, isBusy, failure ->
++    ) { session, device, frame, isBusy, failure ->
+         DeviceControlUiState(
+             session = session,
+             device = device,
++            oledFramebuffer = frame,
+             allowed = UiAccessPolicy.canControlDeviceUi(session),
++            exactMirrorAvailable = session?.supports(DeviceCapability.OLED_FRAMEBUFFER) == true,
+             busy = isBusy,
+             error = failure,
+         )
+@@ -42,6 +50,14 @@ class DeviceControlViewModel(private val repository: SecureMeshRepository) : Vie
+ 
+     fun refresh() = execute { repository.refreshDeviceUiState() }
+ 
++    fun refreshMirror() {
++        if (mirrorBusy.value || repository.session.value?.supports(DeviceCapability.OLED_FRAMEBUFFER) != true) return
++        viewModelScope.launch {
++            mirrorBusy.value = true
++            try { repository.refreshOledFramebuffer() } finally { mirrorBusy.value = false }
++        }
++    }
++
+     fun action(action: DeviceUiAction) = execute { repository.sendDeviceUiAction(action) }
+ 
+     fun clearError() {
+@@ -54,9 +70,9 @@ class DeviceControlViewModel(private val repository: SecureMeshRepository) : Vie
+             busy.value = true
+             error.value = null
+             try {
+-                block().onFailure { throwable ->
+-                    error.value = throwable.message ?: "Узел не принял команду"
+-                }
++                block()
++                    .onSuccess { if (repository.session.value?.supports(DeviceCapability.OLED_FRAMEBUFFER) == true) refreshMirror() }
++                    .onFailure { throwable -> error.value = throwable.message ?: "Узел не принял команду" }
+             } finally {
+                 busy.value = false
+             }
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt
+index 9d868d7..1abc347 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/diagnostics/DiagnosticsScreen.kt
+@@ -48,7 +48,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
+         if (state.mode == TransportMode.BLE) {
+             item {
+                 val ble = state.ble
+-                TechnicalCard("SecureMesh BLE v0.2") {
++                TechnicalCard("BLE protocol v0.2") {
+                     DiagnosticRow("Node ID", ble?.nodeId ?: "Нет данных")
+                     DiagnosticRow("BLE address", ble?.bleAddress ?: "Нет данных")
+                     DiagnosticRow("GATT state", ble?.gattState ?: "Нет данных")
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
+index 06c04d6..94e2a4a 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
+@@ -424,7 +424,7 @@ fun ProtocolUnavailableScreen(
+             StatusChip("BLE подключён", SecureMeshColors.Warning)
+             Text("Узел не подтвердил SecureMesh", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
+             Text(
+-                "GATT-соединение установлено, но защищённый SecureMesh Protocol v0.2 не прошёл проверку service/characteristics, версии или INFO handshake.",
++                "GATT-соединение установлено, но защищённый BLE protocol v0.2 не прошёл проверку service/characteristics, версии или INFO handshake.",
+                 color = SecureMeshColors.TextSecondary,
+             )
+             TechnicalCard("Соединение") {
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/more/MoreScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/more/MoreScreen.kt
+index 7518b98..27742b8 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/more/MoreScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/more/MoreScreen.kt
+@@ -54,7 +54,7 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
+             add(MoreDestination("VANGUARD Control", "Manifest, Primary/G2, discovery и Fault Lab", "vanguard", Icons.Rounded.Tune, SecureMeshColors.Cyan))
+         }
+         if (UiAccessPolicy.canControlDeviceUi(session)) {
+-            add(MoreDestination("Экран узла", "Живой UI state и пульт физического OLED", "devicecontrol", Icons.Rounded.Smartphone, SecureMeshColors.Blue))
++            add(MoreDestination("Экран узла", "Пульт и точное зеркало физического OLED", "devicecontrol", Icons.Rounded.Smartphone, SecureMeshColors.Blue))
+         }
+         if (UiAccessPolicy.canRunFieldTest(session)) {
+             add(MoreDestination("Полевой тест", "Проверка реальной связи, RSSI, SNR, PDR и повторов", "fieldtest", Icons.Rounded.Science, SecureMeshColors.Violet))
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt
+index 6839a12..a845973 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt
+@@ -73,7 +73,7 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
+                     SecurityValue("Текст сообщений", "Зашифрован")
+                     SecurityValue("GPS history", "Зашифрована")
+                     Text("Для каждого значения используется отдельный GCM IV; AAD привязывает ciphertext к конкретному nodeId/messageId/position record и не позволяет незаметно переставить его между записями.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+-                    Text("При переходе с v0.9.0 старый plaintext GPS-кэш один раз удаляется. Старые сообщения перезаписываются в vault при запуске.", color = SecureMeshColors.Warning, style = MaterialTheme.typography.bodySmall)
++                    Text("При обновлении со старых сборок plaintext GPS-кэш один раз удаляется. Старые сообщения перезаписываются в vault при запуске.", color = SecureMeshColors.Warning, style = MaterialTheme.typography.bodySmall)
+                 }
+             }
+ 
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt
+index cb1d19c..435a3dd 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt
+@@ -49,13 +49,13 @@ fun VanguardControlScreen(viewModel: VanguardControlViewModel) {
+             ) {
+                 Column {
+                     Text("VANGUARD CONTROL", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
+-                    Text("Управление SecureMesh v0.8.2", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
++                    Text("Управление SecureMesh v1.0.4", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                 }
+                 FilledTonalIconButton(onClick = viewModel::refresh, enabled = !state.busy) { Icon(Icons.Rounded.Refresh, "Обновить") }
+             }
+ 
+             if (!state.vanguardAvailable) {
+-                EmptyState("VANGUARD недоступен", "Подключённый узел не объявил capability VANGUARD. Для этой панели нужна прошивка SecureMesh v0.8.2 3RADIO_BASE.")
++                EmptyState("VANGUARD недоступен", "Подключённый узел не объявил capability VANGUARD. Для этой панели нужна прошивка SecureMesh v1.0.4 с capability VANGUARD.")
+                 return@Column
+             }
+ 
+diff --git a/android/v1.0.4/source/tools/ble_contract_gate.py b/android/v1.0.4/source/tools/ble_contract_gate.py
+index cd9d28d..502caac 100755
+--- a/android/v1.0.4/source/tools/ble_contract_gate.py
++++ b/android/v1.0.4/source/tools/ble_contract_gate.py
+@@ -21,7 +21,7 @@ EXPECTED_COMMANDS = {
+     'CLEAR_DYNAMIC_ROUTES': 21, 'SET_LAB_LINK_POLICY': 22, 'GET_LAB_LINK_POLICIES': 23,
+     'GET_POSITIONS': 24, 'RAISE_SOS': 25, 'ACK_SOS': 26, 'SEND_COMMAND_NOTICE': 27,
+     'GET_BLE_RADAR': 28, 'CLEAR_BLE_RADAR': 29, 'GET_OPERATIONAL_HEALTH': 30,
+-    'GET_SELF_DIAGNOSTICS': 31,
++    'GET_SELF_DIAGNOSTICS': 31, 'GET_OLED_FRAME_CHUNK': 38,
+ }
+ EXPECTED_EVENTS = {
+     'NODE_DISCOVERED': 1, 'NODE_STALE': 2, 'MESSAGE_QUEUED': 3, 'HOP_ACK': 4, 'RETRY': 5,
+@@ -50,6 +50,7 @@ EXPECTED_CAP_BITS = {
+     'MESSAGING': 0, 'STATIC_ROUTING': 1, 'RELAY': 2, 'FIELD_TEST': 3, 'BLE_CONTROL': 4,
+     'UI_OS': 5, 'VANGUARD': 6, 'MANIFEST': 7, 'FAULT_LAB': 8, 'GPS': 9, 'SOS': 10,
+     'COMMAND_MAP': 11, 'BLE_RADAR': 12, 'OPERATIONAL_HEALTH': 13, 'SELF_DIAGNOSTICS': 14,
++    'OLED_FRAMEBUFFER': 15,
+ }
+ 
+ failures: list[str] = []
+@@ -121,13 +122,13 @@ def main() -> int:
+     mapping = ANDROID_MAPPING.read_text(encoding='utf-8')
+ 
+     fw_all_commands = parse_cpp_enum(enum_block(fw, r'enum class\s+CommandType\s*:\s*uint8_t'))
+-    fw_commands = {name: wire for name, wire in fw_all_commands.items() if wire <= 31}
++    fw_commands = {name: wire for name, wire in fw_all_commands.items() if wire <= 31 or wire == 38}
+     android_commands = parse_kotlin_wire_enum(codec, 'BleOpcode')
+     ok('Firmware BLE application command map equals canonical v1.0.4', fw_commands == EXPECTED_COMMANDS, repr(fw_commands))
+     ok('Android command map equals canonical v1.0.4', android_commands == EXPECTED_COMMANDS, repr(android_commands))
+     ok('Firmware and Android BLE application command maps are identical', fw_commands == android_commands)
+-    maintenance = {name: wire for name, wire in fw_all_commands.items() if wire >= 32}
+-    ok('Firmware maintenance opcodes 32+ remain outside Android app API', maintenance == {'BLE_STATUS': 32, 'BLE_ADVERTISE': 33, 'BLE_BONDS': 34, 'BLE_BONDS_CLEAR': 35, 'BROADCAST': 36, 'REBOOT': 37} and 'rawCommand >= static_cast<uint8_t>(CommandType::BleStatus)' in fw and 'result.status = CommandStatus::NotSupported' in fw, repr(maintenance))
++    maintenance = {name: wire for name, wire in fw_all_commands.items() if 32 <= wire <= 37}
++    ok('Firmware maintenance opcodes 32..37 remain outside Android app API', maintenance == {'BLE_STATUS': 32, 'BLE_ADVERTISE': 33, 'BLE_BONDS': 34, 'BLE_BONDS_CLEAR': 35, 'BROADCAST': 36, 'REBOOT': 37} and 'rawCommand >= static_cast<uint8_t>(CommandType::BleStatus)' in fw and 'result.status = CommandStatus::NotSupported' in fw, repr(maintenance))
+ 
+     fw_events = parse_cpp_enum(enum_block(fw, r'enum\s+
