@@ -7,29 +7,167 @@ on:
       - android/1.0.4-ui-remote
     paths:
       - '.github/workflows/android-v1.0.4-ui-remote.yml'
+      - 'android/v1.0.4/ui-remote-patch/**'
       - 'android/v1.0.4/source/**'
       - 'firmware/v1.0.4-operator/**'
       - 'tools/frontend_v1_0_4_gate.py'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  source-export:
-    name: Export exact source for reviewed UI work
+  verify-build-materialize:
+    name: Frontend, contract, tests, lint, APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - name: Package exact source
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and apply reviewed OLED remote patch
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p out
-          cp firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino out/
-          cp firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md out/
-          cd android/v1.0.4/source
-          zip -qr "$GITHUB_WORKSPACE/out/SecureMesh_Android_v1.0.4_SOURCE.zip" . -x 'app/build/*' '.gradle/*'
-      - uses: actions/upload-artifact@v4
+          patch="$RUNNER_TEMP/ui-remote.patch"
+          cat android/v1.0.4/ui-remote-patch/part*.patch > "$patch"
+          echo '7a4689761c51f1af1524698c43f33aa9a2980efd35de06c171ef4df5912b45d3  '"$patch" | sha256sum -c -
+          if git apply --check "$patch"; then
+            git apply "$patch"
+          elif git apply --reverse --check "$patch"; then
+            echo 'Reviewed patch already materialized; continuing.'
+          else
+            echo 'Patch is neither cleanly applicable nor already applied.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Frontend v1.0.4 function audit
+        run: python3 tools/frontend_v1_0_4_gate.py
+
+      - name: Architecture retention gate
+        working-directory: android/v1.0.4/source
+        run: python3 tools/domain_alignment_gate.py
+
+      - name: Firmware-Android BLE cross-contract gate
+        working-directory: android/v1.0.4/source
+        run: python3 tools/ble_contract_gate.py --firmware "$GITHUB_WORKSPACE/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
+
+      - name: Gate syntax
+        run: python3 -m py_compile tools/frontend_v1_0_4_gate.py android/v1.0.4/source/tools/*.py
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
-          name: SecureMesh-v1.0.4-ui-remote-source-${{ github.run_number }}
-          path: out/
-          retention-days: 7
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: JVM unit tests
+        working-directory: android/v1.0.4/source
+        run: gradle --no-daemon --stacktrace --console=plain testDebugUnitTest
+
+      - name: Android lint
+        working-directory: android/v1.0.4/source
+        run: gradle --no-daemon --stacktrace --console=plain lintDebug
+
+      - name: Assemble debug APK
+        working-directory: android/v1.0.4/source
+        run: gradle --no-daemon --stacktrace --console=plain assembleDebug
+
+      - name: Verify APK identity
+        working-directory: android/v1.0.4/source
+        run: |
+          set -euo pipefail
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          aapt_bin="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          test -f "$apk"
+          "$aapt_bin" dump badging "$apk" | tee APK_BADGING.txt
+          grep -q "package: name='dev.securemesh.commander'" APK_BADGING.txt
+          grep -q "versionCode='20'" APK_BADGING.txt
+          grep -q "versionName='1.0.4'" APK_BADGING.txt
+          sha256sum "$apk" | tee APK_SHA256.txt
+          ls -lh "$apk"
+
+      - name: Upload APK and matching firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-Android-v1.0.4-OLED-Remote-${{ github.run_number }}
+          path: |
+            android/v1.0.4/source/app/build/outputs/apk/debug/app-debug.apk
+            android/v1.0.4/source/APK_SHA256.txt
+            android/v1.0.4/source/APK_BADGING.txt
+            firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
+            firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Refresh canonical Android source manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android/v1.0.4/source
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('.')
+          rows=[]
+          for p in sorted(root.rglob('*')):
+              if not p.is_file():
+                  continue
+              rel=p.as_posix()
+              if rel == 'PROJECT_MANIFEST.sha256' or rel.startswith('app/build/') or rel.startswith('.gradle/'):
+                  continue
+              if rel in {'APK_SHA256.txt','APK_BADGING.txt'}:
+                  continue
+              rows.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {rel}")
+          Path('PROJECT_MANIFEST.sha256').write_text('\n'.join(rows)+'\n', encoding='utf-8')
+          PY
+          sha256sum -c PROJECT_MANIFEST.sha256 >/dev/null
+
+      - name: Materialize verified source in branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add android/v1.0.4/source firmware/v1.0.4-operator tools/frontend_v1_0_4_gate.py
+          if git diff --cached --quiet; then
+            echo 'Verified UI remote source already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Android v1.0.4: exact OLED mirror remote and frontend audit'
+          git push origin HEAD:android/1.0.4-ui-remote
+
+      - name: Package verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/verified"
+          cd android/v1.0.4/source
+          zip -qr "$RUNNER_TEMP/verified/SecureMesh_Android_v1.0.4_OLED_REMOTE_SOURCE.zip" . -x 'app/build/*' '.gradle/*' 'APK_SHA256.txt' 'APK_BADGING.txt'
+          cd "$GITHUB_WORKSPACE"
+          cp firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino "$RUNNER_TEMP/verified/"
+          cp firmware/v1.0.4-operator/APP_TEST_PANEL_PROTOCOL.md "$RUNNER_TEMP/verified/"
+          sha256sum "$RUNNER_TEMP/verified"/* > "$RUNNER_TEMP/verified/SHA256SUMS.txt"
+
+      - name: Upload verified source
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-v1.0.4-OLED-Remote-source-${{ github.run_number }}
+          path: ${{ runner.temp }}/verified/
+          if-no-files-found: error
+          retention-days: 30
