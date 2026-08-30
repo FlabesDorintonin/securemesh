@@ -8338,10 +8338,25 @@ void uiBack() {
   uiSetScene(UiScene::Home);
 }
 
+uint8_t bleOledSnapshot[BLE_OLED_FRAME_BYTES] {};
+uint32_t bleOledSnapshotId = 0;
+bool bleOledSnapshotValid = false;
+
 void uiEmitStateChanged() {
   uint8_t payload[40];
   const uint16_t length = buildUiStatePayload(payload, sizeof(payload));
   if (length > 0) emitBleEvent(EVT_UI_CHANGED, payload, length);
+}
+
+void uiCommitRemoteAction() {
+  // A remote press must become visible before Android requests the next exact
+  // framebuffer. Drop the short post-connect banner, schedule an immediate UI
+  // redraw, and invalidate any cached multi-chunk OLED snapshot.
+  bleConnectedBannerUntilMs = 0;
+  bleOledSnapshotValid = false;
+  uiState.dirty = true;
+  uiState.nextFrameAtMs = millis();
+  uiEmitStateChanged();
 }
 
 void uiMoveFeatureSelection(UiAction action) {
@@ -8381,7 +8396,7 @@ bool uiHandleRemoteAction(uint8_t rawAction) {
   if (action == UiAction::Home) {
     uiResetNavigation();
     uiSetScene(UiScene::Home);
-    uiEmitStateChanged();
+    uiCommitRemoteAction();
     return true;
   }
 
@@ -8405,7 +8420,7 @@ bool uiHandleRemoteAction(uint8_t rawAction) {
     } else if (action == UiAction::Back) {
       uiSetScene(UiScene::Home);
     }
-    uiEmitStateChanged();
+    uiCommitRemoteAction();
     return true;
   }
 
@@ -8427,24 +8442,19 @@ bool uiHandleRemoteAction(uint8_t rawAction) {
     } else if (action == UiAction::Back) {
       uiBack();
     }
-    uiEmitStateChanged();
+    uiCommitRemoteAction();
     return true;
   }
 
   if (uiState.scene == UiScene::Feature) {
     if (action == UiAction::Back) uiBack();
     else if (action == UiAction::Up || action == UiAction::Down) uiMoveFeatureSelection(action);
-    uiEmitStateChanged();
+    uiCommitRemoteAction();
     return true;
   }
 
   return false;
 }
-
-uint8_t bleOledSnapshot[BLE_OLED_FRAME_BYTES] {};
-uint32_t bleOledSnapshotId = 0;
-bool bleOledSnapshotValid = false;
-
 uint16_t buildUiStatePayload(uint8_t* out, size_t capacity) {
   BinaryWriter w{out, capacity};
   uint8_t flags = 0;
