@@ -3940,6 +3940,11 @@ void processRadioInterrupt() {
   if (!radioIrqFlag) return;
   radioIrqFlag = false;
 
+  // DIO1 can be stale/floating when the SX1268 is absent or under-powered.
+  // Consume that IRQ, but never touch RadioLib while the radio subsystem is
+  // unavailable. BLE/OLED degraded mode must remain independently usable.
+  if (!radioReady) return;
+
   if (radioTransmitting) {
     finishQueuedTransmission();
   } else {
@@ -9433,15 +9438,15 @@ void processUi() {
   // A pending radio IRQ is always handled first. Normal UI also yields while TX
   // is active. A pairing screen may defer for at most a small bounded interval;
   // after that one OLED flush is preferable to leaving the user without the PIN.
-  if (radioIrqFlag) {
+  if (radioReady && radioIrqFlag) {
     uiState.nextFrameAtMs = now + 3;
     return;
   }
-  if (radioTransmitting && !critical) {
+  if (radioReady && radioTransmitting && !critical) {
     uiState.nextFrameAtMs = now + 15;
     return;
   }
-  if (radioTransmitting && critical && uiState.criticalPendingSinceMs != 0 &&
+  if (radioReady && radioTransmitting && critical && uiState.criticalPendingSinceMs != 0 &&
       now - uiState.criticalPendingSinceMs < UI_CRITICAL_MAX_DEFER_MS) {
     uiState.nextFrameAtMs = now + 5;
     return;
