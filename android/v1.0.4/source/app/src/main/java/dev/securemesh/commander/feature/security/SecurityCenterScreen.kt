@@ -73,7 +73,7 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
                     SecurityValue("Текст сообщений", "Зашифрован")
                     SecurityValue("GPS history", "Зашифрована")
                     Text("Для каждого значения используется отдельный GCM IV; AAD привязывает ciphertext к конкретному nodeId/messageId/position record и не позволяет незаметно переставить его между записями.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("При переходе с v0.9.0 старый plaintext GPS-кэш один раз удаляется. Старые сообщения перезаписываются в vault при запуске.", color = SecureMeshColors.Warning, style = MaterialTheme.typography.bodySmall)
+                    Text("При обновлении со старых сборок plaintext GPS-кэш один раз удаляется. Старые сообщения перезаписываются в vault при запуске.", color = SecureMeshColors.Warning, style = MaterialTheme.typography.bodySmall)
                 }
             }
 

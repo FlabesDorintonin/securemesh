@@ -85,6 +85,7 @@ Status:
 | 29 | ClearBleRadar | empty |
 | 30 | GetOperationalHealth | empty |
 | 31 | GetSelfDiagnostics | empty |
+| 38 | GetOledFrameChunk | `chunkIndex u8`, 0..3 |
 
 `StartFieldTest.mode`: `0=Routed`, `1=DirectOnly`.
 
@@ -96,7 +97,7 @@ Field Test limits v1.0.4: `packetCount=1..500`, `intervalMs=250..60000`, `payloa
 - variable-size response принимается только если `actual = header + count × record`;
 - Response обязан совпадать с ожидаемым `requestId + opcode`;
 - fragment transport version и application protocol version являются разными контрактами (`v1` и `v2` соответственно);
-- любое изменение wire layout требует одновременного обновления firmware, Commander, этого документа и `tests/ble_contract_check.py`.
+- любое изменение wire layout требует одновременного обновления firmware, Android/Commander, этого документа и cross-contract gates.
 
 ## 5. Главные response payloads
 
@@ -160,6 +161,18 @@ Payload 43 bytes:
 `version u8, score u8, level u8, flags u16, radioReady u8, cryptoReady u8, bleReady u8, gpsState u8, oledReady u8, freshNeighbors u8, routeCount u8, exactG2Count u8, queueUsed u8, queueCapacity u8, freeHeap u32, largestFreeHeap u32, ackSuccess u32, ackTimeout u32, txErrors u32, radioRecoveries u32, authFails u32`
 
 `gpsState`: `0=UART unavailable, 1=no fresh fix, 2=fresh fix`.
+
+### GetOledFrameChunk (v1.0.4 framebuffer extension)
+
+Команда доступна только если `GetInfo.capabilities` содержит bit15 `OLED_FRAMEBUFFER`. Она читает **реальный 1-bit framebuffer Adafruit_SSD1306 128×64**, а не реконструированное UI-состояние. Четыре последовательных запроса собирают 1024 bytes экрана. `chunkIndex=0` атомарно фиксирует новый snapshot; chunks 1..3 возвращаются из того же кэша и поэтому не рвутся между OLED redraw.
+
+Response header 11 bytes + data:
+
+`snapshotVersion u8 (=1), width u8 (=128), height u8 (=64), snapshotId u32, chunkIndex u8, chunkCount u8 (=4), dataLength u16, data[dataLength]`
+
+Каждый полный chunk содержит 256 bytes. Раскладка совпадает с `Adafruit_SSD1306::getBuffer()`: byte index `x + (y/8)*128`, pixel bit `1 << (y & 7)`. Android обязан собирать только chunks с одинаковым `snapshotId`.
+
+BLE maintenance opcodes 32..37 остаются serial-only и недоступны приложению; opcode 38 является authenticated read-only extension.
 
 ### Operational health event
 

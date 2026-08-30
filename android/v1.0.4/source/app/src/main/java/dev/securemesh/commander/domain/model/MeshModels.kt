@@ -91,6 +91,7 @@ enum class DeviceCapability {
     BLE_RADAR,
     OPERATIONAL_HEALTH,
     SELF_DIAGNOSTICS,
+    OLED_FRAMEBUFFER,
     OTA,
     SENSORS,
 }

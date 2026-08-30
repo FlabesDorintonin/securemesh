@@ -54,7 +54,7 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
             add(MoreDestination("VANGUARD Control", "Manifest, Primary/G2, discovery и Fault Lab", "vanguard", Icons.Rounded.Tune, SecureMeshColors.Cyan))
         }
         if (UiAccessPolicy.canControlDeviceUi(session)) {
-            add(MoreDestination("Экран узла", "Живой UI state и пульт физического OLED", "devicecontrol", Icons.Rounded.Smartphone, SecureMeshColors.Blue))
+            add(MoreDestination("Экран узла", "Пульт и точное зеркало физического OLED", "devicecontrol", Icons.Rounded.Smartphone, SecureMeshColors.Blue))
         }
         if (UiAccessPolicy.canRunFieldTest(session)) {
             add(MoreDestination("Полевой тест", "Проверка реальной связи, RSSI, SNR, PDR и повторов", "fieldtest", Icons.Rounded.Science, SecureMeshColors.Violet))

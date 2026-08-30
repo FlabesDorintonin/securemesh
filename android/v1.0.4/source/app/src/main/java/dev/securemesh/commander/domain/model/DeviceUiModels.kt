@@ -127,3 +127,22 @@ data class DeviceUiState(
     val rawFeature: Int,
     val updatedAtEpochMs: Long,
 )
+
+data class OledFramebufferSnapshot(
+    val snapshotId: Long,
+    val width: Int,
+    val height: Int,
+    val bytes: ByteArray,
+    val updatedAtEpochMs: Long,
+) {
+    init {
+        require(width > 0 && height > 0 && height % 8 == 0) { "invalid OLED dimensions" }
+        require(bytes.size == width * height / 8) { "invalid OLED framebuffer length" }
+    }
+
+    fun pixelOn(x: Int, y: Int): Boolean {
+        if (x !in 0 until width || y !in 0 until height) return false
+        val index = x + (y / 8) * width
+        return bytes[index].toInt() and (1 shl (y and 7)) != 0
+    }
+}

@@ -23,7 +23,7 @@ enum class BleOpcode(val wire: Int) {
     GET_ROUTING_DIAGNOSTICS(19), INJECT_LINK_FAILURE(20), CLEAR_DYNAMIC_ROUTES(21),
     SET_LAB_LINK_POLICY(22), GET_LAB_LINK_POLICIES(23), GET_POSITIONS(24), RAISE_SOS(25),
     ACK_SOS(26), SEND_COMMAND_NOTICE(27), GET_BLE_RADAR(28), CLEAR_BLE_RADAR(29),
-    GET_OPERATIONAL_HEALTH(30), GET_SELF_DIAGNOSTICS(31);
+    GET_OPERATIONAL_HEALTH(30), GET_SELF_DIAGNOSTICS(31), GET_OLED_FRAME_CHUNK(38);
 
     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
 }
@@ -121,6 +121,7 @@ sealed interface SecureMeshBleCommand {
     data object ClearBleRadar : SecureMeshBleCommand { override val opcode = BleOpcode.CLEAR_BLE_RADAR }
     data object GetOperationalHealth : SecureMeshBleCommand { override val opcode = BleOpcode.GET_OPERATIONAL_HEALTH }
     data object GetSelfDiagnostics : SecureMeshBleCommand { override val opcode = BleOpcode.GET_SELF_DIAGNOSTICS }
+    data class GetOledFrameChunk(val chunkIndex: Int) : SecureMeshBleCommand { override val opcode = BleOpcode.GET_OLED_FRAME_CHUNK }
 }
 
 data class BleInfoPayload(
@@ -240,6 +241,16 @@ data class BleFieldTestStatusPayload(
     val endToEndPdr: Double,
     val averageFirstHopRssiDbm: Double,
     val averageFirstHopSnrDb: Double,
+)
+
+data class BleOledFrameChunkPayload(
+    val version: Int,
+    val width: Int,
+    val height: Int,
+    val snapshotId: Long,
+    val chunkIndex: Int,
+    val chunkCount: Int,
+    val data: ByteArray,
 )
 
 data class BleUiStatePayload(
@@ -560,6 +571,24 @@ class SecureMeshBleProtocolV02Codec : SecureMeshBleCodec {
         expected: BleOpcode = BleOpcode.GET_UI_STATE,
     ): Result<BleUiStatePayload> = parseOk(frame, expected) { bytes -> parseUiStatePayload(bytes) }
 
+    fun parseOledFrameChunk(frame: SecureMeshBleFrame.Response): Result<BleOledFrameChunkPayload> =
+        parseOk(frame, BleOpcode.GET_OLED_FRAME_CHUNK) { bytes ->
+            require(bytes.size >= 11) { "OLED frame chunk too short" }
+            val r = Reader(bytes)
+            val version = r.u8()
+            require(version == 1) { "unsupported OLED frame version $version" }
+            val width = r.u8()
+            val height = r.u8()
+            val snapshotId = r.u32()
+            val chunkIndex = r.u8()
+            val chunkCount = r.u8()
+            val dataLength = r.u16()
+            require(width == 128 && height == 64) { "unexpected OLED dimensions ${width}x$height" }
+            require(chunkCount == 4 && chunkIndex in 0 until chunkCount) { "invalid OLED chunk index/count" }
+            require(dataLength in 1..256 && r.remaining == dataLength) { "OLED chunk length mismatch" }
+            BleOledFrameChunkPayload(version, width, height, snapshotId, chunkIndex, chunkCount, r.bytes(dataLength))
+        }
+
     private fun parseUiStatePayload(bytes: ByteArray): BleUiStatePayload {
         requireSize(bytes, 29)
         val r = Reader(bytes)
@@ -700,6 +729,11 @@ class SecureMeshBleProtocolV02Codec : SecureMeshBleCodec {
         SecureMeshBleCommand.ClearDynamicRoutes, SecureMeshBleCommand.GetLabLinkPolicies, SecureMeshBleCommand.GetPositions,
         SecureMeshBleCommand.GetBleRadar, SecureMeshBleCommand.ClearBleRadar, SecureMeshBleCommand.GetOperationalHealth,
         SecureMeshBleCommand.GetSelfDiagnostics -> byteArrayOf()
+
+        is SecureMeshBleCommand.GetOledFrameChunk -> {
+            require(command.chunkIndex in 0..3) { "OLED chunk index must be 0..3" }
+            Writer(1).apply { u8(command.chunkIndex) }.toByteArray()
+        }
 
         is SecureMeshBleCommand.SendMessage -> {
             require(command.bytes.size in 1..70) { "SEND_MESSAGE length must be 1..70" }

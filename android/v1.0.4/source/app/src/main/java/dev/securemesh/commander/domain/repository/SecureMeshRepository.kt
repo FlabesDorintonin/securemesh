@@ -18,6 +18,7 @@ interface SecureMeshRepository {
     val activeSos: StateFlow<SosAlert?>
     val bleDiagnostics: StateFlow<BleDiagnostics?>
     val deviceUiState: StateFlow<DeviceUiState?>
+    val oledFramebuffer: StateFlow<OledFramebufferSnapshot?>
     val knownNodeIds: StateFlow<List<NodeId>>
     val networkManifest: StateFlow<VanguardManifest?>
     val vanguardDiagnostics: StateFlow<VanguardDiagnostics?>
@@ -50,6 +51,7 @@ interface SecureMeshRepository {
     suspend fun sendCommandNotice(destination: NodeId, kind: CommandNoticeKind, target: NodePosition? = null): Result<String>
     suspend fun refreshDeviceUiState(): Result<DeviceUiState>
     suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState>
+    suspend fun refreshOledFramebuffer(): Result<OledFramebufferSnapshot>
     suspend fun refreshVanguardState(): Result<Unit>
     suspend fun setManifest(epoch: Long, nodes: List<NodeId>): Result<VanguardManifest>
     suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean = true): Result<VanguardDiagnostics>

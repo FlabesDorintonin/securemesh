@@ -92,6 +92,8 @@ class BleTransport(
     override val bleDiagnostics = _bleDiagnostics.asStateFlow()
     private val _deviceUiState = MutableStateFlow<DeviceUiState?>(null)
     override val deviceUiState = _deviceUiState.asStateFlow()
+    private val _oledFramebuffer = MutableStateFlow<OledFramebufferSnapshot?>(null)
+    override val oledFramebuffer = _oledFramebuffer.asStateFlow()
     private val _knownNodeIds = MutableStateFlow<List<NodeId>>(emptyList())
     override val knownNodeIds = _knownNodeIds.asStateFlow()
     private val _networkManifest = MutableStateFlow<VanguardManifest?>(null)
@@ -362,6 +364,42 @@ class BleTransport(
         val payload = codec.parseUiState(response, BleOpcode.UI_ACTION).getOrThrow()
         require(payload.localNodeId == session.localNodeIdentity.nodeId) { "UI_ACTION local node mismatch" }
         SecureMeshBleV02DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
+    }
+
+    override suspend fun refreshOledFramebuffer(): Result<OledFramebufferSnapshot> = runCatching {
+        val session = requireReadySession()
+        require(session.supports(DeviceCapability.OLED_FRAMEBUFFER)) { "Firmware does not advertise OLED_FRAMEBUFFER capability" }
+
+        val chunks = ArrayList<ByteArray>(4)
+        var snapshotId: Long? = null
+        var width = 0
+        var height = 0
+        var expectedCount = 0
+        for (index in 0..3) {
+            val response = command(SecureMeshBleCommand.GetOledFrameChunk(index)).getOrThrow()
+            val chunk = codec.parseOledFrameChunk(response).getOrThrow()
+            if (index == 0) {
+                snapshotId = chunk.snapshotId
+                width = chunk.width
+                height = chunk.height
+                expectedCount = chunk.chunkCount
+                require(expectedCount == 4) { "Unexpected OLED chunk count $expectedCount" }
+            } else {
+                require(chunk.snapshotId == snapshotId) { "OLED snapshot changed while reading" }
+                require(chunk.width == width && chunk.height == height && chunk.chunkCount == expectedCount) { "OLED chunk metadata mismatch" }
+            }
+            require(chunk.chunkIndex == index) { "OLED chunk order mismatch" }
+            chunks += chunk.data
+        }
+        val frameBytes = chunks.fold(ByteArray(0)) { acc, bytes -> acc + bytes }
+        require(frameBytes.size == width * height / 8) { "OLED framebuffer length mismatch: ${frameBytes.size}" }
+        OledFramebufferSnapshot(
+            snapshotId = requireNotNull(snapshotId),
+            width = width,
+            height = height,
+            bytes = frameBytes,
+            updatedAtEpochMs = now(),
+        ).also { _oledFramebuffer.value = it }
     }
 
     override suspend fun refreshVanguardState(): Result<Unit> = runCatching {
@@ -1443,6 +1481,7 @@ class BleTransport(
 
     private fun clearFirmwareExtensionState() {
         _deviceUiState.value = null
+        _oledFramebuffer.value = null
         _knownNodeIds.value = emptyList()
         _networkManifest.value = null
         _vanguardDiagnostics.value = null

@@ -35,10 +35,11 @@ object SecureMeshBleV02DomainMapping {
             add(DeviceCapability.SELF_DIAGNOSTICS)
             add(DeviceCapability.NETWORK_DIAGNOSTICS)
         }
+        if (mask and (1L shl 15) != 0L) add(DeviceCapability.OLED_FRAMEBUFFER)
     }
 
     /**
-     * v0.6 permission bits are development placeholders. This projection only controls what Android
+     * Legacy development permission bits are UI projection hints. This projection only controls what Android
      * offers in UI; firmware remains the authorization boundary for every command.
      */
     fun permissions(mask: Long): Set<SessionPermission> = buildSet {

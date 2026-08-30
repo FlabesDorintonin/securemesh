@@ -49,13 +49,13 @@ fun VanguardControlScreen(viewModel: VanguardControlViewModel) {
             ) {
                 Column {
                     Text("VANGUARD CONTROL", color = SecureMeshColors.CyanHot, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
-                    Text("Управление SecureMesh v0.8.2", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                    Text("Управление SecureMesh v1.0.4", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                 }
                 FilledTonalIconButton(onClick = viewModel::refresh, enabled = !state.busy) { Icon(Icons.Rounded.Refresh, "Обновить") }
             }
 
             if (!state.vanguardAvailable) {
-                EmptyState("VANGUARD недоступен", "Подключённый узел не объявил capability VANGUARD. Для этой панели нужна прошивка SecureMesh v0.8.2 3RADIO_BASE.")
+                EmptyState("VANGUARD недоступен", "Подключённый узел не объявил capability VANGUARD. Для этой панели нужна прошивка SecureMesh v1.0.4 с capability VANGUARD.")
                 return@Column
             }
 

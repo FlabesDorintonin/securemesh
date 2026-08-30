@@ -4051,12 +4051,13 @@ constexpr uint32_t CAP_COMMAND_MAP    = 1UL << 11;
 constexpr uint32_t CAP_BLE_RADAR      = 1UL << 12;
 constexpr uint32_t CAP_OPERATIONAL_HEALTH = 1UL << 13;
 constexpr uint32_t CAP_SELF_DIAGNOSTICS  = 1UL << 14;
+constexpr uint32_t CAP_OLED_FRAMEBUFFER = 1UL << 15;
 constexpr uint32_t LOCAL_CAPABILITIES =
   CAP_MESSAGING | CAP_STATIC_ROUTING | CAP_RELAY |
   CAP_FIELD_TEST | CAP_BLE_CONTROL | CAP_UI_OS |
   CAP_VANGUARD | CAP_MANIFEST | CAP_FAULT_LAB |
   CAP_GPS | CAP_SOS | CAP_COMMAND_MAP | CAP_BLE_RADAR |
-  CAP_OPERATIONAL_HEALTH | CAP_SELF_DIAGNOSTICS;
+  CAP_OPERATIONAL_HEALTH | CAP_SELF_DIAGNOSTICS | CAP_OLED_FRAMEBUFFER;
 
 constexpr uint8_t DEVICE_ROLE_DEVELOPMENT = 1;
 constexpr uint32_t DEV_PERMISSION_READ       = 1UL << 0;
@@ -4107,7 +4108,8 @@ enum class CommandType : uint8_t {
   BleBonds = 34,
   BleBondsClear = 35,
   Broadcast = 36,
-  Reboot = 37
+  Reboot = 37,
+  GetOledFrameChunk = 38
 };
 
 enum class CommandSource : uint8_t {
@@ -4146,6 +4148,7 @@ struct CommandRequest {
   bool flag = false;
   uint8_t dataLength = 0;
   uint8_t uiAction = 0;
+  uint8_t oledChunkIndex = 0;
   uint8_t data[180] {};
 };
 
@@ -4168,6 +4171,14 @@ constexpr size_t BLE_ROUTING_DIAG_RECORD_BYTES = 56;
 constexpr size_t BLE_LAB_POLICY_RECORD_BYTES = 15;
 constexpr size_t BLE_RADAR_HEADER_BYTES = 12;
 constexpr size_t BLE_RADAR_RECORD_BYTES = 30;
+constexpr size_t BLE_OLED_FRAME_BYTES = (OLED_WIDTH * OLED_HEIGHT) / 8;
+constexpr uint16_t BLE_OLED_FRAME_CHUNK_BYTES = 256;
+constexpr uint8_t BLE_OLED_FRAME_CHUNK_COUNT = static_cast<uint8_t>((BLE_OLED_FRAME_BYTES + BLE_OLED_FRAME_CHUNK_BYTES - 1) / BLE_OLED_FRAME_CHUNK_BYTES);
+constexpr size_t BLE_OLED_FRAME_HEADER_BYTES = 11;
+
+static_assert(BLE_OLED_FRAME_BYTES == 1024, "OLED framebuffer must be 128x64 monochrome");
+static_assert(BLE_OLED_FRAME_HEADER_BYTES + BLE_OLED_FRAME_CHUNK_BYTES <= COMMAND_RESULT_MAX_PAYLOAD,
+              "OLED framebuffer chunk no longer fits BLE command result");
 
 static_assert(MAX_APP_PAYLOAD <= UINT8_MAX,
               "application payload length field is uint8_t");
@@ -4238,6 +4249,7 @@ CommandStatus mapQueueResult(QueueMessageResult result) {
 uint16_t buildInfoPayload(uint8_t* out, size_t capacity);
 uint16_t buildStatusPayload(uint8_t* out, size_t capacity);
 uint16_t buildUiStatePayload(uint8_t* out, size_t capacity);
+uint16_t buildOledFrameChunkPayload(uint8_t chunkIndex, uint8_t* out, size_t capacity);
 bool uiHandleRemoteAction(uint8_t rawAction);
 uint16_t buildNeighborsPayload(uint8_t* out, size_t capacity);
 uint16_t buildRoutesPayload(uint8_t* out, size_t capacity);
@@ -5125,6 +5137,11 @@ bool parseBleCommandPacket(const uint8_t* packet, uint16_t length, CommandReques
     case CommandType::UiAction:
       if (payloadLength != 1) return false;
       request.uiAction = payload[0];
+      return true;
+
+    case CommandType::GetOledFrameChunk:
+      if (payloadLength != 1 || payload[0] >= BLE_OLED_FRAME_CHUNK_COUNT) return false;
+      request.oledChunkIndex = payload[0];
       return true;
 
     case CommandType::SendMessage:
@@ -6453,7 +6470,8 @@ void dispatchCommand(const CommandRequest& request, CommandResult& result) {
       return;
     }
     // Opcodes 30/31 are v1.0 read-only operational intelligence commands.
-    // Keep privileged BLE maintenance commands (32+) unavailable over the app API.
+    // Privileged maintenance opcodes 32..37 stay serial-only; opcode 38 is the
+    // authenticated read-only OLED framebuffer extension used by the phone remote.
   }
 
   switch (request.type) {
@@ -6576,6 +6594,15 @@ void dispatchCommand(const CommandRequest& request, CommandResult& result) {
         return;
       }
       result.payloadLength = buildUiStatePayload(result.payload, sizeof(result.payload));
+      if (result.payloadLength == 0) result.status = CommandStatus::InternalError;
+      return;
+
+    case CommandType::GetOledFrameChunk:
+      if (!oledReady) {
+        result.status = CommandStatus::NotSupported;
+        return;
+      }
+      result.payloadLength = buildOledFrameChunkPayload(request.oledChunkIndex, result.payload, sizeof(result.payload));
       if (result.payloadLength == 0) result.status = CommandStatus::InternalError;
       return;
 
@@ -8406,6 +8433,10 @@ bool uiHandleRemoteAction(uint8_t rawAction) {
   return false;
 }
 
+uint8_t bleOledSnapshot[BLE_OLED_FRAME_BYTES] {};
+uint32_t bleOledSnapshotId = 0;
+bool bleOledSnapshotValid = false;
+
 uint16_t buildUiStatePayload(uint8_t* out, size_t capacity) {
   BinaryWriter w{out, capacity};
   uint8_t flags = 0;
@@ -8437,6 +8468,36 @@ uint16_t buildUiStatePayload(uint8_t* out, size_t capacity) {
   w.putU32(localNodeId);
   w.putU32(fieldTest.testId);
   w.putU32(fieldTest.targetNodeId);
+  return w.ok ? static_cast<uint16_t>(w.length) : 0;
+}
+
+uint16_t buildOledFrameChunkPayload(uint8_t chunkIndex, uint8_t* out, size_t capacity) {
+  if (!oledReady || out == nullptr || chunkIndex >= BLE_OLED_FRAME_CHUNK_COUNT) return 0;
+  const uint8_t* live = display.getBuffer();
+  if (live == nullptr) return 0;
+
+  // Chunk 0 atomically starts a new logical snapshot. Remaining chunks are served
+  // from the cached 1024-byte buffer so a redraw between GATT requests cannot tear
+  // the image seen by Android.
+  if (chunkIndex == 0 || !bleOledSnapshotValid) {
+    memcpy(bleOledSnapshot, live, BLE_OLED_FRAME_BYTES);
+    bleOledSnapshotId = (bleOledSnapshotId == UINT32_MAX) ? 1U : (bleOledSnapshotId + 1U);
+    if (bleOledSnapshotId == 0) bleOledSnapshotId = 1U;
+    bleOledSnapshotValid = true;
+  }
+
+  const size_t offset = static_cast<size_t>(chunkIndex) * BLE_OLED_FRAME_CHUNK_BYTES;
+  const size_t remaining = BLE_OLED_FRAME_BYTES - offset;
+  const uint16_t dataLength = static_cast<uint16_t>(min(remaining, static_cast<size_t>(BLE_OLED_FRAME_CHUNK_BYTES)));
+  BinaryWriter w{out, capacity};
+  w.putU8(1); // snapshot payload version
+  w.putU8(static_cast<uint8_t>(OLED_WIDTH));
+  w.putU8(static_cast<uint8_t>(OLED_HEIGHT));
+  w.putU32(bleOledSnapshotId);
+  w.putU8(chunkIndex);
+  w.putU8(BLE_OLED_FRAME_CHUNK_COUNT);
+  w.putU16(dataLength);
+  w.putBytes(bleOledSnapshot + offset, dataLength);
   return w.ok ? static_cast<uint16_t>(w.length) : 0;
 }
 

@@ -115,7 +115,7 @@ abstract class SecureMeshDatabase : RoomDatabase() {
         }
 
         /**
-         * v0.9.0 stored GPS history as plaintext doubles. For the hardened vault we deliberately
+         * Legacy releases stored GPS history as plaintext doubles. For the hardened vault we deliberately
          * discard that cache once and recreate the table with only encrypted position payloads.
          * Live mesh positions are unaffected; future history is encrypted before Room sees it.
          */

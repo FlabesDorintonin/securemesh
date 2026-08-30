@@ -424,7 +424,7 @@ fun ProtocolUnavailableScreen(
             StatusChip("BLE подключён", SecureMeshColors.Warning)
             Text("Узел не подтвердил SecureMesh", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
             Text(
-                "GATT-соединение установлено, но защищённый SecureMesh Protocol v0.2 не прошёл проверку service/characteristics, версии или INFO handshake.",
+                "GATT-соединение установлено, но защищённый BLE protocol v0.2 не прошёл проверку service/characteristics, версии или INFO handshake.",
                 color = SecureMeshColors.TextSecondary,
             )
             TechnicalCard("Соединение") {

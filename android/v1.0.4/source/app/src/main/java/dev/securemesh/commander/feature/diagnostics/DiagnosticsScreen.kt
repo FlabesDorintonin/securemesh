@@ -48,7 +48,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel) {
         if (state.mode == TransportMode.BLE) {
             item {
                 val ble = state.ble
-                TechnicalCard("SecureMesh BLE v0.2") {
+                TechnicalCard("BLE protocol v0.2") {
                     DiagnosticRow("Node ID", ble?.nodeId ?: "Нет данных")
                     DiagnosticRow("BLE address", ble?.bleAddress ?: "Нет данных")
                     DiagnosticRow("GATT state", ble?.gattState ?: "Нет данных")

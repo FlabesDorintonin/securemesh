@@ -195,7 +195,7 @@ class MockTransport(
                 updateMessage(id) { it.copy(progressState = MessageDeliveryState.FAILED, finalState = MessageFinalState.FAILED, failureReason = "Hop ACK timeout") }
             } else if (_demoProfile.value == DemoProfile.CURRENT_FIRMWARE_V05) {
                 updateMessage(id) { it.copy(progressState = MessageDeliveryState.FINAL_CONFIRMATION_PENDING, finalState = MessageStateMachine.finalStateAfterHopAck()) }
-                addEvent(EventCategory.MESSAGES, "MESSAGE #$id E2E UNKNOWN", "All observed hop ACKs succeeded; v0.5 has no end-to-end delivery confirmation", destination)
+                addEvent(EventCategory.MESSAGES, "MESSAGE #$id E2E UNKNOWN", "All observed hop ACKs succeeded; this demo profile has no end-to-end delivery confirmation", destination)
             } else {
                 delay(180)
                 updateMessage(id) { it.copy(progressState = MessageDeliveryState.DELIVERED, finalState = MessageFinalState.DELIVERED, deliveredAtEpochMs = now()) }
@@ -284,7 +284,7 @@ class MockTransport(
 
     private fun seedNetwork(profile: DemoProfile) {
         val t = now()
-        fun identity(id: String, name: String, role: NodeRole, caps: Set<DeviceCapability>) = NodeIdentity(id, name, role, if (profile == DemoProfile.CURRENT_FIRMWARE_V05) "0.5" else "0.9-demo", 1, caps)
+        fun identity(id: String, name: String, role: NodeRole, caps: Set<DeviceCapability>) = NodeIdentity(id, name, role, if (profile == DemoProfile.CURRENT_FIRMWARE_V05) "demo-current" else "demo-future", 1, caps)
         val baseCaps = setOf(DeviceCapability.MESSAGING, DeviceCapability.FIELD_TEST, DeviceCapability.NETWORK_DIAGNOSTICS)
         val futureCaps = if (profile == DemoProfile.FUTURE_DEMO) setOf(DeviceCapability.GPS, DeviceCapability.SOS, DeviceCapability.ROUTING) else setOf(DeviceCapability.ROUTING)
         fun pos(id: String, lat: Double, lon: Double) = if (profile == DemoProfile.FUTURE_DEMO) NodePosition(id, lat, lon, t, 8, 1.1, .2, true) else null
@@ -316,7 +316,7 @@ class MockTransport(
         if (emit) addEvent(
             EventCategory.ROUTING,
             "ROUTES RESTORED",
-            if (future) "Future demo route table includes dynamic routing" else "DIRECT/STATIC v0.5-compatible route table",
+            if (future) "Future demo route table includes dynamic routing" else "DIRECT/STATIC demo route table",
         )
     }
 

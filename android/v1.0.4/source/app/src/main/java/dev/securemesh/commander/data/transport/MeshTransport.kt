@@ -12,6 +12,9 @@ private object NoBleDiagnostics {
 private object NoDeviceUiState {
     val flow: StateFlow<DeviceUiState?> = MutableStateFlow<DeviceUiState?>(null).asStateFlow()
 }
+private object NoOledFramebuffer {
+    val flow: StateFlow<OledFramebufferSnapshot?> = MutableStateFlow<OledFramebufferSnapshot?>(null).asStateFlow()
+}
 private object NoKnownNodes { val flow: StateFlow<List<NodeId>> = MutableStateFlow<List<NodeId>>(emptyList()).asStateFlow() }
 private object NoManifest { val flow: StateFlow<VanguardManifest?> = MutableStateFlow<VanguardManifest?>(null).asStateFlow() }
 private object NoVanguardDiagnostics { val flow: StateFlow<VanguardDiagnostics?> = MutableStateFlow<VanguardDiagnostics?>(null).asStateFlow() }
@@ -32,6 +35,7 @@ interface MeshTransport {
     val activeSos: StateFlow<SosAlert?>
     val bleDiagnostics: StateFlow<BleDiagnostics?> get() = NoBleDiagnostics.flow
     val deviceUiState: StateFlow<DeviceUiState?> get() = NoDeviceUiState.flow
+    val oledFramebuffer: StateFlow<OledFramebufferSnapshot?> get() = NoOledFramebuffer.flow
     val knownNodeIds: StateFlow<List<NodeId>> get() = NoKnownNodes.flow
     val networkManifest: StateFlow<VanguardManifest?> get() = NoManifest.flow
     val vanguardDiagnostics: StateFlow<VanguardDiagnostics?> get() = NoVanguardDiagnostics.flow
@@ -56,6 +60,8 @@ interface MeshTransport {
         Result.failure(UnsupportedOperationException("Device UI OS is not supported by this transport"))
     suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState> =
         Result.failure(UnsupportedOperationException("Device UI OS is not supported by this transport"))
+    suspend fun refreshOledFramebuffer(): Result<OledFramebufferSnapshot> =
+        Result.failure(UnsupportedOperationException("Exact OLED framebuffer is not supported by this transport"))
     suspend fun refreshVanguardState(): Result<Unit> = Result.failure(UnsupportedOperationException("VANGUARD is not supported by this transport"))
     suspend fun setManifest(epoch: Long, nodes: List<NodeId>): Result<VanguardManifest> = Result.failure(UnsupportedOperationException("Manifest is not supported"))
     suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean = true): Result<VanguardDiagnostics> = Result.failure(UnsupportedOperationException("Dynamic routing is not supported"))

@@ -108,7 +108,7 @@ fun localizedTechnicalText(text: String?): String {
         .replace(" QUEUED", " · в очереди", ignoreCase = true)
         .replace("Future demo end-to-end confirmation", "Демо: сквозное подтверждение доставки", ignoreCase = true)
         .replace(
-            "All observed hop ACKs succeeded; v0.5 has no end-to-end delivery confirmation",
+            "All observed hop ACKs succeeded; this demo profile has no end-to-end delivery confirmation",
             "Все hop-ACK получены; обычного сквозного подтверждения доставки в текущей прошивке нет",
             ignoreCase = true,
         )

@@ -21,7 +21,7 @@ EXPECTED_COMMANDS = {
     'CLEAR_DYNAMIC_ROUTES': 21, 'SET_LAB_LINK_POLICY': 22, 'GET_LAB_LINK_POLICIES': 23,
     'GET_POSITIONS': 24, 'RAISE_SOS': 25, 'ACK_SOS': 26, 'SEND_COMMAND_NOTICE': 27,
     'GET_BLE_RADAR': 28, 'CLEAR_BLE_RADAR': 29, 'GET_OPERATIONAL_HEALTH': 30,
-    'GET_SELF_DIAGNOSTICS': 31,
+    'GET_SELF_DIAGNOSTICS': 31, 'GET_OLED_FRAME_CHUNK': 38,
 }
 EXPECTED_EVENTS = {
     'NODE_DISCOVERED': 1, 'NODE_STALE': 2, 'MESSAGE_QUEUED': 3, 'HOP_ACK': 4, 'RETRY': 5,
@@ -50,6 +50,7 @@ EXPECTED_CAP_BITS = {
     'MESSAGING': 0, 'STATIC_ROUTING': 1, 'RELAY': 2, 'FIELD_TEST': 3, 'BLE_CONTROL': 4,
     'UI_OS': 5, 'VANGUARD': 6, 'MANIFEST': 7, 'FAULT_LAB': 8, 'GPS': 9, 'SOS': 10,
     'COMMAND_MAP': 11, 'BLE_RADAR': 12, 'OPERATIONAL_HEALTH': 13, 'SELF_DIAGNOSTICS': 14,
+    'OLED_FRAMEBUFFER': 15,
 }
 
 failures: list[str] = []
@@ -121,13 +122,13 @@ def main() -> int:
     mapping = ANDROID_MAPPING.read_text(encoding='utf-8')
 
     fw_all_commands = parse_cpp_enum(enum_block(fw, r'enum class\s+CommandType\s*:\s*uint8_t'))
-    fw_commands = {name: wire for name, wire in fw_all_commands.items() if wire <= 31}
+    fw_commands = {name: wire for name, wire in fw_all_commands.items() if wire <= 31 or wire == 38}
     android_commands = parse_kotlin_wire_enum(codec, 'BleOpcode')
     ok('Firmware BLE application command map equals canonical v1.0.4', fw_commands == EXPECTED_COMMANDS, repr(fw_commands))
     ok('Android command map equals canonical v1.0.4', android_commands == EXPECTED_COMMANDS, repr(android_commands))
     ok('Firmware and Android BLE application command maps are identical', fw_commands == android_commands)
-    maintenance = {name: wire for name, wire in fw_all_commands.items() if wire >= 32}
-    ok('Firmware maintenance opcodes 32+ remain outside Android app API', maintenance == {'BLE_STATUS': 32, 'BLE_ADVERTISE': 33, 'BLE_BONDS': 34, 'BLE_BONDS_CLEAR': 35, 'BROADCAST': 36, 'REBOOT': 37} and 'rawCommand >= static_cast<uint8_t>(CommandType::BleStatus)' in fw and 'result.status = CommandStatus::NotSupported' in fw, repr(maintenance))
+    maintenance = {name: wire for name, wire in fw_all_commands.items() if 32 <= wire <= 37}
+    ok('Firmware maintenance opcodes 32..37 remain outside Android app API', maintenance == {'BLE_STATUS': 32, 'BLE_ADVERTISE': 33, 'BLE_BONDS': 34, 'BLE_BONDS_CLEAR': 35, 'BROADCAST': 36, 'REBOOT': 37} and 'rawCommand >= static_cast<uint8_t>(CommandType::BleStatus)' in fw and 'result.status = CommandStatus::NotSupported' in fw, repr(maintenance))
 
     fw_events = parse_cpp_enum(enum_block(fw, r'enum\s+BleEventType\s*:\s*uint8_t'), 'EVT_')
     android_events = parse_kotlin_wire_enum(codec, 'BleEventType')
@@ -171,6 +172,9 @@ def main() -> int:
     ok('Android operational health parser expects 17', 'BleOpcode.GET_OPERATIONAL_HEALTH, 17' in codec)
     ok('Android self diagnostics parser expects 43', 'BleOpcode.GET_SELF_DIAGNOSTICS, 43' in codec)
     ok('Android radar parser uses 12/30 constants', 'BLE_RADAR_HEADER_SIZE = 12' in codec and 'BLE_RADAR_RECORD_SIZE = 30' in codec)
+    ok('Firmware OLED framebuffer is 1024 bytes', 'BLE_OLED_FRAME_BYTES == 1024' in fw)
+    ok('Firmware OLED chunk payload fits command result', 'BLE_OLED_FRAME_CHUNK_BYTES = 256' in fw and 'BLE_OLED_FRAME_HEADER_BYTES = 11' in fw)
+    ok('Android parses OLED framebuffer chunk', 'parseOledFrameChunk' in codec and 'GET_OLED_FRAME_CHUNK(38)' in codec)
 
     # Capability bits must remain stable. Command Map is intentionally projected onto messaging UI.
     for cap, bit in EXPECTED_CAP_BITS.items():
