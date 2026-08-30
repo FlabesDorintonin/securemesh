@@ -1,0 +1,194 @@
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/database/SecureMeshDatabase.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/database/SecureMeshDatabase.kt
+index cb79003..5bdc6b2 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/database/SecureMeshDatabase.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/database/SecureMeshDatabase.kt
+@@ -115,7 +115,7 @@ abstract class SecureMeshDatabase : RoomDatabase() {
+         }
+ 
+         /**
+-         * v0.9.0 stored GPS history as plaintext doubles. For the hardened vault we deliberately
++         * Legacy releases stored GPS history as plaintext doubles. For the hardened vault we deliberately
+          * discard that cache once and recreate the table with only encrypted position payloads.
+          * Live mesh positions are unaffected; future history is encrypted before Room sees it.
+          */
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/ui/RussianLabels.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/ui/RussianLabels.kt
+index bbb5ceb..2c148d7 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/ui/RussianLabels.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/ui/RussianLabels.kt
+@@ -108,7 +108,7 @@ fun localizedTechnicalText(text: String?): String {
+         .replace(" QUEUED", " · в очереди", ignoreCase = true)
+         .replace("Future demo end-to-end confirmation", "Демо: сквозное подтверждение доставки", ignoreCase = true)
+         .replace(
+-            "All observed hop ACKs succeeded; v0.5 has no end-to-end delivery confirmation",
++            "All observed hop ACKs succeeded; this demo profile has no end-to-end delivery confirmation",
+             "Все hop-ACK получены; обычного сквозного подтверждения доставки в текущей прошивке нет",
+             ignoreCase = true,
+         )
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleDomainMapping.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleDomainMapping.kt
+index 0d8bd52..81b4e16 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleDomainMapping.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleDomainMapping.kt
+@@ -35,10 +35,11 @@ object SecureMeshBleV02DomainMapping {
+             add(DeviceCapability.SELF_DIAGNOSTICS)
+             add(DeviceCapability.NETWORK_DIAGNOSTICS)
+         }
++        if (mask and (1L shl 15) != 0L) add(DeviceCapability.OLED_FRAMEBUFFER)
+     }
+ 
+     /**
+-     * v0.6 permission bits are development placeholders. This projection only controls what Android
++     * Legacy development permission bits are UI projection hints. This projection only controls what Android
+      * offers in UI; firmware remains the authorization boundary for every command.
+      */
+     fun permissions(mask: Long): Set<SessionPermission> = buildSet {
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt
+index 9986799..f4cb3c1 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt
+@@ -92,6 +92,8 @@ class BleTransport(
+     override val bleDiagnostics = _bleDiagnostics.asStateFlow()
+     private val _deviceUiState = MutableStateFlow<DeviceUiState?>(null)
+     override val deviceUiState = _deviceUiState.asStateFlow()
++    private val _oledFramebuffer = MutableStateFlow<OledFramebufferSnapshot?>(null)
++    override val oledFramebuffer = _oledFramebuffer.asStateFlow()
+     private val _knownNodeIds = MutableStateFlow<List<NodeId>>(emptyList())
+     override val knownNodeIds = _knownNodeIds.asStateFlow()
+     private val _networkManifest = MutableStateFlow<VanguardManifest?>(null)
+@@ -364,6 +366,42 @@ class BleTransport(
+         SecureMeshBleV02DomainMapping.deviceUiState(payload, now()).also { _deviceUiState.value = it }
+     }
+ 
++    override suspend fun refreshOledFramebuffer(): Result<OledFramebufferSnapshot> = runCatching {
++        val session = requireReadySession()
++        require(session.supports(DeviceCapability.OLED_FRAMEBUFFER)) { "Firmware does not advertise OLED_FRAMEBUFFER capability" }
++
++        val chunks = ArrayList<ByteArray>(4)
++        var snapshotId: Long? = null
++        var width = 0
++        var height = 0
++        var expectedCount = 0
++        for (index in 0..3) {
++            val response = command(SecureMeshBleCommand.GetOledFrameChunk(index)).getOrThrow()
++            val chunk = codec.parseOledFrameChunk(response).getOrThrow()
++            if (index == 0) {
++                snapshotId = chunk.snapshotId
++                width = chunk.width
++                height = chunk.height
++                expectedCount = chunk.chunkCount
++                require(expectedCount == 4) { "Unexpected OLED chunk count $expectedCount" }
++            } else {
++                require(chunk.snapshotId == snapshotId) { "OLED snapshot changed while reading" }
++                require(chunk.width == width && chunk.height == height && chunk.chunkCount == expectedCount) { "OLED chunk metadata mismatch" }
++            }
++            require(chunk.chunkIndex == index) { "OLED chunk order mismatch" }
++            chunks += chunk.data
++        }
++        val frameBytes = chunks.fold(ByteArray(0)) { acc, bytes -> acc + bytes }
++        require(frameBytes.size == width * height / 8) { "OLED framebuffer length mismatch: ${frameBytes.size}" }
++        OledFramebufferSnapshot(
++            snapshotId = requireNotNull(snapshotId),
++            width = width,
++            height = height,
++            bytes = frameBytes,
++            updatedAtEpochMs = now(),
++        ).also { _oledFramebuffer.value = it }
++    }
++
+     override suspend fun refreshVanguardState(): Result<Unit> = runCatching {
+         requireReadySession()
+         syncMutex.withLock {
+@@ -1443,6 +1481,7 @@ class BleTransport(
+ 
+     private fun clearFirmwareExtensionState() {
+         _deviceUiState.value = null
++        _oledFramebuffer.value = null
+         _knownNodeIds.value = emptyList()
+         _networkManifest.value = null
+         _vanguardDiagnostics.value = null
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt
+index ed38de8..1492ac8 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/SecureMeshBleCodec.kt
+@@ -23,7 +23,7 @@ enum class BleOpcode(val wire: Int) {
+     GET_ROUTING_DIAGNOSTICS(19), INJECT_LINK_FAILURE(20), CLEAR_DYNAMIC_ROUTES(21),
+     SET_LAB_LINK_POLICY(22), GET_LAB_LINK_POLICIES(23), GET_POSITIONS(24), RAISE_SOS(25),
+     ACK_SOS(26), SEND_COMMAND_NOTICE(27), GET_BLE_RADAR(28), CLEAR_BLE_RADAR(29),
+-    GET_OPERATIONAL_HEALTH(30), GET_SELF_DIAGNOSTICS(31);
++    GET_OPERATIONAL_HEALTH(30), GET_SELF_DIAGNOSTICS(31), GET_OLED_FRAME_CHUNK(38);
+ 
+     companion object { fun fromWire(value: Int) = entries.firstOrNull { it.wire == value } }
+ }
+@@ -121,6 +121,7 @@ sealed interface SecureMeshBleCommand {
+     data object ClearBleRadar : SecureMeshBleCommand { override val opcode = BleOpcode.CLEAR_BLE_RADAR }
+     data object GetOperationalHealth : SecureMeshBleCommand { override val opcode = BleOpcode.GET_OPERATIONAL_HEALTH }
+     data object GetSelfDiagnostics : SecureMeshBleCommand { override val opcode = BleOpcode.GET_SELF_DIAGNOSTICS }
++    data class GetOledFrameChunk(val chunkIndex: Int) : SecureMeshBleCommand { override val opcode = BleOpcode.GET_OLED_FRAME_CHUNK }
+ }
+ 
+ data class BleInfoPayload(
+@@ -242,6 +243,16 @@ data class BleFieldTestStatusPayload(
+     val averageFirstHopSnrDb: Double,
+ )
+ 
++data class BleOledFrameChunkPayload(
++    val version: Int,
++    val width: Int,
++    val height: Int,
++    val snapshotId: Long,
++    val chunkIndex: Int,
++    val chunkCount: Int,
++    val data: ByteArray,
++)
++
+ data class BleUiStatePayload(
+     val modelVersion: Int,
+     val scene: Int,
+@@ -560,6 +571,24 @@ class SecureMeshBleProtocolV02Codec : SecureMeshBleCodec {
+         expected: BleOpcode = BleOpcode.GET_UI_STATE,
+     ): Result<BleUiStatePayload> = parseOk(frame, expected) { bytes -> parseUiStatePayload(bytes) }
+ 
++    fun parseOledFrameChunk(frame: SecureMeshBleFrame.Response): Result<BleOledFrameChunkPayload> =
++        parseOk(frame, BleOpcode.GET_OLED_FRAME_CHUNK) { bytes ->
++            require(bytes.size >= 11) { "OLED frame chunk too short" }
++            val r = Reader(bytes)
++            val version = r.u8()
++            require(version == 1) { "unsupported OLED frame version $version" }
++            val width = r.u8()
++            val height = r.u8()
++            val snapshotId = r.u32()
++            val chunkIndex = r.u8()
++            val chunkCount = r.u8()
++            val dataLength = r.u16()
++            require(width == 128 && height == 64) { "unexpected OLED dimensions ${width}x$height" }
++            require(chunkCount == 4 && chunkIndex in 0 until chunkCount) { "invalid OLED chunk index/count" }
++            require(dataLength in 1..256 && r.remaining == dataLength) { "OLED chunk length mismatch" }
++            BleOledFrameChunkPayload(version, width, height, snapshotId, chunkIndex, chunkCount, r.bytes(dataLength))
++        }
++
+     private fun parseUiStatePayload(bytes: ByteArray): BleUiStatePayload {
+         requireSize(bytes, 29)
+         val r = Reader(bytes)
+@@ -701,6 +730,11 @@ class SecureMeshBleProtocolV02Codec : SecureMeshBleCodec {
+         SecureMeshBleCommand.GetBleRadar, SecureMeshBleCommand.ClearBleRadar, SecureMeshBleCommand.GetOperationalHealth,
+         SecureMeshBleCommand.GetSelfDiagnostics -> byteArrayOf()
+ 
++        is SecureMeshBleCommand.GetOledFrameChunk -> {
++            require(command.chunkIndex in 0..3) { "OLED chunk index must be 0..3" }
++            Writer(1).apply { u8(command.chunkIndex) }.toByteArray()
++        }
++
+         is SecureMeshBleCommand.SendMessage -> {
+             require(command.bytes.size in 1..70) { "SEND_MESSAGE length must be 1..70" }
+             Writer(5 + command.bytes.size).apply { u32(nodeIdValue(command.destination)); u8(command.bytes.size); bytes(command.bytes) }.toByteArray()
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/mock/MockTransport.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/mock/MockTransport.kt
+index cd45284..47ff1aa 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/mock/MockTransport.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/mock/MockTransport.kt
+@@ -195,7 +195,7 @@ class MockTransport(
+                 updateMessage(id) { it.copy(progressState = MessageDeliveryState.FAILED, finalState = MessageFinalState.FAILED, failureReason = "Hop ACK timeout") }
+             } else if (_demoProfile.value == DemoProfile.CURRENT_FIRMWARE_V05) {
+                 updateMessage(id) { it.copy(progressState = MessageDeliveryState.FINAL_CONFIRMATION_PENDING, finalState = MessageStateMachine.finalStateAfterHopAck()) }
+-                addEvent(EventCategory.MESSAGES, "MESSAGE #$id E2E UNKNOWN", "All observed hop ACKs succeeded; v0.5 has no end-to-end delivery confirmation", destination)
++                addEvent(EventCategory.MESSAGES, "MESSAGE #$id E2E UNKNOWN", "All observed hop ACKs succeeded; this demo profile has no end-to-end delivery confirmation", destination)
+             } else {
+                 delay(180)
