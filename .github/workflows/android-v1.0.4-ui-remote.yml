@@ -11,6 +11,7 @@ on:
       - 'android/v1.0.4/source/**'
       - 'firmware/v1.0.4-operator/**'
       - 'tools/frontend_v1_0_4_gate.py'
+      - 'tools/firmware_arduino_preprocessor_gate.py'
 
 permissions:
   contents: write
@@ -43,6 +44,25 @@ jobs:
           fi
           git diff --check
 
+      - name: Apply Arduino preprocessor compile fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch='firmware/v1.0.4-operator/patches/arduino-preprocessor-compile-fix.patch'
+          echo '508052cb0aa37e21d7d56e8a545a639078740250dcd38803ced22101bdc0e962  '"$patch" | sha256sum -c -
+          if git apply --check "$patch"; then
+            git apply "$patch"
+          elif git apply --reverse --check "$patch"; then
+            echo 'Arduino compile fix already materialized; continuing.'
+          else
+            echo 'Arduino compile fix is neither cleanly applicable nor already applied.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Arduino preprocessor declaration-order gate
+        run: python3 tools/firmware_arduino_preprocessor_gate.py
+
       - name: Frontend v1.0.4 function audit
         run: python3 tools/frontend_v1_0_4_gate.py
 
@@ -55,7 +75,7 @@ jobs:
         run: python3 tools/ble_contract_gate.py --firmware "$GITHUB_WORKSPACE/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
 
       - name: Gate syntax
-        run: python3 -m py_compile tools/frontend_v1_0_4_gate.py android/v1.0.4/source/tools/*.py
+        run: python3 -m py_compile tools/frontend_v1_0_4_gate.py tools/firmware_arduino_preprocessor_gate.py android/v1.0.4/source/tools/*.py
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -142,14 +162,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add android/v1.0.4/source firmware/v1.0.4-operator tools/frontend_v1_0_4_gate.py
+          git add android/v1.0.4/source firmware/v1.0.4-operator tools/frontend_v1_0_4_gate.py tools/firmware_arduino_preprocessor_gate.py
           if git diff --cached --quiet; then
-            echo 'Verified UI remote source already materialized.'
+            echo 'Verified UI remote / firmware source already materialized.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Android v1.0.4: exact OLED mirror remote and frontend audit'
+          git commit -m 'Firmware v1.0.4: materialize Arduino-safe OLED remote source'
           git push origin HEAD:android/1.0.4-ui-remote
 
       - name: Package verified source
