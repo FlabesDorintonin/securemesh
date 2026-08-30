@@ -1,0 +1,174 @@
+                 updateMessage(id) { it.copy(progressState = MessageDeliveryState.DELIVERED, finalState = MessageFinalState.DELIVERED, deliveredAtEpochMs = now()) }
+@@ -284,7 +284,7 @@ class MockTransport(
+ 
+     private fun seedNetwork(profile: DemoProfile) {
+         val t = now()
+-        fun identity(id: String, name: String, role: NodeRole, caps: Set<DeviceCapability>) = NodeIdentity(id, name, role, if (profile == DemoProfile.CURRENT_FIRMWARE_V05) "0.5" else "0.9-demo", 1, caps)
++        fun identity(id: String, name: String, role: NodeRole, caps: Set<DeviceCapability>) = NodeIdentity(id, name, role, if (profile == DemoProfile.CURRENT_FIRMWARE_V05) "demo-current" else "demo-future", 1, caps)
+         val baseCaps = setOf(DeviceCapability.MESSAGING, DeviceCapability.FIELD_TEST, DeviceCapability.NETWORK_DIAGNOSTICS)
+         val futureCaps = if (profile == DemoProfile.FUTURE_DEMO) setOf(DeviceCapability.GPS, DeviceCapability.SOS, DeviceCapability.ROUTING) else setOf(DeviceCapability.ROUTING)
+         fun pos(id: String, lat: Double, lon: Double) = if (profile == DemoProfile.FUTURE_DEMO) NodePosition(id, lat, lon, t, 8, 1.1, .2, true) else null
+@@ -316,7 +316,7 @@ class MockTransport(
+         if (emit) addEvent(
+             EventCategory.ROUTING,
+             "ROUTES RESTORED",
+-            if (future) "Future demo route table includes dynamic routing" else "DIRECT/STATIC v0.5-compatible route table",
++            if (future) "Future demo route table includes dynamic routing" else "DIRECT/STATIC demo route table",
+         )
+     }
+ 
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImpl.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImpl.kt
+index 2bf9bab..99d352f 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImpl.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImpl.kt
+@@ -41,6 +41,7 @@ class SecureMeshRepositoryImpl(
+     override val activeSos = activeFlow { it.activeSos }.stateIn(scope, SharingStarted.Eagerly, null)
+     override val bleDiagnostics = activeFlow { it.bleDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
+     override val deviceUiState = activeFlow { it.deviceUiState }.stateIn(scope, SharingStarted.Eagerly, null)
++    override val oledFramebuffer = activeFlow { it.oledFramebuffer }.stateIn(scope, SharingStarted.Eagerly, null)
+     override val knownNodeIds = activeFlow { it.knownNodeIds }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+     override val networkManifest = activeFlow { it.networkManifest }.stateIn(scope, SharingStarted.Eagerly, null)
+     override val vanguardDiagnostics = activeFlow { it.vanguardDiagnostics }.stateIn(scope, SharingStarted.Eagerly, null)
+@@ -245,6 +246,7 @@ class SecureMeshRepositoryImpl(
+     override suspend fun sendCommandNotice(destination: NodeId, kind: CommandNoticeKind, target: NodePosition?) = router.current().sendCommandNotice(destination, kind, target)
+     override suspend fun refreshDeviceUiState() = router.current().refreshDeviceUiState()
+     override suspend fun sendDeviceUiAction(action: DeviceUiAction) = router.current().sendDeviceUiAction(action)
++    override suspend fun refreshOledFramebuffer() = router.current().refreshOledFramebuffer()
+     override suspend fun refreshVanguardState() = router.current().refreshVanguardState()
+     override suspend fun setManifest(epoch: Long, nodes: List<NodeId>) = router.current().setManifest(epoch, nodes)
+     override suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean) = router.current().discoverRoute(destination, forceFresh)
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/transport/MeshTransport.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/transport/MeshTransport.kt
+index cf6e942..6e8bc1a 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/transport/MeshTransport.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/transport/MeshTransport.kt
+@@ -12,6 +12,9 @@ private object NoBleDiagnostics {
+ private object NoDeviceUiState {
+     val flow: StateFlow<DeviceUiState?> = MutableStateFlow<DeviceUiState?>(null).asStateFlow()
+ }
++private object NoOledFramebuffer {
++    val flow: StateFlow<OledFramebufferSnapshot?> = MutableStateFlow<OledFramebufferSnapshot?>(null).asStateFlow()
++}
+ private object NoKnownNodes { val flow: StateFlow<List<NodeId>> = MutableStateFlow<List<NodeId>>(emptyList()).asStateFlow() }
+ private object NoManifest { val flow: StateFlow<VanguardManifest?> = MutableStateFlow<VanguardManifest?>(null).asStateFlow() }
+ private object NoVanguardDiagnostics { val flow: StateFlow<VanguardDiagnostics?> = MutableStateFlow<VanguardDiagnostics?>(null).asStateFlow() }
+@@ -32,6 +35,7 @@ interface MeshTransport {
+     val activeSos: StateFlow<SosAlert?>
+     val bleDiagnostics: StateFlow<BleDiagnostics?> get() = NoBleDiagnostics.flow
+     val deviceUiState: StateFlow<DeviceUiState?> get() = NoDeviceUiState.flow
++    val oledFramebuffer: StateFlow<OledFramebufferSnapshot?> get() = NoOledFramebuffer.flow
+     val knownNodeIds: StateFlow<List<NodeId>> get() = NoKnownNodes.flow
+     val networkManifest: StateFlow<VanguardManifest?> get() = NoManifest.flow
+     val vanguardDiagnostics: StateFlow<VanguardDiagnostics?> get() = NoVanguardDiagnostics.flow
+@@ -56,6 +60,8 @@ interface MeshTransport {
+         Result.failure(UnsupportedOperationException("Device UI OS is not supported by this transport"))
+     suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState> =
+         Result.failure(UnsupportedOperationException("Device UI OS is not supported by this transport"))
++    suspend fun refreshOledFramebuffer(): Result<OledFramebufferSnapshot> =
++        Result.failure(UnsupportedOperationException("Exact OLED framebuffer is not supported by this transport"))
+     suspend fun refreshVanguardState(): Result<Unit> = Result.failure(UnsupportedOperationException("VANGUARD is not supported by this transport"))
+     suspend fun setManifest(epoch: Long, nodes: List<NodeId>): Result<VanguardManifest> = Result.failure(UnsupportedOperationException("Manifest is not supported"))
+     suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean = true): Result<VanguardDiagnostics> = Result.failure(UnsupportedOperationException("Dynamic routing is not supported"))
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/DeviceUiModels.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/DeviceUiModels.kt
+index c4fe70d..6bea5d6 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/DeviceUiModels.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/DeviceUiModels.kt
+@@ -127,3 +127,22 @@ data class DeviceUiState(
+     val rawFeature: Int,
+     val updatedAtEpochMs: Long,
+ )
++
++data class OledFramebufferSnapshot(
++    val snapshotId: Long,
++    val width: Int,
++    val height: Int,
++    val bytes: ByteArray,
++    val updatedAtEpochMs: Long,
++) {
++    init {
++        require(width > 0 && height > 0 && height % 8 == 0) { "invalid OLED dimensions" }
++        require(bytes.size == width * height / 8) { "invalid OLED framebuffer length" }
++    }
++
++    fun pixelOn(x: Int, y: Int): Boolean {
++        if (x !in 0 until width || y !in 0 until height) return false
++        val index = x + (y / 8) * width
++        return bytes[index].toInt() and (1 shl (y and 7)) != 0
++    }
++}
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt
+index 1b5ed60..d5a969e 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/model/MeshModels.kt
+@@ -91,6 +91,7 @@ enum class DeviceCapability {
+     BLE_RADAR,
+     OPERATIONAL_HEALTH,
+     SELF_DIAGNOSTICS,
++    OLED_FRAMEBUFFER,
+     OTA,
+     SENSORS,
+ }
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/repository/SecureMeshRepository.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/repository/SecureMeshRepository.kt
+index ea2156d..3cf085e 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/repository/SecureMeshRepository.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/domain/repository/SecureMeshRepository.kt
+@@ -18,6 +18,7 @@ interface SecureMeshRepository {
+     val activeSos: StateFlow<SosAlert?>
+     val bleDiagnostics: StateFlow<BleDiagnostics?>
+     val deviceUiState: StateFlow<DeviceUiState?>
++    val oledFramebuffer: StateFlow<OledFramebufferSnapshot?>
+     val knownNodeIds: StateFlow<List<NodeId>>
+     val networkManifest: StateFlow<VanguardManifest?>
+     val vanguardDiagnostics: StateFlow<VanguardDiagnostics?>
+@@ -50,6 +51,7 @@ interface SecureMeshRepository {
+     suspend fun sendCommandNotice(destination: NodeId, kind: CommandNoticeKind, target: NodePosition? = null): Result<String>
+     suspend fun refreshDeviceUiState(): Result<DeviceUiState>
+     suspend fun sendDeviceUiAction(action: DeviceUiAction): Result<DeviceUiState>
++    suspend fun refreshOledFramebuffer(): Result<OledFramebufferSnapshot>
+     suspend fun refreshVanguardState(): Result<Unit>
+     suspend fun setManifest(epoch: Long, nodes: List<NodeId>): Result<VanguardManifest>
+     suspend fun discoverRoute(destination: NodeId, forceFresh: Boolean = true): Result<VanguardDiagnostics>
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt
+index 2bb6a33..bca3dbc 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt
+@@ -2,6 +2,7 @@ package dev.securemesh.commander.feature.deviceui
+ 
+ import androidx.compose.animation.AnimatedVisibility
+ import androidx.compose.foundation.BorderStroke
++import androidx.compose.foundation.Canvas
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.border
+ import androidx.compose.foundation.layout.*
+@@ -19,7 +20,8 @@ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.clip
+-import androidx.compose.ui.graphics.Brush
++import androidx.compose.ui.geometry.Offset
++import androidx.compose.ui.geometry.Size
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.vector.ImageVector
+ import androidx.compose.ui.text.font.FontFamily
+@@ -29,6 +31,7 @@ import androidx.compose.ui.unit.dp
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
+ import dev.securemesh.commander.core.ui.*
+ import dev.securemesh.commander.domain.model.*
++import kotlinx.coroutines.delay
+ 
+ @Composable
+ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
+@@ -44,6 +47,14 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
+         }
+     }
+ 
++    LaunchedEffect(state.allowed, state.exactMirrorAvailable) {
++        if (!state.allowed || !state.exactMirrorAvailable) return@LaunchedEffect
++        while (true) {
++            viewModel.refreshMirror()
++            delay(450L)
++        }
++    }
++
+     MeshBackdrop(Modifier.fillMaxSize()) {
+         if (!state.allowed) {
+             Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center
