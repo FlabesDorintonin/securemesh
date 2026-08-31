@@ -51,21 +51,27 @@ jobs:
       - name: Set up Arduino CLI
         uses: arduino/setup-arduino-cli@v2
 
-      - name: Install ESP32 core and libraries
+      - name: Install pinned ESP32 core and libraries
         shell: bash
         run: |
           set -euo pipefail
           arduino-cli config init
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32
+          arduino-cli core install esp32:esp32@3.3.11
           arduino-cli lib update-index
-          arduino-cli lib install "RadioLib"
-          arduino-cli lib install "Adafruit GFX Library"
-          arduino-cli lib install "Adafruit SSD1306"
-          arduino-cli lib install "NimBLE-Arduino"
-          arduino-cli lib install "TinyGPSPlus"
+          arduino-cli lib install "RadioLib@7.7.1"
+          arduino-cli lib install "Adafruit GFX Library@1.12.6"
+          arduino-cli lib install "Adafruit SSD1306@2.5.17"
+          arduino-cli lib install "NimBLE-Arduino@2.5.1"
+          arduino-cli lib install "TinyGPSPlus@1.0.3"
           arduino-cli core list | tee esp32s3-core-list.txt
           arduino-cli lib list | tee esp32s3-library-list.txt
+          grep -F 'esp32:esp32 3.3.11' esp32s3-core-list.txt
+          grep -F 'RadioLib             7.7.1' esp32s3-library-list.txt
+          grep -F 'Adafruit GFX Library 1.12.6' esp32s3-library-list.txt
+          grep -F 'Adafruit SSD1306     2.5.17' esp32s3-library-list.txt
+          grep -F 'NimBLE-Arduino       2.5.1' esp32s3-library-list.txt
+          grep -F 'TinyGPSPlus          1.0.3' esp32s3-library-list.txt
 
       - name: Compile complete firmware for generic ESP32-S3
         shell: bash
@@ -99,6 +105,12 @@ jobs:
             echo "evidence=NATIVE_CROSS_COMPILE_ONLY"
             echo "hardware_tested=false"
             echo "fqbn=esp32:esp32:esp32s3"
+            echo "esp32_core=3.3.11"
+            echo "radiolib=7.7.1"
+            echo "adafruit_gfx=1.12.6"
+            echo "adafruit_ssd1306=2.5.17"
+            echo "nimble_arduino=2.5.1"
+            echo "tinygpsplus=1.0.3"
             echo "source_workflow_sha=${GITHUB_SHA}"
             echo "secret=CI_ZERO_PLACEHOLDER_NOT_ARTIFACTED"
           } > esp32s3-compile-identity.txt
