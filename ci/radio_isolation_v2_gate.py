@@ -20,6 +20,12 @@ def body(signature: str, next_marker: str) -> str:
     return fw[start:end]
 
 
+def has_direct_call(text: str, name: str) -> bool:
+    # Strip // comments before looking for a standalone C++ statement call.
+    code = "\n".join(line.split("//", 1)[0] for line in text.splitlines())
+    return re.search(rf"\b{re.escape(name)}\s*\(\s*\)\s*;", code) is not None
+
+
 init_radio = body("bool initializeRadio()", "void recoverRadio(")
 recover = body("void recoverRadio(int16_t errorCode)", "void radioRecoveryTask(")
 worker = body("void radioRecoveryTask(void*)", "bool initializeRadioRecoveryTask()")
@@ -46,8 +52,8 @@ for marker in [
     assert marker in fw, f"missing async-radio marker: {marker}"
 
 # loop()/setup() must never invoke the blocking initializer directly.
-assert "initializeRadio();" not in setup, "setup still blocks on initializeRadio() before BLE/OLED control plane"
-assert "initializeRadio()" not in scheduler, "main-loop recovery scheduler still invokes blocking initializeRadio()"
+assert not has_direct_call(setup, "initializeRadio"), "setup still blocks on initializeRadio() before BLE/OLED control plane"
+assert not has_direct_call(scheduler, "initializeRadio"), "main-loop recovery scheduler still invokes blocking initializeRadio()"
 assert "xTaskNotifyGive" in scheduler, "radio recovery scheduler is not notification-only"
 assert "processRadioRecovery();" in loop, "loop no longer schedules recovery"
 assert "processBle();" in loop and "processUi();" in loop, "BLE/OLED control plane missing from loop"
