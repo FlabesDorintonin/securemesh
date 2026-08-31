@@ -1,0 +1,108 @@
+name: VANGUARD P1 Passive Stale Candidate
+
+on:
+  push:
+    branches:
+      - vanguard/p1-passive-stale-candidate
+    paths:
+      - 'ci/apply_vanguard_p1_passive_stale.py'
+      - 'tools/vanguard_passive_stale_gate.py'
+      - '.github/workflows/vanguard-p1-passive-stale.yml'
+      - 'firmware/v1.0.4-operator/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Materialize candidate
+        run: python3 ci/apply_vanguard_p1_passive_stale.py
+
+      - name: Prove materializer idempotence
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(sha256sum firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino | awk '{print $1}')"
+          python3 ci/apply_vanguard_p1_passive_stale.py
+          after="$(sha256sum firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino | awk '{print $1}')"
+          test "$before" = "$after"
+
+      - name: Diff hygiene
+        run: git diff --check
+
+      - name: Passive stale integration gate
+        run: python3 tools/vanguard_passive_stale_gate.py
+
+      - name: Existing degraded/routing source gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/firmware_arduino_preprocessor_gate.py
+          python3 tools/radio_degraded_ui_gate.py
+
+      - name: Native VANGUARD regression g++
+        working-directory: firmware/v1.0.4-operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vanguard-p1-gpp
+          for source in tests/vanguard_*.cpp; do
+            name="$(basename "$source" .cpp)"
+            out="/tmp/vanguard-p1-gpp/${name}"
+            g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. "$source" -o "$out"
+            "$out"
+          done
+
+      - name: Native VANGUARD regression clang++
+        working-directory: firmware/v1.0.4-operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vanguard-p1-clang
+          for source in tests/vanguard_*.cpp; do
+            name="$(basename "$source" .cpp)"
+            out="/tmp/vanguard-p1-clang/${name}"
+            clang++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. "$source" -o "$out"
+            "$out"
+          done
+
+      - name: Sanitizers
+        working-directory: firmware/v1.0.4-operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vanguard-p1-san
+          for source in tests/vanguard_*.cpp; do
+            name="$(basename "$source" .cpp)"
+            out="/tmp/vanguard-p1-san/${name}"
+            g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -I. \
+              -fsanitize=address,undefined -fno-omit-frame-pointer "$source" -o "$out"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 "$out"
+          done
+
+      - name: Package materialized candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/vanguard-p1-passive-stale
+          cp firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino artifacts/vanguard-p1-passive-stale/
+          sha256sum artifacts/vanguard-p1-passive-stale/SecureMesh_v1_0_4_OPERATOR.ino > artifacts/vanguard-p1-passive-stale/SHA256SUMS.txt
+          cat > artifacts/vanguard-p1-passive-stale/IDENTITY.txt <<'EOF'
+          evidence=CI_NATIVE_SOURCE_ONLY
+          hardware_gate=REQUIRED
+          runtime_merge=NOT_PERFORMED
+          change=Fresh_to_Stale_enters_existing_onLocalHopFailure_ladder
+          wire_change=NONE
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanguard-p1-passive-stale-candidate
+          path: artifacts/vanguard-p1-passive-stale/
+          if-no-files-found: error
