@@ -1,18 +1,25 @@
-# VANGUARD-SM 2.1 — алгоритм SecureMesh v0.8
+# VANGUARD-SM 2.1 — реализованный профиль SecureMesh v1.0.4
+
+## Статус документа
+
+Этот документ описывает **фактически реализованный профиль v1.0.4**, а не будущую масштабируемую версию VANGUARD.
+
+Текущий firmware profile ограничен `MAX_LAB_NODES = 5` / `VanguardManifest::MAX_SLOTS = 5`. Формат path mask технически допускает до 32 бит, а wire-vector control protocol — до 8 внутренних slots, но это **не означает**, что v1.0.4 квалифицирована для 8/32 узлов. Масштабирование 5 → 10+ остаётся отдельной research-задачей.
+
+Evidence level: core/protocol/runtime и сценарии маршрутизации — **NATIVE TESTED**. Physical Primary/G2/failover qualification на реальных радиоузлах остаётся открытой и не должна называться HARDWARE TESTED до стендового прогона.
 
 ## Цель
 
-VANGUARD-SM 2.1 оптимизируется не под максимальный размер сети, а под небольшую автономную mesh-сеть (профиль до 32 provisioned identities), где важны:
+VANGUARD-SM 2.1 оптимизируется под небольшую автономную mesh-сеть, где важны:
 
 - отсутствие forwarding loops;
 - bounded control traffic;
-- быстрый deterministic failover;
+- deterministic failover при подтверждённом hard-hop failure;
 - точный node-disjoint standby, когда он реально существует;
-- directional link evidence;
 - fail-closed поведение при рассинхронизации состояния;
 - возможность объяснить каждое routing decision в тестовой панели.
 
-Алгоритм разделён на четыре слоя. Optimizer никогда не может обойти Safety.
+Алгоритм разделяет Safety и Optimizer. Optimizer никогда не может обойти Safety.
 
 ## A. Identity / Scope
 
@@ -20,7 +27,7 @@ VANGUARD-SM 2.1 оптимизируется не под максимальны�
 
 `NetworkScope = (NetworkEpoch, ManifestDigest)`
 
-Manifest задаёт точное соответствие `NodeSlot 0..31 -> NodeID`. Slot стабилен только внутри одного NetworkEpoch.
+Manifest задаёт точное соответствие `NodeSlot -> NodeID`. В текущем v1.0.4 доступно до 5 slots. Slot стабилен только внутри одного NetworkEpoch.
 
 Любой control packet, который претендует на exact path/G2, должен принадлежать тому же scope. При mismatch exact control fail-closed.
 
@@ -53,31 +60,43 @@ FD внутри generation может только уменьшаться. Но�
 
 Старая generation не может заменить новую.
 
-## C. Link evidence
+## C. Neighbor evidence и фактический routing metric v1.0.4
 
-Для каждого direct neighbor отдельно оцениваются:
+Firmware хранит для direct neighbor следующие измерения/состояние:
 
-- RX age;
+- RX age / last seen;
 - RSSI EWMA;
 - SNR EWMA;
-- HELLO reception PDR;
-- TX-hop ACK PDR;
-- ECA — expected channel airtime cost;
-- reliability estimator.
+- HELLO reception PDR EWMA;
+- cumulative TX-hop attempts / ACK successes;
+- TX-hop ACK PDR EWMA;
+- scope/manifest compatibility metadata.
 
-Неизвестный link получает консервативный prior reliability ~75%, а не идеальные 100%.
+Важно различать **измеряемые диагностические данные** и то, что реально входит в optimizer текущей версии.
 
-Path reliability агрегируется multiplicatively в Q15. ECA суммируется saturating. Эти величины являются routing estimators; они не выдаются за физически доказанную вероятность без калибровки по реальным traces.
+В v1.0.4 функция `estimateNeighborLinkMetric()` строит routing `LinkMetric` из TX-hop ACK evidence:
+
+1. при отсутствии TX evidence используется prior `perAttempt ≈ 0.75`;
+2. при наличии попыток берётся односторонняя нижняя граница Wilson (`z ≈ 1.28`) для `txAckSuccesses / txAttempts`;
+3. с учётом `MAX_DATA_ATTEMPTS = 4` рассчитывается transaction reliability `1 - (1-p)^4`;
+4. ECA в текущем fixed-radio profile выражает ожидаемое число hop attempts;
+5. path reliability агрегируется multiplicatively в Q15, ECA суммируется saturating.
+
+RX freshness используется отдельным admission gate: выбранный next hop должен оставаться fresh (`NEIGHBOR_STALE_MS = 22000`).
+
+**RSSI, SNR и HELLO PDR в текущей v1.0.4 измеряются и доступны для диагностики, но не входят непосредственно в comparator маршрутов.** Их нельзя описывать в ПЗ как уже действующие веса выбора маршрута.
+
+Текущие reliability/ECA — routing estimators, а не физически откалиброванная вероятность доставки. Их необходимо калибровать по реальным traces.
 
 ## D. Candidate selection
 
-Сравнение кандидатов lexicographic с hysteresis:
+Сначала кандидат обязан пройти safety/admissibility условия: scope/generation, loop checks и feasibility. Только после этого качество допустимых кандидатов сравнивается lexicographic с hysteresis:
 
 1. если reliability отличается больше примерно чем на 0.5 percentage point — выигрывает более надёжный;
 2. внутри hysteresis band выигрывает меньший ECA;
 3. затем меньшее число hops.
 
-Это уменьшает route flapping из-за малых шумовых изменений метрики.
+Это уменьшает route flapping из-за малых шумовых изменений метрики и не вводит непрозрачный weighted score.
 
 ## E. Discovery
 
@@ -86,12 +105,13 @@ Source без подходящего route запускает RREQ:
 - уникальный requestId;
 - destination;
 - source generation context;
-- TTL по умолчанию 8;
-- NetworkScope;
-- AvoidMask;
-- excludedFirstHop;
+- `NetworkScope`;
+- `AvoidMask`;
+- `excludedFirstHop`;
 - accumulated path mask/vector;
 - accumulated ECA/reliability.
+
+**Текущий v1.0.4 discovery hop limit = 4.** Это соответствует максимальному простому пути для текущего 5-node profile. `VanguardProto::MAX_PATH_SLOTS = 8` является ёмкостью wire vector, а не текущим routing TTL.
 
 Каждый relay:
 
@@ -101,13 +121,22 @@ Source без подходящего route запускает RREQ:
 4. проверяет consistency `vector -> mask`;
 5. отклоняет себя, если находится в AvoidMask;
 6. увеличивает hop count;
-7. добавляет свою link metric;
+7. добавляет link metric;
 8. сохраняет bounded duplicate/reverse state;
 9. forwarding происходит только при новом/улучшенном RREQ.
 
-Destination не отвечает на первый пакет мгновенно. Он держит bounded settle-window и выбирает лучший RREQ, услышанный в окне. Окно не продлевается улучшениями. В firmware длительность окна и discovery timeout вычисляются из фактического LoRa time-on-air текущего radio profile, поэтому алгоритм не предполагает физически невозможный multi-hop RTT.
+Destination не отвечает на первый пакет мгновенно. Он держит bounded settle-window и выбирает лучший RREQ, услышанный в окне. Окно не продлевается улучшениями.
 
-Для текущего профиля SF9/BW125/CR4/5/preamble12 расчёт даёт примерно `RREQ hop service=691 ms`, `reliable RREP hop service=1158 ms`, `settle=941 ms`, `8-hop attempt timeout=16933 ms`. Максимум 3 attempts. Последняя обычная попытка может request fresh generation; minimum refresh interval не короче полного рассчитанного attempt timeout.
+В firmware settle/discovery timeout вычисляются из фактического LoRa time-on-air текущего radio profile. Для SF9/BW125/CR4/5/preamble12 расчёт даёт примерно:
+
+- `RREQ hop service = 691 ms`;
+- `reliable RREP hop service = 1158 ms`;
+- `settle = 941 ms`;
+- **`4-hop base attempt timeout = 9537 ms`**.
+
+Максимум 3 attempts. Retry deadline дополнительно увеличивается на bounded step. Последняя обычная попытка может request fresh generation; minimum refresh interval не короче рассчитанного base attempt timeout.
+
+Старое значение `16933 ms` относится к расчёту при 8-hop limit и не является текущим v1.0.4 timing.
 
 ## F. RREP и route construction
 
@@ -122,7 +151,7 @@ Destination создаёт ровно один RREP для выбранного 
 
 По мере возврата RREP каждый relay строит route к destination и flow-label для конкретного pathTag.
 
-Source получает полный path metric и устанавливает Primary.
+Source получает полный returned-path metric и устанавливает Primary.
 
 ## G. Exact G2
 
@@ -145,6 +174,8 @@ Source получает полный path metric и устанавливает P
 
 Обычная feasibility condition защищает свободный hop-by-hop routing graph. Exact G2 — source-private path-pinned standby: DATA идёт по проверенному pathTag/flow-label, а relay не имеет права заменить next hop generic route. Поэтому более длинный exact G2 можно хранить как standby даже если он не является generic feasible successor. Он не экспортируется как свободный generic route.
 
+Exact node-disjointness означает топологическое различие внутренних узлов, но **не доказывает независимость RF failure domains**: одинаковая помеха, питание, частота или физическая зона могут одновременно ухудшить оба пути.
+
 ## H. Path pinning
 
 DATA hop header содержит `routeTag`.
@@ -161,18 +192,24 @@ DATA hop header содержит `routeTag`.
 
 ## I. Failure / Recovery ladder
 
-Hard hop failure возникает после исчерпания bounded hop retries либо через Fault Lab.
+Подтверждённый hard hop failure возникает после исчерпания bounded hop retries (`MAX_DATA_ATTEMPTS = 4`) либо через Fault Lab.
 
 Действия:
 
 1. invalidate paths/flow labels, зависящие от failed nextHop;
 2. отправить path-specific RERR upstream, если packet принадлежит tagged path;
-3. если source имеет валидный exact G2 — promote G2 -> Primary немедленно;
+3. если source имеет валидный exact G2 — promote G2 -> Primary;
 4. если G2 нет, использовать допустимый Feasible Alternate;
 5. если route потерян — bounded rediscovery;
 6. после promotion попытаться восполнить новый G2.
 
 Статистика различает G2 promotion, Alternate promotion, expiration и route errors.
+
+### Известная integration gap v1.0.4: passive stale primary
+
+`resolveVanguardNextHop()` отдельно требует `isFreshDirectNeighbor(nextHop)`. Если primary next hop просто стал stale по RX age, resolver возвращает `false`. В текущей интеграции этот passive stale transition **не вызывает автоматически `onRouteFailure()`/G2 promotion**; верхний уровень может начать новое discovery.
+
+Поэтому deterministic immediate G2 promotion сейчас доказан native-сценариями для explicit/hard failure path, но **не должен заявляться для любого passive disappearance соседа** до отдельного исправления и теста.
 
 ## J. Store-and-forward
 
@@ -240,9 +277,31 @@ Control traffic использует token bucket в реальном оценё
 11. failed persistence commit не считается успешным persistent state;
 12. dynamic route after reboot должен быть rediscovered, а не восстановлен слепо.
 
-## N. Что должно доказываться тестами, а не словами
+## N. Известные ограничения optimizer v1.0.4
 
-Нельзя заранее объявлять алгоритм «лучше военных систем» или задавать красивую цифру recovery без стенда. После приложения-лаборатории надо измерять:
+### 1. Cumulative ACK evidence медленно забывает старую среду
+
+`txAttempts` и `txAckSuccesses` накопительные. После большого числа наблюдений резкая смена помех/положения может медленно менять Wilson estimator. `txAckPdrEwma` существует, но текущий routing metric его напрямую не использует.
+
+Перед расширением optimizer нужен recent/decaying routing-evidence estimator, при этом cumulative counters можно сохранить как диагностику.
+
+### 2. Unknown prior и малая выборка требуют калибровки
+
+При нуле TX samples используется prior `p ≈ 0.75`, а после появления нескольких samples применяется Wilson lower bound. Это даёт преднамеренно осторожное отношение к малой выборке, но переход между prior и evidence должен быть проверен на hardware traces, чтобы неизвестная связь не получала необоснованное преимущество перед связью с небольшим числом успешных измерений.
+
+### 3. Directionality RREQ settle требует отдельной проверки
+
+Incoming RREQ обогащается через `estimateNeighborLinkMetric(previousHop)`, а текущий estimator основан на локальной TX→previousHop hop-ACK истории. Для асимметричного радио-линка это не обязательно равно предыдущему hop previousHop→local, по которому RREQ фактически пришёл.
+
+Поэтому destination settle preselection не следует пока описывать как полностью directional-correct в асимметричной среде. Нужен отдельный design/test: либо RX-direction evidence для RREQ, либо иной механизм, не смешивающий направления.
+
+### 4. RSSI/SNR нельзя просто добавить произвольными весами
+
+RSSI/SNR/HELLO PDR уже измеряются, но добавлять их в optimizer через «магическую» взвешенную сумму без field calibration нельзя. Сначала нужны raw traces, затем проверяемая модель и regression tests.
+
+## O. Что должно доказываться тестами, а не словами
+
+Нельзя заранее объявлять алгоритм «лучше военных систем» или задавать красивую цифру recovery без стенда. Необходимо измерять:
 
 - route availability;
 - E2E delivery ratio;
@@ -253,6 +312,11 @@ Control traffic использует token bucket в реальном оценё
 - false failovers;
 - heap/stack high-water marks;
 - reset/watchdog events;
-- поведение при correlated burst loss и partition/merge.
+- поведение при asymmetric links;
+- correlated burst loss;
+- partition/merge;
+- passive stale primary при уже готовом exact G2;
+- destination reboot/generation change;
+- G2 replenishment после promotion.
 
 Сильный результат — когда эти данные воспроизводимы и показывают преимущество конкретного механизма VANGUARD над baseline, а не когда преимущество просто заявлено.
