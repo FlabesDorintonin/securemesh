@@ -2,6 +2,20 @@
 
 v1.0.4 наследует все границы Foundation v1.0.3. Пользовательский слой дополнительно обязан соблюдать `OPERATOR_UI_RULES_RU.md`.
 
+## Radio Isolation v2 — 31.08.2026
+
+Для degraded-radio режима введена жёсткая граница между потенциально блокирующей инициализацией SX1268/RadioLib и BLE/OLED control plane.
+
+- `setup()` сначала поднимает BLE control plane; radio init не должен задерживать доступ к BLE/OLED.
+- `loop()` не вызывает `initializeRadio()` напрямую. Повторная инициализация выполняется отдельной low-priority FreeRTOS worker-задачей.
+- При radio fault основной цикл fail-closed переводит radio state в unavailable, снимает DIO1 и не выполняет `finishTransmit()/standby()/startReceive()/begin()` как cleanup на том же control-plane пути.
+- Пока worker владеет radio init (`radioInitInProgress`), TX scheduler и IRQ dispatch не обращаются к RadioLib.
+- `radioReady` публикуется только после успешного входа в RX.
+- Android OLED remote использует bounded последовательную очередь `UI_ACTION`; точный framebuffer mirror не держит общий mutex с action path и refresh после серии действий коалесцируется.
+- BLE application protocol v2, fragment transport v1 и VANGUARD wire-contract этим исправлением не менялись.
+
+Exact software evidence для пакета Radio Isolation v2: package-source commit `b11a92d8925870d29b3b2bc22553d87730053810`, GitHub Actions run `33387188959`, APK SHA-256 `3a904f1097ae28bbe3ca377f4b5917022fa048d39ee5240f17ee268441b220b6`, firmware `.ino` SHA-256 `0a4240795749dd71917d0314d57506480bf9b3240deed68dd04228bbce0c6d4e`. Статус — **NATIVE TESTED / CI verified**, но не `HARDWARE TESTED`: обязателен A/B-прогон на ESP32-S3 с подключённым и отключённым E22/SX1268.
+
 # SecureMesh v1.0.3 Foundation — архитектурные правила
 
 Этот файл фиксирует границы, которые нельзя случайно размывать при добавлении новых функций. Цель v1.0.3 — стабильная база, где новая функция добавляется локально и проверяемо, а не меняет скрытые контракты всей системы.
