@@ -6,9 +6,19 @@ FW = ROOT / "firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
 SCREEN = ROOT / "android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt"
 TRANSPORT = ROOT / "android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt"
 
+V2_SUPERSEDED_LABELS = {
+    "radio recovery backoff state",
+    "detach DIO1 after failed RX transition",
+    "detach DIO1 during runtime recovery",
+    "adaptive radio recovery backoff",
+}
+
 
 def replace_once(path: Path, old: str, new: str, label: str) -> None:
     text = path.read_text(encoding="utf-8")
+    if path == FW and label in V2_SUPERSEDED_LABELS and "TaskHandle_t radioRecoveryTaskHandle" in text:
+        print(f"superseded by Radio Isolation v2: {label}")
+        return
     count = text.count(old)
     if count == 1:
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
