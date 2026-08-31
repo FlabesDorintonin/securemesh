@@ -11,6 +11,7 @@ on:
       - 'ci-patches/oled-mirror-load-shed.patch'
       - 'ci/ui_responsiveness_gate.py'
       - 'ci/apply_ui_responsiveness.py'
+      - 'ci/align_ui_responsiveness_gates.py'
 
 permissions:
   contents: write
@@ -27,7 +28,9 @@ jobs:
           fetch-depth: 0
 
       - name: Materialize responsiveness optimization
-        run: python3 ci/apply_ui_responsiveness.py
+        run: |
+          python3 ci/apply_ui_responsiveness.py
+          python3 ci/align_ui_responsiveness_gates.py
 
       - name: Verify materialized diff
         run: git diff --check
@@ -48,7 +51,7 @@ jobs:
             python3 tools/domain_alignment_gate.py
             python3 tools/ble_contract_gate.py --firmware "$GITHUB_WORKSPACE/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
           )
-          python3 -m py_compile ci/apply_ui_responsiveness.py ci/ui_responsiveness_gate.py tools/radio_degraded_ui_gate.py tools/firmware_arduino_preprocessor_gate.py tools/oled_remote_action_gate.py tools/frontend_v1_0_4_gate.py android/v1.0.4/source/tools/*.py
+          python3 -m py_compile ci/apply_ui_responsiveness.py ci/align_ui_responsiveness_gates.py ci/ui_responsiveness_gate.py tools/radio_degraded_ui_gate.py tools/firmware_arduino_preprocessor_gate.py tools/oled_remote_action_gate.py tools/frontend_v1_0_4_gate.py android/v1.0.4/source/tools/*.py
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -143,6 +146,7 @@ jobs:
           git add \
             firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
             android/v1.0.4/source \
+            tools/frontend_v1_0_4_gate.py \
             artifacts/v1.0.4/ui-responsiveness-candidate.txt
           if git diff --cached --quiet; then
             echo 'Optimized source already materialized.'
