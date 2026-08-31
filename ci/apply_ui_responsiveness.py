@@ -20,6 +20,34 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
     raise SystemExit(f"fail-closed replacement for {label}: old occurrences={count}, new_present={new in text}")
 
 
+def normalize_oled_frame_allocation() -> None:
+    text = TRANSPORT.read_text(encoding="utf-8")
+    original = (
+        '                expectedCount = chunk.chunkCount\n'
+        '                require(expectedCount == 4) { "Unexpected OLED chunk count $expectedCount" }'
+    )
+    validation = (
+        '                require(width > 0 && height > 0 && width * height % 8 == 0) { "Invalid OLED geometry ${width}x$height" }\n'
+        '                frameBytes = ByteArray(width * height / 8)'
+    )
+    desired = original + "\n" + validation
+    duplicated = desired + "\n" + validation
+
+    if duplicated in text:
+        text = text.replace(duplicated, desired, 1)
+        TRANSPORT.write_text(text, encoding="utf-8")
+        print("applied: normalize duplicate OLED geometry/allocation")
+        return
+    if desired in text:
+        print("already materialized: validate OLED geometry and allocate once")
+        return
+    if text.count(original) == 1:
+        TRANSPORT.write_text(text.replace(original, desired, 1), encoding="utf-8")
+        print("applied: validate OLED geometry and allocate once")
+        return
+    raise SystemExit("fail-closed: cannot normalize OLED framebuffer geometry/allocation")
+
+
 replace_once(
     FW,
     "constexpr uint32_t RADIO_RETRY_MS = 3000;\nconstexpr uint32_t TX_WATCHDOG_MS = 3500;",
@@ -79,12 +107,7 @@ replace_once(
     "        var frameBytes: ByteArray? = null\n        var snapshotId: Long? = null\n        var width = 0\n        var height = 0\n        var expectedCount = 0\n        var writeOffset = 0",
     "preallocate OLED framebuffer",
 )
-replace_once(
-    TRANSPORT,
-    "                expectedCount = chunk.chunkCount\n                require(expectedCount == 4) { \"Unexpected OLED chunk count $expectedCount\" }",
-    "                expectedCount = chunk.chunkCount\n                require(expectedCount == 4) { \"Unexpected OLED chunk count $expectedCount\" }\n                require(width > 0 && height > 0 && width * height % 8 == 0) { \"Invalid OLED geometry ${width}x$height\" }\n                frameBytes = ByteArray(width * height / 8)",
-    "validate OLED geometry and allocate once",
-)
+normalize_oled_frame_allocation()
 replace_once(
     TRANSPORT,
     "            require(chunk.chunkIndex == index) { \"OLED chunk order mismatch\" }\n            chunks += chunk.data\n        }\n        val frameBytes = chunks.fold(ByteArray(0)) { acc, bytes -> acc + bytes }\n        require(frameBytes.size == width * height / 8) { \"OLED framebuffer length mismatch: ${frameBytes.size}\" }",
