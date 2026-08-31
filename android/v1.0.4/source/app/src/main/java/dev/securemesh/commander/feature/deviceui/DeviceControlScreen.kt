@@ -33,6 +33,8 @@ import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.domain.model.*
 import kotlinx.coroutines.delay
 
+private const val OLED_MIRROR_POLL_INTERVAL_MS = 800L
+
 @Composable
 fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -51,7 +53,7 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
         if (!state.allowed || !state.exactMirrorAvailable) return@LaunchedEffect
         while (true) {
             viewModel.refreshMirror()
-            delay(450L)
+            delay(OLED_MIRROR_POLL_INTERVAL_MS)
         }
     }
 

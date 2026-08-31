@@ -99,6 +99,7 @@ constexpr bool RADIO_USE_LDO = false;
 
 constexpr uint32_t RF_SWITCH_SETTLE_US = 2200;
 constexpr uint32_t RADIO_RETRY_MS = 3000;
+constexpr uint32_t RADIO_RETRY_MAX_MS = 30000;
 constexpr uint32_t TX_WATCHDOG_MS = 3500;
 
 // ============================================================
@@ -277,15 +278,16 @@ constexpr uint32_t ACK_TIMEOUT_FLOOR_MS = 1800;
 uint32_t ackTimeoutMs = ACK_TIMEOUT_FLOOR_MS;
 constexpr uint8_t MAX_DATA_ATTEMPTS = 4;
 
-constexpr uint32_t OLED_REFRESH_MS = 450;
+constexpr uint32_t OLED_REFRESH_MS = 650;
 constexpr uint32_t UI_ANIMATION_FRAME_MS = 55;
 constexpr uint32_t UI_FAST_FRAME_MS = 110;
 constexpr uint32_t UI_TRANSITION_MS = 150;
 constexpr uint32_t UI_BOOT_DURATION_MS = 1250;
 constexpr uint32_t UI_TOAST_DEFAULT_MS = 1500;
 constexpr uint32_t UI_CRITICAL_MAX_DEFER_MS = 45;
-constexpr uint32_t UI_CRITICAL_FRAME_MS = 80;
+constexpr uint32_t UI_CRITICAL_FRAME_MS = 250;
 constexpr uint32_t UI_SUCCESS_ANIMATION_MS = 1250;
+constexpr uint32_t UI_CONNECTED_ANIMATION_MS = 600;
 constexpr uint32_t UI_TOAST_SLIDE_MS = 180;
 constexpr uint32_t SERIAL_STATUS_INTERVAL_MS = 15000;
 constexpr size_t CONSOLE_LINE_SIZE = 220;
@@ -1806,6 +1808,7 @@ bool radioTransmitting = false;
 int activeTxIndex = -1;
 uint32_t txStartedAtMs = 0;
 uint32_t lastRadioRetryAtMs = 0;
+uint32_t radioRetryDelayMs = RADIO_RETRY_MS;
 int16_t lastRadioError = RADIOLIB_ERR_NONE;
 
 void initializeRfSwitchPins() {
@@ -2437,7 +2440,13 @@ bool initializeRadio() {
   radio.setDio1Action(onRadioDio1);
   radioReady = true;
   lastRadioError = RADIOLIB_ERR_NONE;
-  return startReceiveMode();
+  if (!startReceiveMode()) {
+    // A failed RX transition must not leave a live DIO1 callback attached to
+    // an unavailable/under-powered radio. Degraded BLE/OLED mode owns the loop.
+    detachInterrupt(digitalPinToInterrupt(PIN_RADIO_DIO1));
+    return false;
+  }
+  return true;
 }
 
 void recoverRadio(int16_t errorCode) {
@@ -2462,16 +2471,32 @@ void recoverRadio(int16_t errorCode) {
   activeTxIndex = -1;
   radioIrqFlag = false;
   radioReady = false;
+  // If the module disappears after a previously successful init, keep a
+  // floating/noisy DIO1 from waking the main loop until a later retry succeeds.
+  detachInterrupt(digitalPinToInterrupt(PIN_RADIO_DIO1));
   setRfIdle();
 }
 
 void processRadioRecovery() {
   if (!cryptoReady) return;
   if (radioReady) return;
-  if (millis() - lastRadioRetryAtMs < RADIO_RETRY_MS) return;
+  const uint32_t now = millis();
+  if (now - lastRadioRetryAtMs < radioRetryDelayMs) return;
 
-  lastRadioRetryAtMs = millis();
-  initializeRadio();
+  lastRadioRetryAtMs = now;
+  if (initializeRadio()) {
+    radioRetryDelayMs = RADIO_RETRY_MS;
+    setLastEvent("RADIO RECOVERED");
+    return;
+  }
+
+  // RadioLib initialization is synchronous. When the module is physically
+  // absent, retrying every 3 s repeatedly steals time from BLE and OLED. Keep
+  // automatic hot-plug recovery, but exponentially back off sustained failure.
+  const uint32_t doubled = radioRetryDelayMs > RADIO_RETRY_MAX_MS / 2
+    ? RADIO_RETRY_MAX_MS
+    : radioRetryDelayMs * 2UL;
+  radioRetryDelayMs = min(doubled, RADIO_RETRY_MAX_MS);
 }
 
 // ============================================================
@@ -9422,11 +9447,18 @@ void processUi() {
   const int16_t menuTarget = UI_MENU_FIRST_Y + static_cast<int16_t>(uiCurrentMenuIndexRef() - uiCurrentMenuScrollRef()) * UI_MENU_ROW_H;
   const bool cursorAnimating = uiState.scene == UiScene::Menu && uiState.menuCursorY != menuTarget;
   const bool transitionAnimating = uiState.transitionStartedAtMs != 0 && now - uiState.transitionStartedAtMs < UI_TRANSITION_MS;
-  const bool toastAnimating = uiState.toastUntilMs != 0 && !timeReached(now, uiState.toastUntilMs);
+  const bool toastVisible = uiState.toastUntilMs != 0 && !timeReached(now, uiState.toastUntilMs);
+  const uint32_t toastAge = toastVisible ? now - uiState.toastStartedAtMs : 0;
+  const uint32_t toastRemaining = toastVisible ? uiState.toastUntilMs - now : 0;
+  const bool toastAnimating = toastVisible &&
+    (toastAge < UI_TOAST_SLIDE_MS || toastRemaining < UI_TOAST_SLIDE_MS);
+  const bool connectedBannerAnimating = connectedBanner &&
+    now - uiState.overlayEnteredAtMs < UI_CONNECTED_ANIMATION_MS;
   const bool dynamicScene = uiState.scene == UiScene::Home ||
     (uiState.scene == UiScene::Feature && uiFeatureIsDynamic(uiState.feature));
   const bool critical = pairing;
-  const bool animating = !uiState.bootFinished || pairing || connectedBanner || cursorAnimating || transitionAnimating || toastAnimating;
+  const bool animating = !uiState.bootFinished || pairing || cursorAnimating ||
+    transitionAnimating || toastAnimating || connectedBannerAnimating;
 
 
   const uint32_t frameInterval = critical ? UI_CRITICAL_FRAME_MS :
