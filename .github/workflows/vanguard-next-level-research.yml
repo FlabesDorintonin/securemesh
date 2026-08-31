@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   model-research:
-    name: Estimator and control timing research
+    name: Estimator, failure/lease and control timing research
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,6 +24,8 @@ jobs:
         run: python3 research/vanguard_next_level/estimator_experiments.py
       - name: Run estimator Pareto sweep
         run: python3 research/vanguard_next_level/estimator_pareto_sweep.py
+      - name: Run failure and G2 lease model
+        run: python3 research/vanguard_next_level/failure_lease_model.py
       - name: Run control timing sweep
         run: python3 research/vanguard_next_level/control_timing_experiments.py
       - name: Validate generated research records
@@ -36,10 +38,12 @@ jobs:
           test -s research/vanguard_next_level/results/estimator_pareto_summary.json
           test -s research/vanguard_next_level/results/estimator_pareto_all.csv
           test -s research/vanguard_next_level/results/estimator_pareto_front.csv
+          test -s research/vanguard_next_level/results/failure_lease_summary.json
           test -s research/vanguard_next_level/results/control_timing_summary.json
           test -s research/vanguard_next_level/results/control_timing_sweep.csv
           python3 -m json.tool research/vanguard_next_level/results/estimator_summary.json >/dev/null
           python3 -m json.tool research/vanguard_next_level/results/estimator_pareto_summary.json >/dev/null
+          python3 -m json.tool research/vanguard_next_level/results/failure_lease_summary.json >/dev/null
           python3 -m json.tool research/vanguard_next_level/results/control_timing_summary.json >/dev/null
       - name: Upload research tables
         uses: actions/upload-artifact@v4
