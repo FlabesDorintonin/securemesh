@@ -31,9 +31,9 @@ jobs:
           set -euo pipefail
           patch='ci-patches/ui-responsiveness-firmware.patch'
           echo '4cf6f63a8185441e98f8a1a630526d0a174dd48a89e144db419b92999c3b8817  '"$patch" | sha256sum -c -
-          if git apply --check "$patch"; then
-            git apply "$patch"
-          elif git apply --reverse --check "$patch"; then
+          if git apply --recount --check "$patch"; then
+            git apply --recount "$patch"
+          elif git apply --recount --reverse --check "$patch"; then
             echo 'Firmware responsiveness optimization already materialized.'
           elif grep -q 'RADIO_RETRY_MAX_MS = 30000' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
             && grep -q 'UI_CONNECTED_ANIMATION_MS = 600' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino; then
@@ -49,9 +49,9 @@ jobs:
           set -euo pipefail
           patch='ci-patches/oled-mirror-load-shed.patch'
           echo '4ee44ea581d28fa8ba5116ec8d17ac7f9d727337343f75a3de2f4756e58ad99d  '"$patch" | sha256sum -c -
-          if git apply --check "$patch"; then
-            git apply "$patch"
-          elif git apply --reverse --check "$patch"; then
+          if git apply --recount --check "$patch"; then
+            git apply --recount "$patch"
+          elif git apply --recount --reverse --check "$patch"; then
             echo 'Android OLED mirror optimization already materialized.'
           elif grep -q 'OLED_MIRROR_POLL_INTERVAL_MS = 800L' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt \
             && grep -q 'chunk.data.copyInto' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt; then
