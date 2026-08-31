@@ -23,6 +23,7 @@ def body_of(signature: str, next_signature: str) -> str:
 
 checks = []
 
+
 def check(name: str, condition: bool):
     checks.append((name, bool(condition)))
 
@@ -37,12 +38,14 @@ if loop_start < 0:
 loop = text[loop_start:]
 
 # A stale/floating DIO1 from an unavailable/under-powered SX1268 must be consumed
-# without touching RadioLib. The readiness guard must precede TX/RX dispatch.
-ready_guard = radio_irq.find("if (!radioReady) return;")
+# without touching RadioLib. During asynchronous begin(), the worker also owns
+# RadioLib, so main-loop IRQ dispatch must fail closed for radioInitInProgress.
+ready_match = re.search(r"if\s*\(\s*!radioReady\s*\|\|\s*radioInitInProgress\s*\)\s*return;", radio_irq)
+ready_guard = ready_match.start() if ready_match else -1
 radio_dispatch = min(
     p for p in (radio_irq.find("finishQueuedTransmission()"), radio_irq.find("handleReceivedRadioPacket()")) if p >= 0
 )
-check("radio IRQ readiness guard exists", ready_guard >= 0)
+check("radio IRQ readiness/init-ownership guard exists", ready_guard >= 0)
 check("radio IRQ readiness guard precedes RadioLib dispatch", ready_guard >= 0 and ready_guard < radio_dispatch)
 check("stale IRQ flag is cleared before readiness return", radio_irq.find("radioIrqFlag = false;") >= 0 and radio_irq.find("radioIrqFlag = false;") < ready_guard)
 
