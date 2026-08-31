@@ -1,0 +1,108 @@
+name: VANGUARD P1 ESP32-S3 Compile
+
+on:
+  push:
+    branches:
+      - research/vanguard-virtual-radio-lab-20260831
+    paths:
+      - 'firmware/v1.0.4-operator/**'
+      - 'ci/apply_vanguard_p1_passive_stale.py'
+      - '.github/workflows/vanguard-p1-esp32s3-compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    name: Full Arduino ESP32-S3 compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Materialize exact passive-stale candidate
+        run: python3 ci/apply_vanguard_p1_passive_stale.py
+
+      - name: Verify only expected firmware source changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = "firmware/v1.0.4-operator/v1.0.4-operator.ino"
+
+      - name: Create non-secret CI build placeholder
+        working-directory: firmware/v1.0.4-operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > SecureMeshSecrets.h <<'EOF'
+          #pragma once
+          #include <stdint.h>
+          // CI COMPILE-ONLY PLACEHOLDER. NOT A DEPLOYMENT KEY.
+          constexpr uint8_t DEVELOPMENT_GROUP_KEY[32] = {0};
+          EOF
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 core and libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          arduino-cli config init
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib update-index
+          arduino-cli lib install "RadioLib"
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "NimBLE-Arduino"
+          arduino-cli lib install "TinyGPSPlus"
+          arduino-cli core list
+          arduino-cli lib list
+
+      - name: Compile complete firmware for generic ESP32-S3
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/securemesh-build
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32s3 \
+            --warnings all \
+            --output-dir /tmp/securemesh-build \
+            firmware/v1.0.4-operator \
+            | tee esp32s3-compile.log
+          test -s /tmp/securemesh-build/v1.0.4-operator.ino.bin
+
+      - name: Prove no secret became tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! git ls-files --error-unmatch firmware/v1.0.4-operator/SecureMeshSecrets.h 2>/dev/null
+          test "$(git diff --name-only)" = "firmware/v1.0.4-operator/v1.0.4-operator.ino"
+
+      - name: Package compile evidence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum /tmp/securemesh-build/v1.0.4-operator.ino.bin > esp32s3-bin.sha256
+          sha256sum /tmp/securemesh-build/v1.0.4-operator.ino.elf > esp32s3-elf.sha256
+          {
+            echo "evidence=NATIVE_CROSS_COMPILE_ONLY"
+            echo "hardware_tested=false"
+            echo "fqbn=esp32:esp32:esp32s3"
+            echo "source_workflow_sha=${GITHUB_SHA}"
+          } > esp32s3-compile-identity.txt
+
+      - name: Upload compile evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: vanguard-p1-esp32s3-compile-evidence
+          path: |
+            esp32s3-compile.log
+            esp32s3-bin.sha256
+            esp32s3-elf.sha256
+            esp32s3-compile-identity.txt
+          if-no-files-found: error
