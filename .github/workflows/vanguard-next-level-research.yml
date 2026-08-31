@@ -1,0 +1,105 @@
+name: VANGUARD Next-Level Research
+
+on:
+  push:
+    branches:
+      - research/vanguard-next-level-20260831
+    paths:
+      - 'firmware/v1.0.4-operator/**'
+      - 'research/vanguard_next_level/**'
+      - '.github/workflows/vanguard-next-level-research.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  model-research:
+    name: Estimator and control timing research
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run estimator parameter sweep
+        run: python3 research/vanguard_next_level/estimator_experiments.py
+      - name: Run control timing sweep
+        run: python3 research/vanguard_next_level/control_timing_experiments.py
+      - name: Validate generated research records
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s research/vanguard_next_level/results/estimator_summary.json
+          test -s research/vanguard_next_level/results/estimator_adaptation.csv
+          test -s research/vanguard_next_level/results/estimator_flapping.csv
+          test -s research/vanguard_next_level/results/control_timing_summary.json
+          test -s research/vanguard_next_level/results/control_timing_sweep.csv
+          python3 -m json.tool research/vanguard_next_level/results/estimator_summary.json >/dev/null
+          python3 -m json.tool research/vanguard_next_level/results/control_timing_summary.json >/dev/null
+      - name: Upload research tables
+        uses: actions/upload-artifact@v4
+        with:
+          name: vanguard-next-level-model-results
+          path: research/vanguard_next_level/results/
+          if-no-files-found: error
+
+  native-matrix:
+    name: Native regression (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile and run every native C++ test
+        working-directory: firmware/v1.0.4-operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vanguard-next/${{ matrix.compiler }}
+          for source in tests/*.cpp; do
+            name="$(basename "$source" .cpp)"
+            out="/tmp/vanguard-next/${{ matrix.compiler }}/${name}"
+            "${{ matrix.compiler }}" -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. "$source" -o "$out"
+            "$out"
+          done
+
+  invariant-stress:
+    name: Core invariant stress (5M ops)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile invariant fuzz harness
+        working-directory: firmware/v1.0.4-operator
+        run: g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. tests/vanguard_core_invariant_fuzz_test.cpp -o /tmp/vanguard-fuzz
+      - name: Run five deterministic million-op seeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for seed in 0xC001D00D 0x12345678 0xDEADBEEF 0x31415926 0xA5A55A5A; do
+            echo "seed=$seed"
+            VANGUARD_FUZZ_SEED="$seed" VANGUARD_FUZZ_OPS=1000000 /tmp/vanguard-fuzz
+          done
+
+  sanitizers:
+    name: ASan + UBSan routing tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and run VANGUARD tests with sanitizers
+        working-directory: firmware/v1.0.4-operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vanguard-next-sanitize
+          for source in tests/vanguard_*.cpp; do
+            name="$(basename "$source" .cpp)"
+            out="/tmp/vanguard-next-sanitize/${name}"
+            g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -I. \
+              -fsanitize=address,undefined -fno-omit-frame-pointer \
+              "$source" -o "$out"
+            ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 "$out"
+          done
