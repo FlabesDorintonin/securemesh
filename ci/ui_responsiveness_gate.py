@@ -37,7 +37,7 @@ assert "!uiState.bootFinished || pairing || connectedBanner || cursorAnimating" 
     "full connected-banner high-rate redraw still present"
 
 required_android = [
-    "private const val OLED_MIRROR_POLL_INTERVAL_MS = 800L",
+    "private const val OLED_MIRROR_POLL_INTERVAL_MS = 1500L",
     "delay(OLED_MIRROR_POLL_INTERVAL_MS)",
     "var frameBytes: ByteArray? = null",
     "chunk.data.copyInto(target, destinationOffset = writeOffset)",
@@ -47,15 +47,17 @@ for marker in required_android:
     assert marker in screen or marker in transport, f"missing Android responsiveness marker: {marker}"
 
 assert "delay(450L)" not in screen, "old 450 ms OLED mirror polling remains"
+assert "OLED_MIRROR_POLL_INTERVAL_MS = 800L" not in screen, "old 800 ms fallback mirror polling remains"
 assert "chunks.fold(ByteArray(0))" not in transport, "quadratic framebuffer concatenation remains"
 
-# Preserve the correctness path: explicit UI actions still serialize against a
-# snapshot and request a fresh exact framebuffer after the firmware redraw pass.
+# Preserve exactness without forcing UI_ACTION to wait behind framebuffer traffic.
 for marker in [
-    "private val remoteUiMutex = Mutex()",
+    "private val actionQueue = Channel<DeviceUiAction>(capacity = 16)",
+    "actionMirrorJob?.cancel()",
     "delay(75L)",
-    "repository.refreshOledFramebuffer()",
+    "refreshMirror()",
 ]:
-    assert marker in vm, f"remote action exactness regression: {marker}"
+    assert marker in vm, f"remote action responsiveness regression: {marker}"
+assert "remoteUiMutex" not in vm, "mirror/action global mutex still present"
 
 print("UI responsiveness optimization gate: PASS")
