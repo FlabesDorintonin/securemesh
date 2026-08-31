@@ -1,0 +1,109 @@
+name: VANGUARD Virtual Radio Lab
+
+on:
+  push:
+    branches:
+      - research/vanguard-virtual-radio-lab-20260831
+    paths:
+      - 'firmware/v1.0.4-operator/**'
+      - 'research/vanguard_virtual_radio_lab/**'
+      - '.github/workflows/vanguard-virtual-radio-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  virtual-medium:
+    name: Real-code virtual radio (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build virtual radio lab
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${{ matrix.compiler }}" -std=c++17 -O2 -Wall -Wextra -Wpedantic \
+            -Ifirmware/v1.0.4-operator \
+            research/vanguard_virtual_radio_lab/vanguard_virtual_radio_lab.cpp \
+            -o /tmp/vanguard-virtual-radio
+      - name: Run virtual radio scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/vanguard-virtual-radio | tee virtual-radio-${{ matrix.compiler }}.txt
+          grep -F 'VANGUARD virtual radio lab: PASS' virtual-radio-${{ matrix.compiler }}.txt
+          grep -F 'EVIDENCE_BOUNDARY=NATIVE_VIRTUAL_MEDIUM_NOT_HARDWARE' virtual-radio-${{ matrix.compiler }}.txt
+      - name: Upload scenario log
+        uses: actions/upload-artifact@v4
+        with:
+          name: virtual-radio-${{ matrix.compiler }}
+          path: virtual-radio-${{ matrix.compiler }}.txt
+          if-no-files-found: error
+
+  sanitizers:
+    name: Virtual radio ASan + UBSan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and run simulator with sanitizers
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic \
+            -Ifirmware/v1.0.4-operator \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            research/vanguard_virtual_radio_lab/vanguard_virtual_radio_lab.cpp \
+            -o /tmp/vanguard-virtual-radio-sanitize
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+          UBSAN_OPTIONS=halt_on_error=1 \
+            /tmp/vanguard-virtual-radio-sanitize | tee virtual-radio-sanitizers.txt
+          grep -F 'VANGUARD virtual radio lab: PASS' virtual-radio-sanitizers.txt
+      - name: Upload sanitizer log
+        uses: actions/upload-artifact@v4
+        with:
+          name: virtual-radio-sanitizers
+          path: virtual-radio-sanitizers.txt
+          if-no-files-found: error
+
+  regression:
+    name: Existing routing regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile and run every VANGUARD native test
+        working-directory: firmware/v1.0.4-operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vanguard-regression
+          for source in tests/vanguard_*.cpp; do
+            name="$(basename "$source" .cpp)"
+            g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. "$source" \
+              -o "/tmp/vanguard-regression/$name"
+            "/tmp/vanguard-regression/$name"
+          done
+
+  invariant-stress:
+    name: Existing core invariant stress (5M)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compile fuzz harness
+        working-directory: firmware/v1.0.4-operator
+        run: g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. tests/vanguard_core_invariant_fuzz_test.cpp -o /tmp/vanguard-fuzz
+      - name: Run five deterministic million-op seeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for seed in 0xC001D00D 0x12345678 0xDEADBEEF 0x31415926 0xA5A55A5A; do
+            VANGUARD_FUZZ_SEED="$seed" VANGUARD_FUZZ_OPS=1000000 /tmp/vanguard-fuzz
+          done
