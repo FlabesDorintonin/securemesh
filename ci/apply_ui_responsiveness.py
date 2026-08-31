@@ -19,6 +19,9 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
     if path == FW and label in V2_SUPERSEDED_LABELS and "TaskHandle_t radioRecoveryTaskHandle" in text:
         print(f"superseded by Radio Isolation v2: {label}")
         return
+    if path == SCREEN and label == "Android mirror polling constant" and "OLED_MIRROR_POLL_INTERVAL_MS = 1500L" in text:
+        print("superseded by Radio Isolation v2: Android mirror polling constant")
+        return
     count = text.count(old)
     if count == 1:
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
