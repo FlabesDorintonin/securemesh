@@ -1,0 +1,126 @@
+name: VANGUARD P1 Build Reproducibility
+
+on:
+  push:
+    branches:
+      - research/vanguard-virtual-radio-lab-20260831
+    paths:
+      - 'firmware/v1.0.4-operator/**'
+      - 'ci/apply_vanguard_p1_passive_stale.py'
+      - '.github/workflows/vanguard-p1-build-reproducibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: Compile same source twice
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Materialize exact P1 source
+        run: python3 ci/apply_vanguard_p1_passive_stale.py
+
+      - name: Stage immutable sketch with non-secret placeholder
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/SecureMesh_v1_0_4_OPERATOR
+          mkdir -p /tmp/SecureMesh_v1_0_4_OPERATOR
+          cp -a firmware/v1.0.4-operator/. /tmp/SecureMesh_v1_0_4_OPERATOR/
+          cat > /tmp/SecureMesh_v1_0_4_OPERATOR/SecureMeshSecrets.h <<'EOF'
+          #pragma once
+          #include <stdint.h>
+          constexpr uint8_t DEVELOPMENT_GROUP_KEY[32] = {0}; // CI ONLY
+          EOF
+          sha256sum /tmp/SecureMesh_v1_0_4_OPERATOR/SecureMesh_v1_0_4_OPERATOR.ino \
+            | tee source.sha256
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install pinned toolchain and libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          arduino-cli config init
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.11
+          arduino-cli lib update-index
+          arduino-cli lib install "RadioLib@7.7.1"
+          arduino-cli lib install "Adafruit GFX Library@1.12.6"
+          arduino-cli lib install "Adafruit SSD1306@2.5.17"
+          arduino-cli lib install "NimBLE-Arduino@2.5.1"
+          arduino-cli lib install "TinyGPSPlus@1.0.3"
+
+      - name: Compile build A
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/build-a /tmp/out-a
+          mkdir -p /tmp/out-a
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32s3 \
+            --warnings all \
+            --build-path /tmp/build-a \
+            --output-dir /tmp/out-a \
+            /tmp/SecureMesh_v1_0_4_OPERATOR \
+            | tee build-a.log
+
+      - name: Compile build B from fresh build directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/build-b /tmp/out-b
+          mkdir -p /tmp/out-b
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32s3 \
+            --warnings all \
+            --build-path /tmp/build-b \
+            --output-dir /tmp/out-b \
+            /tmp/SecureMesh_v1_0_4_OPERATOR \
+            | tee build-b.log
+
+      - name: Characterize binary reproducibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum /tmp/out-a/SecureMesh_v1_0_4_OPERATOR.ino.bin | tee bin-a.sha256
+          sha256sum /tmp/out-b/SecureMesh_v1_0_4_OPERATOR.ino.bin | tee bin-b.sha256
+          sha256sum /tmp/out-a/SecureMesh_v1_0_4_OPERATOR.ino.elf | tee elf-a.sha256
+          sha256sum /tmp/out-b/SecureMesh_v1_0_4_OPERATOR.ino.elf | tee elf-b.sha256
+          bin_a="$(cut -d' ' -f1 bin-a.sha256)"
+          bin_b="$(cut -d' ' -f1 bin-b.sha256)"
+          elf_a="$(cut -d' ' -f1 elf-a.sha256)"
+          elf_b="$(cut -d' ' -f1 elf-b.sha256)"
+          {
+            echo "evidence=NATIVE_BUILD_REPRODUCIBILITY_CHARACTERIZATION"
+            echo "hardware_tested=false"
+            echo "same_source=true"
+            echo "bin_bit_identical=$([ "$bin_a" = "$bin_b" ] && echo true || echo false)"
+            echo "elf_bit_identical=$([ "$elf_a" = "$elf_b" ] && echo true || echo false)"
+            echo "esp32_core=3.3.11"
+            echo "radiolib=7.7.1"
+            echo "nimble_arduino=2.5.1"
+          } | tee reproducibility.txt
+          # Characterization only: non-identical binaries are recorded, not hidden.
+          test -s /tmp/out-a/SecureMesh_v1_0_4_OPERATOR.ino.bin
+          test -s /tmp/out-b/SecureMesh_v1_0_4_OPERATOR.ino.bin
+
+      - name: Upload reproducibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: vanguard-p1-build-reproducibility
+          path: |
+            source.sha256
+            build-a.log
+            build-b.log
+            bin-a.sha256
+            bin-b.sha256
+            elf-a.sha256
+            elf-b.sha256
+            reproducibility.txt
+          if-no-files-found: error
