@@ -1,0 +1,67 @@
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt
+index f4cb3c1..0000000 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt
+@@ -372,11 +372,12 @@ class BleTransport(
+         val session = requireReadySession()
+         require(session.supports(DeviceCapability.OLED_FRAMEBUFFER)) { "Firmware does not advertise OLED_FRAMEBUFFER capability" }
+ 
+-        val chunks = ArrayList<ByteArray>(4)
++        var frameBytes: ByteArray? = null
+         var snapshotId: Long? = null
+         var width = 0
+         var height = 0
+         var expectedCount = 0
++        var writeOffset = 0
+         for (index in 0..3) {
+             val response = command(SecureMeshBleCommand.GetOledFrameChunk(index)).getOrThrow()
+             val chunk = codec.parseOledFrameChunk(response).getOrThrow()
+@@ -386,12 +387,20 @@ class BleTransport(
+                 height = chunk.height
+                 expectedCount = chunk.chunkCount
+                 require(expectedCount == 4) { "Unexpected OLED chunk count $expectedCount" }
++                require(width > 0 && height > 0 && width * height % 8 == 0) { "Invalid OLED geometry ${width}x$height" }
++                frameBytes = ByteArray(width * height / 8)
+             } else {
+                 require(chunk.snapshotId == snapshotId) { "OLED snapshot changed while reading" }
+                 require(chunk.width == width && chunk.height == height && chunk.chunkCount == expectedCount) { "OLED chunk metadata mismatch" }
+             }
+             require(chunk.chunkIndex == index) { "OLED chunk order mismatch" }
+-            chunks += chunk.data
++            val target = requireNotNull(frameBytes)
++            require(writeOffset + chunk.data.size <= target.size) { "OLED chunk exceeds framebuffer" }
++            chunk.data.copyInto(target, destinationOffset = writeOffset)
++            writeOffset += chunk.data.size
+         }
+-        val frameBytes = chunks.fold(ByteArray(0)) { acc, bytes -> acc + bytes }
+-        require(frameBytes.size == width * height / 8) { "OLED framebuffer length mismatch: ${frameBytes.size}" }
++        val completeFrame = requireNotNull(frameBytes)
++        require(writeOffset == completeFrame.size) { "OLED framebuffer length mismatch: $writeOffset/${completeFrame.size}" }
+         OledFramebufferSnapshot(
+             snapshotId = requireNotNull(snapshotId),
+             width = width,
+             height = height,
+-            bytes = frameBytes,
++            bytes = completeFrame,
+             updatedAtEpochMs = now(),
+         ).also { _oledFramebuffer.value = it }
+     }
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt
+index bca3dbc..0000000 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt
+@@ -30,6 +30,8 @@ import dev.securemesh.commander.domain.model.*
+ import kotlinx.coroutines.delay
+ 
++private const val OLED_MIRROR_POLL_INTERVAL_MS = 800L
++
+ @Composable
+ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
+@@ -49,7 +51,7 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
+         if (!state.allowed || !state.exactMirrorAvailable) return@LaunchedEffect
+         while (true) {
+             viewModel.refreshMirror()
+-            delay(450L)
++            delay(OLED_MIRROR_POLL_INTERVAL_MS)
+         }
+     }

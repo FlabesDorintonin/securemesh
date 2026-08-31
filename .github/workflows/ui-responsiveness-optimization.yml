@@ -1,0 +1,197 @@
+name: SecureMesh v1.0.4 UI Responsiveness Optimization
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android/1.0.4-ui-remote
+    paths:
+      - '.github/workflows/ui-responsiveness-optimization.yml'
+      - 'ci-patches/ui-responsiveness-firmware.patch'
+      - 'ci-patches/oled-mirror-load-shed.patch'
+      - 'ci/ui_responsiveness_gate.py'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-build-materialize:
+    name: Optimize degraded-radio UI and OLED mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply firmware responsiveness optimization
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch='ci-patches/ui-responsiveness-firmware.patch'
+          echo '4cf6f63a8185441e98f8a1a630526d0a174dd48a89e144db419b92999c3b8817  '"$patch" | sha256sum -c -
+          if git apply --check "$patch"; then
+            git apply "$patch"
+          elif git apply --reverse --check "$patch"; then
+            echo 'Firmware responsiveness optimization already materialized.'
+          elif grep -q 'RADIO_RETRY_MAX_MS = 30000' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
+            && grep -q 'UI_CONNECTED_ANIMATION_MS = 600' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino; then
+            echo 'Firmware responsiveness optimization is materialized with later changes.'
+          else
+            echo 'Firmware responsiveness optimization cannot be applied or verified.' >&2
+            exit 1
+          fi
+
+      - name: Apply Android OLED mirror load shedding
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch='ci-patches/oled-mirror-load-shed.patch'
+          echo '4ee44ea581d28fa8ba5116ec8d17ac7f9d727337343f75a3de2f4756e58ad99d  '"$patch" | sha256sum -c -
+          if git apply --check "$patch"; then
+            git apply "$patch"
+          elif git apply --reverse --check "$patch"; then
+            echo 'Android OLED mirror optimization already materialized.'
+          elif grep -q 'OLED_MIRROR_POLL_INTERVAL_MS = 800L' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt \
+            && grep -q 'chunk.data.copyInto' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/data/ble/BleTransport.kt; then
+            echo 'Android OLED mirror optimization is materialized with later changes.'
+          else
+            echo 'Android OLED mirror optimization cannot be applied or verified.' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Responsiveness regression gate
+        run: python3 ci/ui_responsiveness_gate.py
+
+      - name: Existing firmware and contract gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/radio_degraded_ui_gate.py
+          python3 tools/firmware_arduino_preprocessor_gate.py
+          python3 tools/oled_remote_action_gate.py
+          python3 tools/frontend_v1_0_4_gate.py
+          (
+            cd android/v1.0.4/source
+            python3 tools/domain_alignment_gate.py
+            python3 tools/ble_contract_gate.py --firmware "$GITHUB_WORKSPACE/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
+          )
+          python3 -m py_compile ci/ui_responsiveness_gate.py tools/radio_degraded_ui_gate.py tools/firmware_arduino_preprocessor_gate.py tools/oled_remote_action_gate.py tools/frontend_v1_0_4_gate.py android/v1.0.4/source/tools/*.py
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: JVM unit tests
+        working-directory: android/v1.0.4/source
+        run: gradle --no-daemon --stacktrace --console=plain testDebugUnitTest
+
+      - name: Android lint
+        working-directory: android/v1.0.4/source
+        run: gradle --no-daemon --stacktrace --console=plain lintDebug
+
+      - name: Assemble debug APK
+        working-directory: android/v1.0.4/source
+        run: gradle --no-daemon --stacktrace --console=plain assembleDebug
+
+      - name: Verify APK identity
+        working-directory: android/v1.0.4/source
+        run: |
+          set -euo pipefail
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          aapt_bin="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          test -f "$apk"
+          "$aapt_bin" dump badging "$apk" | tee APK_BADGING.txt
+          grep -q "package: name='dev.securemesh.commander'" APK_BADGING.txt
+          grep -q "versionCode='20'" APK_BADGING.txt
+          grep -q "versionName='1.0.4'" APK_BADGING.txt
+          sha256sum "$apk" | tee APK_SHA256.txt
+
+      - name: Refresh Android source manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android/v1.0.4/source
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root = Path('.')
+          rows = []
+          for p in sorted(root.rglob('*')):
+              if not p.is_file():
+                  continue
+              rel = p.as_posix()
+              if rel == 'PROJECT_MANIFEST.sha256' or rel.startswith('app/build/') or rel.startswith('.gradle/'):
+                  continue
+              if rel in {'APK_SHA256.txt', 'APK_BADGING.txt'}:
+                  continue
+              rows.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {rel}")
+          Path('PROJECT_MANIFEST.sha256').write_text('\n'.join(rows) + '\n', encoding='utf-8')
+          PY
+          sha256sum -c PROJECT_MANIFEST.sha256 >/dev/null
+
+      - name: Record candidate identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/v1.0.4
+          fw='firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino'
+          apk='android/v1.0.4/source/app/build/outputs/apk/debug/app-debug.apk'
+          fw_sha="$(sha256sum "$fw" | awk '{print $1}')"
+          apk_sha="$(sha256sum "$apk" | awk '{print $1}')"
+          cat > artifacts/v1.0.4/ui-responsiveness-candidate.txt <<EOF
+          SecureMesh v1.0.4 UI responsiveness candidate
+          source_input_commit=$GITHUB_SHA
+          workflow_run_id=$GITHUB_RUN_ID
+          firmware_sha256=$fw_sha
+          android_apk_sha256=$apk_sha
+          evidence=CI_NATIVE_ONLY
+          hardware_gate=REQUIRED_RADIO_CONNECTED_AND_DISCONNECTED_A_B_RETEST
+          EOF
+
+      - name: Materialize verified optimization
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
+            android/v1.0.4/source \
+            artifacts/v1.0.4/ui-responsiveness-candidate.txt
+          if git diff --cached --quiet; then
+            echo 'Optimized source already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'SecureMesh v1.0.4: optimize UI responsiveness without radio'
+          git push origin HEAD:android/1.0.4-ui-remote
+
+      - name: Upload candidate APK and firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureMesh-v1.0.4-UI-Responsiveness-${{ github.run_number }}
+          path: |
+            android/v1.0.4/source/app/build/outputs/apk/debug/app-debug.apk
+            android/v1.0.4/source/APK_SHA256.txt
+            android/v1.0.4/source/APK_BADGING.txt
+            firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
+            artifacts/v1.0.4/ui-responsiveness-candidate.txt
+          if-no-files-found: error
+          retention-days: 30
