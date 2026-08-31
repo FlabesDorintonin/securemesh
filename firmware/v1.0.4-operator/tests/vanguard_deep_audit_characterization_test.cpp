@@ -1,3 +1,4 @@
+#include <initializer_list>
 #include "../VanguardCore.h"
 #include "../VanguardRuntime.h"
 #include "../VanguardManifest.h"
