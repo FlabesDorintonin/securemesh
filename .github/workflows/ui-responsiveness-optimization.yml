@@ -1,4 +1,4 @@
-name: SecureMesh v1.0.4 UI Responsiveness Optimization
+name: SecureMesh v1.0.4 Radio Isolation v2
 
 on:
   workflow_dispatch:
@@ -12,13 +12,15 @@ on:
       - 'ci/ui_responsiveness_gate.py'
       - 'ci/apply_ui_responsiveness.py'
       - 'ci/align_ui_responsiveness_gates.py'
+      - 'ci/apply_radio_isolation_v2.py'
+      - 'ci/radio_isolation_v2_gate.py'
 
 permissions:
   contents: write
 
 jobs:
   verify-build-materialize:
-    name: Optimize degraded-radio UI and OLED mirror
+    name: Isolate degraded radio from BLE/OLED control plane
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -27,16 +29,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Materialize responsiveness optimization
+      - name: Materialize reliability optimization
         run: |
           python3 ci/apply_ui_responsiveness.py
           python3 ci/align_ui_responsiveness_gates.py
+          python3 ci/apply_radio_isolation_v2.py
 
       - name: Verify materialized diff
         run: git diff --check
 
       - name: Responsiveness regression gate
         run: python3 ci/ui_responsiveness_gate.py
+
+      - name: Radio isolation v2 architecture gate
+        run: python3 ci/radio_isolation_v2_gate.py
 
       - name: Existing firmware and contract gates
         shell: bash
@@ -51,7 +57,17 @@ jobs:
             python3 tools/domain_alignment_gate.py
             python3 tools/ble_contract_gate.py --firmware "$GITHUB_WORKSPACE/firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
           )
-          python3 -m py_compile ci/apply_ui_responsiveness.py ci/align_ui_responsiveness_gates.py ci/ui_responsiveness_gate.py tools/radio_degraded_ui_gate.py tools/firmware_arduino_preprocessor_gate.py tools/oled_remote_action_gate.py tools/frontend_v1_0_4_gate.py android/v1.0.4/source/tools/*.py
+          python3 -m py_compile \
+            ci/apply_ui_responsiveness.py \
+            ci/align_ui_responsiveness_gates.py \
+            ci/ui_responsiveness_gate.py \
+            ci/apply_radio_isolation_v2.py \
+            ci/radio_isolation_v2_gate.py \
+            tools/radio_degraded_ui_gate.py \
+            tools/firmware_arduino_preprocessor_gate.py \
+            tools/oled_remote_action_gate.py \
+            tools/frontend_v1_0_4_gate.py \
+            android/v1.0.4/source/tools/*.py
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -129,13 +145,18 @@ jobs:
           apk='android/v1.0.4/source/app/build/outputs/apk/debug/app-debug.apk'
           fw_sha="$(sha256sum "$fw" | awk '{print $1}')"
           apk_sha="$(sha256sum "$apk" | awk '{print $1}')"
-          cat > artifacts/v1.0.4/ui-responsiveness-candidate.txt <<EOF
-          SecureMesh v1.0.4 UI responsiveness candidate
+          (
+            cd firmware/v1.0.4-operator
+            find . -type f ! -name 'SecureMeshSecrets.h' -print0 | sort -z | xargs -0 sha256sum
+          ) > artifacts/v1.0.4/radio-isolation-v2-firmware-manifest.sha256
+          cat > artifacts/v1.0.4/radio-isolation-v2-candidate.txt <<EOF
+          SecureMesh v1.0.4 radio isolation v2 candidate
           source_input_commit=$GITHUB_SHA
           workflow_run_id=$GITHUB_RUN_ID
           firmware_sha256=$fw_sha
           android_apk_sha256=$apk_sha
-          evidence=CI_NATIVE_ONLY
+          evidence=CI_NATIVE_ANDROID_STATIC_FIRMWARE
+          architectural_fix=RADIO_INIT_AND_FAILURE_RECOVERY_REMOVED_FROM_MAIN_LOOP
           hardware_gate=REQUIRED_RADIO_CONNECTED_AND_DISCONNECTED_A_B_RETEST
           EOF
 
@@ -147,25 +168,27 @@ jobs:
             firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino \
             android/v1.0.4/source \
             tools/frontend_v1_0_4_gate.py \
-            artifacts/v1.0.4/ui-responsiveness-candidate.txt
+            artifacts/v1.0.4/radio-isolation-v2-candidate.txt \
+            artifacts/v1.0.4/radio-isolation-v2-firmware-manifest.sha256
           if git diff --cached --quiet; then
-            echo 'Optimized source already materialized.'
+            echo 'Radio isolation v2 source already materialized.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'SecureMesh v1.0.4: optimize UI responsiveness without radio'
+          git commit -m 'SecureMesh v1.0.4: isolate radio recovery from BLE OLED loop'
           git push origin HEAD:android/1.0.4-ui-remote
 
-      - name: Upload candidate APK and firmware
+      - name: Upload complete candidate package
         uses: actions/upload-artifact@v4
         with:
-          name: SecureMesh-v1.0.4-UI-Responsiveness-${{ github.run_number }}
+          name: SecureMesh-v1.0.4-Radio-Isolation-v2-${{ github.run_number }}
           path: |
             android/v1.0.4/source/app/build/outputs/apk/debug/app-debug.apk
             android/v1.0.4/source/APK_SHA256.txt
             android/v1.0.4/source/APK_BADGING.txt
-            firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino
-            artifacts/v1.0.4/ui-responsiveness-candidate.txt
+            firmware/v1.0.4-operator/
+            artifacts/v1.0.4/radio-isolation-v2-candidate.txt
+            artifacts/v1.0.4/radio-isolation-v2-firmware-manifest.sha256
           if-no-files-found: error
           retention-days: 30
