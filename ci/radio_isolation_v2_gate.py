@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 
+# Revision 2: run alongside the async-init-aware legacy degraded-radio gate.
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino"
 SCREEN = ROOT / "android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlScreen.kt"
