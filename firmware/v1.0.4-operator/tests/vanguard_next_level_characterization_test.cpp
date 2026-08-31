@@ -100,9 +100,9 @@ static void characterizeSafetyStillDominatesMetric() {
   const auto primary = candidate(0xD, 0xB, 7, 1, 3, 1u << 1, 301, 30000, 2u << 16, 3);
   assert(e.install(primary, 100, false) == Vanguard::InstallResult::InstalledPrimary);
 
-  // A later candidate with an excellent metric but a non-feasible advertised
-  // rank must not buy its way around FD/safety merely by optimizer quality.
-  const auto unsafeButPretty = candidate(0xD, 0xC, 7, 1, 3, 1u << 2, 302, 32760, 1u << 16, 1);
+  // Primary advertised rank 3 gives local rank/FD 4. Therefore a challenger
+  // advertising rank >= 4 is non-feasible even if its optimizer metric is ideal.
+  const auto unsafeButPretty = candidate(0xD, 0xC, 7, 1, 4, 1u << 2, 302, 32760, 1u << 16, 1);
   const auto result = e.install(unsafeButPretty, 110, false);
   assert(result == Vanguard::InstallResult::RejectedInfeasible ||
          result == Vanguard::InstallResult::RejectedLoop);
