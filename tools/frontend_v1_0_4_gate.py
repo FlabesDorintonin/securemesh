@@ -107,7 +107,7 @@ def main() -> int:
     ok("Remote has exact framebuffer renderer", "OledFramebufferCanvas" in control and "pixelOn" in text("domain/model/DeviceUiModels.kt"))
     ok("Remote has legacy state fallback", "STATE SYNC" in control and "exactMirrorAvailable" in control)
     ok("Exact mirror is capability-gated", "DeviceCapability.OLED_FRAMEBUFFER" in control_vm and "OLED_FRAMEBUFFER" in transport)
-    ok("Exact framebuffer refresh is screen-scoped", "OLED_MIRROR_POLL_INTERVAL_MS = 800L" in control and "delay(OLED_MIRROR_POLL_INTERVAL_MS)" in control and "refreshMirror" in control)
+    ok("Exact framebuffer refresh is screen-scoped", "OLED_MIRROR_POLL_INTERVAL_MS = 1500L" in control and "delay(OLED_MIRROR_POLL_INTERVAL_MS)" in control and "refreshMirror" in control)
 
     more_routes = ["vanguard", "devicecontrol", "fieldtest", "events", "bleradar", "diagnostics", "security", "settings", "map", "search"]
     for route in more_routes:

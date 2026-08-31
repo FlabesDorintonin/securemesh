@@ -30,6 +30,8 @@
 */
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <RadioLib.h>
@@ -1809,6 +1811,10 @@ int activeTxIndex = -1;
 uint32_t txStartedAtMs = 0;
 uint32_t lastRadioRetryAtMs = 0;
 uint32_t radioRetryDelayMs = RADIO_RETRY_MS;
+volatile bool radioInitInProgress = false;
+TaskHandle_t radioRecoveryTaskHandle = nullptr;
+uint32_t radioInitAttemptCount = 0;
+uint32_t radioInitLastDurationMs = 0;
 int16_t lastRadioError = RADIOLIB_ERR_NONE;
 
 void initializeRfSwitchPins() {
@@ -1839,13 +1845,16 @@ void IRAM_ATTR onRadioDio1() {
 }
 
 bool startReceiveMode() {
-  if (!radioReady) return false;
+  if (!radioReady || radioInitInProgress) return false;
 
   setRfReceive();
   const int16_t state = radio.startReceive();
   if (state != RADIOLIB_ERR_NONE) {
     lastRadioError = state;
     radioReady = false;
+    radioIrqFlag = false;
+    detachInterrupt(digitalPinToInterrupt(PIN_RADIO_DIO1));
+    pinMode(PIN_RADIO_DIO1, INPUT_PULLDOWN);
     setRfIdle();
     return false;
   }
@@ -2373,11 +2382,16 @@ void setLastEvent(const char* text) {
 // ============================================================
 
 bool initializeRadio() {
+  // This function may take an unbounded amount of time inside RadioLib when
+  // SX1268 is absent/under-powered. It is therefore called only by the
+  // low-priority radio recovery task, never directly from setup()/loop().
   radioReady = false;
   radioTransmitting = false;
   radioIrqFlag = false;
   activeTxIndex = -1;
 
+  detachInterrupt(digitalPinToInterrupt(PIN_RADIO_DIO1));
+  pinMode(PIN_RADIO_DIO1, INPUT_PULLDOWN);
   initializeRfSwitchPins();
   setRfIdle();
 
@@ -2438,14 +2452,22 @@ bool initializeRadio() {
   }
 
   radio.setDio1Action(onRadioDio1);
-  radioReady = true;
-  lastRadioError = RADIOLIB_ERR_NONE;
-  if (!startReceiveMode()) {
-    // A failed RX transition must not leave a live DIO1 callback attached to
-    // an unavailable/under-powered radio. Degraded BLE/OLED mode owns the loop.
+
+  // Do not publish radioReady until the whole initialization, including RX,
+  // is complete. Main-loop radio code is therefore unable to race a partially
+  // initialized RadioLib object while the worker is still configuring it.
+  setRfReceive();
+  state = radio.startReceive();
+  if (state != RADIOLIB_ERR_NONE) {
+    lastRadioError = state;
     detachInterrupt(digitalPinToInterrupt(PIN_RADIO_DIO1));
+    pinMode(PIN_RADIO_DIO1, INPUT_PULLDOWN);
+    setRfIdle();
     return false;
   }
+
+  lastRadioError = RADIOLIB_ERR_NONE;
+  radioReady = true;
   return true;
 }
 
@@ -2457,9 +2479,11 @@ void recoverRadio(int16_t errorCode) {
   writeU32(recoveryEvent, 2, statRadioRecoveries);
   emitBleEvent(EVT_RADIO_RECOVERY, recoveryEvent, sizeof(recoveryEvent));
 
-  if (radioTransmitting) {
-    radio.finishTransmit();
-  }
+  // Once a radio transaction has faulted, do not make another RadioLib call
+  // from the main loop just to clean it up. finishTransmit()/standby()/RX can
+  // themselves block when the module has lost power. A later worker-side
+  // begin() reinitializes the transceiver from a clean state.
+  radioReady = false;
 
   if (activeTxIndex >= 0 &&
       activeTxIndex < static_cast<int>(MAX_TX_QUEUE) &&
@@ -2470,33 +2494,88 @@ void recoverRadio(int16_t errorCode) {
   radioTransmitting = false;
   activeTxIndex = -1;
   radioIrqFlag = false;
-  radioReady = false;
   // If the module disappears after a previously successful init, keep a
   // floating/noisy DIO1 from waking the main loop until a later retry succeeds.
   detachInterrupt(digitalPinToInterrupt(PIN_RADIO_DIO1));
+  pinMode(PIN_RADIO_DIO1, INPUT_PULLDOWN);
   setRfIdle();
+
+  // Runtime failures get one immediate worker-side recovery opportunity.
+  // Sustained absence is then exponentially backed off by the worker.
+  radioRetryDelayMs = RADIO_RETRY_MS;
+  lastRadioRetryAtMs = millis() - radioRetryDelayMs;
+}
+
+void radioRecoveryTask(void*) {
+  for (;;) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    if (!cryptoReady || radioReady) {
+      radioInitInProgress = false;
+      continue;
+    }
+
+    const uint32_t startedAtMs = millis();
+    radioInitAttemptCount++;
+    const bool recovered = initializeRadio();
+    radioInitLastDurationMs = millis() - startedAtMs;
+
+    if (recovered) {
+      radioRetryDelayMs = RADIO_RETRY_MS;
+      Serial.printf(
+        "[RADIO INIT] attempt=%lu OK duration=%lums\r\n",
+        static_cast<unsigned long>(radioInitAttemptCount),
+        static_cast<unsigned long>(radioInitLastDurationMs)
+      );
+      setLastEvent("RADIO RECOVERED");
+    } else {
+      const uint32_t doubled = radioRetryDelayMs > RADIO_RETRY_MAX_MS / 2
+        ? RADIO_RETRY_MAX_MS
+        : radioRetryDelayMs * 2UL;
+      radioRetryDelayMs = min(doubled, RADIO_RETRY_MAX_MS);
+      Serial.printf(
+        "[RADIO INIT] attempt=%lu FAIL err=%d duration=%lums next=%lums\r\n",
+        static_cast<unsigned long>(radioInitAttemptCount),
+        static_cast<int>(lastRadioError),
+        static_cast<unsigned long>(radioInitLastDurationMs),
+        static_cast<unsigned long>(radioRetryDelayMs)
+      );
+    }
+
+    radioInitInProgress = false;
+  }
+}
+
+bool initializeRadioRecoveryTask() {
+  if (radioRecoveryTaskHandle != nullptr) return true;
+
+  // Pin the worker to the Arduino loop core at idle priority. RadioLib may
+  // synchronously wait for a missing/under-powered SX1268; keeping that wait in
+  // a priority-0 task lets BLE/OLED/main-loop work preempt it every scheduler
+  // tick while also avoiding concurrent RadioLib access from another core.
+  const BaseType_t created = xTaskCreatePinnedToCore(
+    radioRecoveryTask,
+    "sm-radio-recovery",
+    4096,
+    nullptr,
+    0,
+    &radioRecoveryTaskHandle,
+    xPortGetCoreID()
+  );
+  return created == pdPASS;
 }
 
 void processRadioRecovery() {
-  if (!cryptoReady) return;
-  if (radioReady) return;
+  if (!cryptoReady || radioReady || radioInitInProgress) return;
+  if (radioRecoveryTaskHandle == nullptr) return;
+
   const uint32_t now = millis();
   if (now - lastRadioRetryAtMs < radioRetryDelayMs) return;
 
+  // Scheduling is non-blocking: loop() never calls initializeRadio().
   lastRadioRetryAtMs = now;
-  if (initializeRadio()) {
-    radioRetryDelayMs = RADIO_RETRY_MS;
-    setLastEvent("RADIO RECOVERED");
-    return;
-  }
-
-  // RadioLib initialization is synchronous. When the module is physically
-  // absent, retrying every 3 s repeatedly steals time from BLE and OLED. Keep
-  // automatic hot-plug recovery, but exponentially back off sustained failure.
-  const uint32_t doubled = radioRetryDelayMs > RADIO_RETRY_MAX_MS / 2
-    ? RADIO_RETRY_MAX_MS
-    : radioRetryDelayMs * 2UL;
-  radioRetryDelayMs = min(doubled, RADIO_RETRY_MAX_MS);
+  radioInitInProgress = true;
+  xTaskNotifyGive(radioRecoveryTaskHandle);
 }
 
 // ============================================================
@@ -3818,7 +3897,7 @@ void processAuthenticatedFrame(
 // ============================================================
 
 bool startQueuedTransmission(int index) {
-  if (!radioReady || radioTransmitting ||
+  if (!radioReady || radioInitInProgress || radioTransmitting ||
       index < 0 || index >= static_cast<int>(MAX_TX_QUEUE) ||
       !txQueue[index].used) {
     return false;
@@ -3968,7 +4047,7 @@ void processRadioInterrupt() {
   // DIO1 can be stale/floating when the SX1268 is absent or under-powered.
   // Consume that IRQ, but never touch RadioLib while the radio subsystem is
   // unavailable. BLE/OLED degraded mode must remain independently usable.
-  if (!radioReady) return;
+  if (!radioReady || radioInitInProgress) return;
 
   if (radioTransmitting) {
     finishQueuedTransmission();
@@ -4025,7 +4104,7 @@ void processAckTimeout() {
 void processTxScheduler() {
   // Never transition SX1268 to TX while an RX/TX DIO1 event is pending.
   // Otherwise a just-received packet can be overwritten before readData().
-  if (!radioReady || radioTransmitting || radioIrqFlag) return;
+  if (!radioReady || radioInitInProgress || radioTransmitting || radioIrqFlag) return;
   const int index = selectTxEntry();
   if (index >= 0) startQueuedTransmission(index);
 }
@@ -9596,26 +9675,28 @@ void setup() {
   const bool cryptoOk = identityOk && initializeCrypto();
   initializeOled();
   initializeGps();
-  const bool radioOk = cryptoOk && initializeRadio();
 
   const uint32_t heapBeforeBle = static_cast<uint32_t>(ESP.getFreeHeap());
   const uint32_t largestBeforeBle = largestFreeHeapBytes();
   const bool bleOk = initializeBle();
   const uint32_t heapAfterBle = static_cast<uint32_t>(ESP.getFreeHeap());
   const uint32_t largestAfterBle = largestFreeHeapBytes();
+  const bool radioWorkerOk = cryptoOk && initializeRadioRecoveryTask();
 
   const uint32_t now = millis();
   nextHelloAtMs = now + randomBetween(700, 1600);
   nextStatusAtMs = now + SERIAL_STATUS_INTERVAL_MS;
   nextNeighborLifecycleAtMs = now + 1000;
-  lastRadioRetryAtMs = now;
+  // First radio attempt is queued immediately, but runs only in the
+  // low-priority worker after the control plane has already started.
+  lastRadioRetryAtMs = now - RADIO_RETRY_MS;
 
   Serial.println();
   Serial.println("SecureMesh v1.0.4 OPERATOR");
   Serial.printf("Node ID: %s\r\n", localIdText);
   Serial.printf("Identity/nonce state: %s\r\n", identityOk ? "OK" : "FAIL-CLOSED");
   Serial.printf("AES-256-GCM: %s\r\n", cryptoOk ? "OK" : "FAIL-CLOSED");
-  Serial.printf("Radio: %s\r\n", radioOk ? "OK" : "ERROR");
+  Serial.printf("Radio: %s\r\n", radioWorkerOk ? "STARTING ASYNC" : "DISABLED");
   Serial.printf("BLE: %s stack=NimBLE app-protocol=2\r\n", bleOk ? "OK" : "ERROR");
   Serial.printf(
     "VANGUARD timing: discovery=%lums settle=%lums ackTimeout=%lums\r\n",
@@ -9642,11 +9723,12 @@ void setup() {
   Serial.println("Type: help");
 
   if (!identityOk || !cryptoOk) setLastEvent("CRYPTO FAIL-CLOSED");
-  else if (!radioOk) setLastEvent("RADIO ERROR");
   else if (!bleOk) setLastEvent("BLE ERROR");
+  else if (!radioWorkerOk) setLastEvent("RADIO WORKER ERROR");
   else setLastEvent("CONTROL READY");
 
   initializeUi();
+  if (radioWorkerOk) processRadioRecovery();
 }
 
 void loop() {

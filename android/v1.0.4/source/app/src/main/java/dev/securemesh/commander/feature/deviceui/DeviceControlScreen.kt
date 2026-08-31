@@ -33,7 +33,7 @@ import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.domain.model.*
 import kotlinx.coroutines.delay
 
-private const val OLED_MIRROR_POLL_INTERVAL_MS = 800L
+private const val OLED_MIRROR_POLL_INTERVAL_MS = 1500L
 
 @Composable
 fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
@@ -431,7 +431,7 @@ private fun RemoteButton(
     PressScaleSurface(
         onClick = onClick,
         modifier = Modifier.size(if (emphasized) 76.dp else 66.dp),
-        enabled = !busy,
+        enabled = true,
         color = if (emphasized) SecureMeshColors.Cyan.copy(alpha = .18f) else SecureMeshColors.SurfaceBright.copy(alpha = .72f),
         border = BorderStroke(1.dp, if (emphasized) SecureMeshColors.CyanHot.copy(alpha = .55f) else SecureMeshColors.Cyan.copy(alpha = .20f)),
         shape = RoundedCornerShape(if (emphasized) 24.dp else 21.dp),

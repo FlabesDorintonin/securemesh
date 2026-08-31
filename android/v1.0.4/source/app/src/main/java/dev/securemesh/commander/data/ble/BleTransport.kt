@@ -387,6 +387,8 @@ class BleTransport(
                 require(expectedCount == 4) { "Unexpected OLED chunk count $expectedCount" }
                 require(width > 0 && height > 0 && width * height % 8 == 0) { "Invalid OLED geometry ${width}x$height" }
                 frameBytes = ByteArray(width * height / 8)
+                require(width > 0 && height > 0 && width * height % 8 == 0) { "Invalid OLED geometry ${width}x$height" }
+                frameBytes = ByteArray(width * height / 8)
             } else {
                 require(chunk.snapshotId == snapshotId) { "OLED snapshot changed while reading" }
                 require(chunk.width == width && chunk.height == height && chunk.chunkCount == expectedCount) { "OLED chunk metadata mismatch" }
