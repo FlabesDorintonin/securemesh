@@ -46,6 +46,35 @@ jobs:
           path: virtual-radio-${{ matrix.compiler }}.txt
           if-no-files-found: error
 
+  sweeps:
+    name: Real-code loss and contention sweeps
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build sweep harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic \
+            -Ifirmware/v1.0.4-operator \
+            research/vanguard_virtual_radio_lab/vanguard_virtual_radio_sweep.cpp \
+            -o /tmp/vanguard-virtual-radio-sweep
+      - name: Run 2000 loss trials plus contention offsets
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/vanguard-virtual-radio-sweep | tee virtual-radio-sweeps.txt
+          grep -F 'VANGUARD virtual radio sweeps: PASS' virtual-radio-sweeps.txt
+          test "$(grep -c '^loss_sweep ' virtual-radio-sweeps.txt)" -eq 8
+          test "$(grep -c '^contention_offset ' virtual-radio-sweeps.txt)" -eq 8
+      - name: Upload sweep log
+        uses: actions/upload-artifact@v4
+        with:
+          name: virtual-radio-sweeps
+          path: virtual-radio-sweeps.txt
+          if-no-files-found: error
+
   sanitizers:
     name: Virtual radio ASan + UBSan
     runs-on: ubuntu-latest
