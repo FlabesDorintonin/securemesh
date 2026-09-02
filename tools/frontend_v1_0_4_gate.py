@@ -48,16 +48,23 @@ def main() -> int:
     )
     for stale in ("v0.8.2", "0.6.3", "v0.5", "0.9-demo", "v0.9.0"):
         ok(f"No stale frontend identity {stale}", stale not in production_text)
-    ok("VANGUARD header identifies v1.0.4", "Управление SecureMesh v1.0.4" in vanguard)
+
+    # VANGUARD engineering tooling remains compiled and versioned, but is no longer
+    # an operator navigation surface. This preserves lab capability without exposing
+    # Fault Lab / manifest / forced route controls as a normal user-facing "remote".
+    ok("VANGUARD engineering screen retained", "Управление SecureMesh v1.0.4" in vanguard and "Fault Lab" in vanguard)
 
     required_routes = {
         "home", "nodes", "node/{id}", "messages", "messages/{peer}", "map", "more",
-        "vanguard", "devicecontrol", "topology", "routes", "fieldtest", "events",
+        "devicecontrol", "topology", "routes", "fieldtest", "events",
         "diagnostics", "bleradar", "security", "settings", "search",
     }
     found_routes = set(re.findall(r'composable\("([^"]+)"\)', root_nav))
     for route in sorted(required_routes):
         ok(f"Frontend route {route}", route in found_routes)
+    ok("Operator navigation hides VANGUARD engineering route", "vanguard" not in found_routes)
+    ok("Primary operator navigation exposes Map", 'NavItem("map", "Карта"' in root_nav)
+    ok("Primary operator navigation has no legacy Pult", '"Пульт"' not in root_nav)
 
     surface_checks = {
         "Messaging UI": ("feature/messages/MessagesScreen.kt", "send"),
@@ -67,8 +74,8 @@ def main() -> int:
         "Field Test UI": ("feature/fieldtest/FieldTestScreen.kt", "FieldTest"),
         "Offline map UI": ("feature/map/MapScreen.kt", "MapScreen"),
         "SOS UI": ("feature/sos/SosOverlay.kt", "Sos"),
-        "VANGUARD UI": ("feature/vanguard/VanguardControlScreen.kt", "Fault Lab"),
-        "OLED remote UI": ("feature/deviceui/DeviceControlScreen.kt", "Пульт OLED"),
+        "VANGUARD engineering UI": ("feature/vanguard/VanguardControlScreen.kt", "Fault Lab"),
+        "Current node screen UI": ("feature/deviceui/DeviceControlScreen.kt", "Кнопки управления"),
         "BLE Radar UI": ("feature/radar/BleRadarScreen.kt", "Радар"),
         "Diagnostics UI": ("feature/diagnostics/DiagnosticsScreen.kt", "Diagnostics"),
         "Security UI": ("feature/security/SecurityCenterScreen.kt", "Security"),
@@ -103,15 +110,26 @@ def main() -> int:
         ok(f"Repository action exposed: {action}", action in repo)
 
     for action in ("UP", "DOWN", "SELECT", "BACK", "HOME"):
-        ok(f"OLED remote button {action}", f"DeviceUiAction.{action}" in control)
-    ok("Remote has exact framebuffer renderer", "OledFramebufferCanvas" in control and "pixelOn" in text("domain/model/DeviceUiModels.kt"))
-    ok("Remote has legacy state fallback", "STATE SYNC" in control and "exactMirrorAvailable" in control)
+        ok(f"Node screen button {action}", f"DeviceUiAction.{action}" in control)
+    ok("Current node screen has exact framebuffer renderer", "ScreenPixelCanvas" in control and "pixelOn" in text("domain/model/DeviceUiModels.kt"))
+    ok("Current node screen has state fallback", "СОСТОЯНИЕ МЕНЮ" in control and "exactMirrorAvailable" in control)
     ok("Exact mirror is capability-gated", "DeviceCapability.OLED_FRAMEBUFFER" in control_vm and "OLED_FRAMEBUFFER" in transport)
-    ok("Exact framebuffer refresh is screen-scoped", "OLED_MIRROR_POLL_INTERVAL_MS = 1500L" in control and "delay(OLED_MIRROR_POLL_INTERVAL_MS)" in control and "refreshMirror" in control)
+    ok("Exact framebuffer refresh is screen-scoped", "SCREEN_REFRESH_INTERVAL_MS = 1500L" in control and "delay(SCREEN_REFRESH_INTERVAL_MS)" in control and "refreshMirror" in control)
+    ok("Remote action queue remains bounded", "Channel<DeviceUiAction>(capacity = 16)" in control_vm)
+    ok("Remote actions still use repository boundary", "repository.sendDeviceUiAction(action)" in control_vm)
 
-    more_routes = ["vanguard", "devicecontrol", "fieldtest", "events", "bleradar", "diagnostics", "security", "settings", "map", "search"]
+    forbidden_operator_terms = (
+        "OLED CONTROL", "OLED MIRROR", "GET_UI_STATE", "PIXEL MIRROR", "STATE SYNC",
+        "BLE Protocol", "UI_ACTION", "UI OS",
+    )
+    for token in forbidden_operator_terms:
+        ok(f"Current node screen hides engineering term {token}", token not in control)
+
+    more_routes = ["devicecontrol", "fieldtest", "events", "bleradar", "diagnostics", "security", "settings", "map", "search"]
     for route in more_routes:
         ok(f"More menu exposes {route}", f'"{route}"' in more)
+    ok("More menu hides VANGUARD engineering panel", '"vanguard"' not in more)
+    ok("More menu identifies modern node controls", "Экран и кнопки" in more)
 
     print(f"\n{passes} passed, {len(failures)} failed")
     if failures:
