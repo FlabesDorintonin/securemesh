@@ -7,9 +7,20 @@ import org.junit.Test
 
 class OperatorNavigationSurfaceTest {
     private fun source(relative: String): String {
-        val file = File(relative)
-        assertTrue("Missing canonical source file: ${file.absolutePath}", file.isFile)
-        return file.readText()
+        val cwd = File(System.getProperty("user.dir")).absoluteFile
+        val roots = generateSequence(cwd) { it.parentFile }.toList()
+        val candidates = buildList {
+            roots.forEach { root ->
+                add(File(root, relative))
+                add(File(root, "android/v1.0.4/source/$relative"))
+            }
+        }.distinctBy { it.absolutePath }
+        val file = candidates.firstOrNull { it.isFile }
+        assertTrue(
+            "Missing canonical source file '$relative'. Searched: ${candidates.joinToString { it.absolutePath }}",
+            file != null,
+        )
+        return requireNotNull(file).readText()
     }
 
     @Test
