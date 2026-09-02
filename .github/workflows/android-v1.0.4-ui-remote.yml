@@ -10,6 +10,7 @@ on:
       - 'android/v1.0.4/ui-remote-patch/**'
       - 'android/v1.0.4/ui-remote-fixes/**'
       - 'android/v1.0.4/ui-review-fixes/**'
+      - 'android/v1.0.4/ui-review-clean/**'
       - 'android/v1.0.4/source/**'
       - 'firmware/v1.0.4-operator/**'
       - 'tools/frontend_v1_0_4_gate.py'
@@ -26,7 +27,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -95,8 +96,8 @@ jobs:
         run: |
           set -euo pipefail
           patch="$RUNNER_TEMP/operator-review.patch"
-          cat android/v1.0.4/ui-review-fixes/part*.patch > "$patch"
-          sha256sum "$patch"
+          cat android/v1.0.4/ui-review-clean/part*.patch > "$patch"
+          echo 'be2a9f9e6f5e972b08f675e39a7eea1be6a51bde7a43138ced91a3f8282d14dc  '"$patch" | sha256sum -c -
           if git apply --check "$patch"; then
             git apply "$patch"
           elif git apply --reverse --check "$patch"; then
@@ -104,6 +105,7 @@ jobs:
           elif grep -q 'versionCode = 21' android/v1.0.4/source/app/build.gradle.kts \
             && grep -q 'secureMeshArm64Only' android/v1.0.4/source/app/build.gradle.kts \
             && grep -q 'application protocol v2' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt \
+            && test -f android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/navigation/OperatorAppSurfaceContractTest.kt \
             && ! grep -R -n --include='*.kt' 'BLE protocol v0.2' android/v1.0.4/source/app/src/main/java; then
             echo 'Operator review is materialized with later corrections; marker verification passed.'
           else
