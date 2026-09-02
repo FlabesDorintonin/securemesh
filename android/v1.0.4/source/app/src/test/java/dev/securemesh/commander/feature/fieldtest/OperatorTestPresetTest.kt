@@ -11,6 +11,7 @@ class OperatorTestPresetTest {
         assertEquals(listOf(30, 100, 200), OperatorTestPreset.entries.map { it.packetCount })
         assertEquals(listOf(500L, 1000L, 1500L), OperatorTestPreset.entries.map { it.intervalMs })
         assertEquals(listOf(16, 32, 48), OperatorTestPreset.entries.map { it.payloadBytes })
+        assertFalse(OperatorTestPreset.entries.any { it.title.contains("Дальний", ignoreCase = true) })
     }
 
     @Test
