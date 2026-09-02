@@ -47,16 +47,13 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
             add(MoreDestination("Проверка исправности", "Что работает и что сейчас требует внимания", "diagnostics", Icons.Rounded.BugReport, SecureMeshColors.Healthy))
         }
         if (UiAccessPolicy.canControlDeviceUi(session)) {
-            add(MoreDestination("Экран узла", "Управление меню и просмотр экрана подключённого узла", "devicecontrol", Icons.Rounded.Smartphone, SecureMeshColors.Blue))
+            add(MoreDestination("Экран и кнопки", "Живой экран подключённого узла и кнопки управления", "devicecontrol", Icons.Rounded.Smartphone, SecureMeshColors.Blue))
         }
         if (UiAccessPolicy.canShowDiagnostics(session) && session?.supports(DeviceCapability.BLE_RADAR) == true) {
             add(MoreDestination("Устройства рядом", "Какие беспроводные устройства видит подключённый узел", "bleradar", Icons.Rounded.Radar, SecureMeshColors.Cyan))
         }
         if (UiAccessPolicy.canShowSystemLog(session)) {
             add(MoreDestination("Журнал событий", "Изменения, предупреждения и действия сети", "events", Icons.Rounded.Notifications, SecureMeshColors.Warning))
-        }
-        if (UiAccessPolicy.canShowVanguard(session)) {
-            add(MoreDestination("Управление сетью", "Расширенная настройка путей и проверка отказов", "vanguard", Icons.Rounded.Tune, SecureMeshColors.Cyan))
         }
     }
 
@@ -78,7 +75,7 @@ fun MoreScreen(session: SecureMeshSession?, open: (String) -> Unit) {
                 StaggeredReveal(entered, 0) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Меню", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-                        Text("Все действия собраны по назначению — без служебных названий.", color = SecureMeshColors.TextSecondary)
+                        Text("Все действия собраны по назначению — без служебных панелей.", color = SecureMeshColors.TextSecondary)
                     }
                 }
             }

@@ -17,7 +17,6 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.People
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -29,12 +28,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
-import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.core.map.OfflineMapManager
+import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.domain.model.*
 import dev.securemesh.commander.domain.repository.SecureMeshRepository
 import dev.securemesh.commander.domain.service.UiAccessPolicy
 import dev.securemesh.commander.feature.dashboard.*
+import dev.securemesh.commander.feature.deviceui.*
 import dev.securemesh.commander.feature.diagnostics.*
 import dev.securemesh.commander.feature.discovery.*
 import dev.securemesh.commander.feature.events.*
@@ -44,15 +44,13 @@ import dev.securemesh.commander.feature.messages.*
 import dev.securemesh.commander.feature.more.MoreScreen
 import dev.securemesh.commander.feature.network.*
 import dev.securemesh.commander.feature.nodes.*
-import dev.securemesh.commander.feature.routes.*
 import dev.securemesh.commander.feature.radar.*
+import dev.securemesh.commander.feature.routes.*
 import dev.securemesh.commander.feature.search.*
-import dev.securemesh.commander.feature.settings.*
 import dev.securemesh.commander.feature.security.*
+import dev.securemesh.commander.feature.settings.*
 import dev.securemesh.commander.feature.sos.SosOverlay
 import dev.securemesh.commander.feature.welcome.*
-import dev.securemesh.commander.feature.vanguard.*
-import dev.securemesh.commander.feature.deviceui.*
 
 private object RootRoute {
     const val WELCOME = "welcome"
@@ -68,8 +66,9 @@ private fun itemsFor(session: SecureMeshSession?): List<NavItem> = buildList {
     if (UiAccessPolicy.canShowMessages(session)) add(NavItem("messages", "Чаты", Icons.Rounded.ChatBubble))
     if (UiAccessPolicy.canShowNodes(session)) add(NavItem("nodes", "Сеть", Icons.Rounded.People))
     else session?.let { add(NavItem("node/${it.localNodeIdentity.nodeId}", "Мой узел", Icons.Rounded.People)) }
-    if (UiAccessPolicy.canShowVanguard(session)) add(NavItem("vanguard", "Пульт", Icons.Rounded.Tune))
-    else add(NavItem("map", "Карта", Icons.Rounded.Map))
+    // The operator bar exposes stable user functions only. Engineering VANGUARD
+    // controls remain in source/tests but are intentionally not an operator route.
+    add(NavItem("map", "Карта", Icons.Rounded.Map))
     add(NavItem("more", "Ещё", Icons.Rounded.MoreHoriz))
 }
 
@@ -209,7 +208,6 @@ private fun MainNavHost(nav: NavHostController, repository: SecureMeshRepository
             )
         }
         composable("more") { MoreScreen(session) { nav.navigate(it) } }
-        composable("vanguard") { VanguardControlScreen(viewModel(factory = viewModelFactory { VanguardControlViewModel(repository) })) }
         composable("devicecontrol") { DeviceControlScreen(viewModel(factory = viewModelFactory { DeviceControlViewModel(repository) })) }
         composable("topology") { TopologyScreen(viewModel(factory = viewModelFactory { NetworkViewModel(repository) })) { nav.navigate("node/$it") } }
         composable("routes") { RoutesScreen(viewModel(factory = viewModelFactory { RoutesViewModel(repository) })) }

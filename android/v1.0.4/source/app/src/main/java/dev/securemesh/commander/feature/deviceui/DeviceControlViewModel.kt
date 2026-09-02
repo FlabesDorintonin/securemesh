@@ -11,10 +11,10 @@ import dev.securemesh.commander.domain.repository.SecureMeshRepository
 import dev.securemesh.commander.domain.service.UiAccessPolicy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -34,9 +34,8 @@ class DeviceControlViewModel(private val repository: SecureMeshRepository) : Vie
     private val busy = MutableStateFlow(false)
     private val mirrorBusy = MutableStateFlow(false)
     private val error = MutableStateFlow<String?>(null)
-    // UI actions are serialized independently from framebuffer traffic. Chunk 0
-    // freezes a firmware-side 1024-byte OLED snapshot, so later chunks may safely
-    // interleave with UI_ACTION without tearing the image or blocking the remote.
+
+    // Keep operator button presses ordered and independent from screen refresh traffic.
     private val uiStateMutex = Mutex()
     private val actionQueue = Channel<DeviceUiAction>(capacity = 16)
     private var actionMirrorJob: Job? = null
@@ -75,6 +74,7 @@ class DeviceControlViewModel(private val repository: SecureMeshRepository) : Vie
             mirrorBusy.value ||
             repository.session.value?.supports(DeviceCapability.OLED_FRAMEBUFFER) != true
         ) return
+
         viewModelScope.launch {
             mirrorBusy.value = true
             try {
@@ -87,7 +87,7 @@ class DeviceControlViewModel(private val repository: SecureMeshRepository) : Vie
 
     fun action(action: DeviceUiAction) {
         if (!actionQueue.trySend(action).isSuccess) {
-            error.value = "Очередь пульта заполнена — дождитесь выполнения команд"
+            error.value = "Слишком много нажатий подряд. Дождитесь выполнения предыдущих команд."
         }
     }
 
@@ -99,14 +99,13 @@ class DeviceControlViewModel(private val repository: SecureMeshRepository) : Vie
         } catch (t: Throwable) {
             Result.failure(t)
         }
+
         result.onFailure { throwable ->
             error.value = throwable.message ?: "Узел не принял команду"
         }
         busy.value = false
 
         if (result.isSuccess && repository.session.value?.supports(DeviceCapability.OLED_FRAMEBUFFER) == true) {
-            // Coalesce a burst of button presses into one exact framebuffer refresh.
-            // The next UI_ACTION is not held behind four GET_OLED_FRAME_CHUNK calls.
             actionMirrorJob?.cancel()
             actionMirrorJob = viewModelScope.launch {
                 delay(75L)
@@ -125,8 +124,9 @@ class DeviceControlViewModel(private val repository: SecureMeshRepository) : Vie
             busy.value = true
             error.value = null
             try {
-                block()
-                    .onFailure { throwable -> error.value = throwable.message ?: "Узел не принял команду" }
+                block().onFailure { throwable ->
+                    error.value = throwable.message ?: "Узел не принял команду"
+                }
             } finally {
                 busy.value = false
             }
