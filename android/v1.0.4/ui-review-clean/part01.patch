@@ -1,0 +1,64 @@
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt
+index d10b45e186ba43950d3c24fd1eaa82ba99ff09d6..9fe82dd641c9231a033a0ded52ab8f059c215b54 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt
+@@ -37,8 +37,16 @@ fun EventsScreen(viewModel: EventsViewModel) {
+     var selected by remember { mutableStateOf<MeshEvent?>(null) }
+     var pending by remember { mutableStateOf("") }
+     var exportOpen by remember { mutableStateOf(false) }
+-    val createCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { LocalDocumentExporter.write(context, it, pending) } }
+-    val createJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { LocalDocumentExporter.write(context, it, pending) } }
++    var exportNotice by remember { mutableStateOf<String?>(null) }
++    val saveExport: (android.net.Uri?) -> Unit = { uri ->
++        uri?.let { destination ->
++            LocalDocumentExporter.write(context, destination, pending)
++                .onSuccess { exportNotice = "Файл сохранён" }
++                .onFailure { exportNotice = it.message ?: "Не удалось сохранить файл" }
++        }
++    }
++    val createCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv"), saveExport)
++    val createJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), saveExport)
+ 
+     LazyColumn(
+         Modifier.fillMaxSize(),
+@@ -81,6 +89,15 @@ fun EventsScreen(viewModel: EventsViewModel) {
+                 EventRow(event) { selected = event }
+             }
+         }
++        exportNotice?.let { notice ->
++            item {
++                Text(
++                    notice,
++                    color = if (notice == "Файл сохранён") SecureMeshColors.Healthy else SecureMeshColors.Critical,
++                    style = MaterialTheme.typography.bodySmall,
++                )
++            }
++        }
+         item { Spacer(Modifier.height(8.dp)) }
+     }
+ 
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt
+index 636eec1cc68926c41120f3a36dc5507c341d69c3..6008dbc635c7902bed041749525e6811511862c1 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt
+@@ -50,7 +50,7 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
+                 }
+             }
+             if (!state.supported) {
+-                item { EmptyState("Радар недоступен", "Подключённая прошивка не заявляет capability BLE_RADAR.") }
++                item { EmptyState("Радар недоступен", "Подключённый узел не сообщает о поддержке BLE-радара.") }
+             } else {
+                 val radar = state.radar
+                 item { RadarCanvas(radar?.devices.orEmpty(), radar?.scanning == true) }
+@@ -76,9 +76,9 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
+                     }
+                 }
+                 if (radar?.devices.isNullOrEmpty()) {
+-                    item { EmptyState("Пока пусто", "После PROTOCOL_READY узел периодически выполняет пассивное BLE-сканирование. Дайте ему несколько секунд.") }
++                    item { EmptyState("Пока пусто", "После установления защищённой сессии узел периодически выполняет пассивное BLE-сканирование. Дайте ему несколько секунд.") }
+                 } else {
+-                    items(radar!!.devices, key = { it.addressHash }) { device -> RadarDeviceRow(device) }
++                    items(radar?.devices.orEmpty(), key = { it.addressHash }) { device -> RadarDeviceRow(device) }
+                 }
+             }
+             state.error?.let { message -> item { Text(message, color = SecureMeshColors.Critical, style = MaterialTheme.typography.bodySmall) } }
