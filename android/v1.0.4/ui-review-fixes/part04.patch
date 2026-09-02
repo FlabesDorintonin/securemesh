@@ -1,0 +1,45 @@
+e.settings.rememberTrustedNode) {
+-                    SettingToggle("Запоминать доверенный nodeId", state.settings.rememberTrustedNode, viewModel::setRememberTrustedNode)
++                    SettingToggle("Запоминать доверенный NodeID", state.settings.rememberTrustedNode, viewModel::setRememberTrustedNode)
+                     SettingToggle("Автоподключение", state.settings.autoReconnect, viewModel::setAutoReconnect, enabled = state.settings.rememberTrustedNode)
+                     if (!state.settings.rememberTrustedNode) {
+-                        Text("Сохранённая trusted-запись удаляется сразу; старый BLE address больше не используется для reconnect.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
++                        Text("Сохранённая запись доверия удаляется сразу; прежний BLE-адрес больше не используется для автоматического подключения.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                     }
+                 }
+             }
+@@ -106,8 +106,8 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
+             item {
+                 SecurityCard(Icons.Rounded.Storage, "Хранение истории", "${state.settings.retentionDays} дней", true) {
+                     SecurityValue("События", if (state.settings.storeEvents) "Хранятся" else "Не сохраняются")
+-                    SecurityValue("GPS history", if (state.settings.positionHistory) "Хранится" else "Не сохраняется")
+-                    Text("Чаты сохраняются локально по SecureMesh identity. Message key включает origin + messageId, чтобы одинаковые firmware ID разных отправителей не перетирали историю.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
++                    SecurityValue("История координат", if (state.settings.positionHistory) "Хранится" else "Не сохраняется")
++                    Text("Чаты сохраняются локально по SecureMesh NodeID. Составной ключ сообщения учитывает отправителя, поэтому одинаковые номера сообщений от разных узлов не перезаписывают историю.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                 }
+             }
+         }
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt
+index 67ca7db..7475b98 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt
+@@ -39,7 +39,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+             ProductSettingsGroup("Безопасность", Icons.Rounded.Lock, SecureMeshColors.Cyan) {
+                 SettingSwitch(
+                     label = "Защищать экран SecureMesh",
+-                    description = "Блокирует снимки, небезопасный вывод и сторонние overlay-окна на всём чувствительном интерфейсе приложения.",
++                    description = "Блокирует снимки экрана, небезопасный вывоод и стороние окна поверх чувствительного интерфейса.",
+                     value = settings.secureScreen,
+                 ) { value -> viewModel.update { it.copy(secureScreen = value) } }
+ 
+@@ -47,13 +47,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+ 
+                 SettingSwitch(
+                     label = "Запоминать доверенный узел",
+-                    description = "BLE-адрес используется только как подсказка для поиска. Доверие каждый раз подтверждается authenticated INFO/nodeId.",
++                    description = "BLE-адрес используется только как подсказка для поиска. Доверие каждый раз подтверждается защищённой сессией и SecureMesh NodeID.",
+                     value = settings.rememberTrustedNode,
+                 ) { value -> viewModel.update { it.copy(rememberTrustedNode = value) } }
+ 
+                 HorizontalDivider(color = SecureMeshColors.Divider)
+        

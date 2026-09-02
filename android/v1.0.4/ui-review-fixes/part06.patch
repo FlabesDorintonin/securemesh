@@ -1,0 +1,43 @@
+ry/SecureMeshRepositoryImplTest.kt
++++ b/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImplTest.kt
+@@ -162,6 +162,7 @@ class SecureMeshRepositoryImplTest {
+         val repository = SecureMeshRepositoryImpl(TransportRouter(mock, ble), mock, dao, settings, FakeProtector)
+         try {
+             repository.updateSettings { it.copy(rememberTrustedNode = false) }
++            assertFalse(settings.settingsValue.autoReconnect)
+             assertNull(dao.latestTrustedDevice())
+             repository.attemptAutoReconnect()
+             assertEquals(TransportMode.BLE, repository.transportMode.value)
+@@ -201,6 +202,7 @@ private class FakeSettings(
+     private val state = MutableStateFlow(initialSettings)
+     private val owner = MutableStateFlow(initialOwner)
+     val ownerValue: NodeId? get() = owner.value
++    val settingsValue: AppSettings get() = state.value
+     override val settings: Flow<AppSettings> = state
+     override val localHistoryOwnerNodeId: Flow<NodeId?> = owner
+     override suspend fun write(settings: AppSettings) { state.value = settings }
+diff --git a/android/v1.0.4/source/gradle/libs.versions.toml b/android/v1.0.4/source/gradle/libs.versions.toml
+index 37d182b..8a09d1a 100644
+--- a/android/v1.0.4/source/gradle/libs.versions.toml
++++ b/android/v1.0.4/source/gradle/libs.versions.toml
+@@ -1,16 +1,16 @@
+ [versions]
+ agp = "8.13.2"
+-kotlin = "2.3.20"
++kotlin = "2.4.10"
+ ksp = "2.3.11"
+ coreKtx = "1.17.0"
+ activityCompose = "1.13.0"
+-compose = "1.11.4"
++compose = "1.12.0"
+ icons = "1.7.8"
+ material3 = "1.4.0"
+-lifecycle = "2.10.0"
++lifecycle = "2.11.0"
+ navigation = "2.9.8"
+ datastore = "1.2.1"
+-room3 = "3.0.1"
++room3 = "3.0.2"
+ sqlite = "2.7.0"
+ coroutines = "1.10.2"
+ junit4 = "4.13.2"

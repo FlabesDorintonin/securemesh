@@ -1,0 +1,53 @@
+rViewModel) {
+                 }
+             }
+             if (!state.supported) {
+-                item { EmptyState("Радар недоступен", "Подключённая прошивка не заявляет capability BLE_RADAR.") }
++                item { EmptyState("Радар недоступен", "Подключённый узел не сообщает о поддержке BLE-радара.") }
+             } else {
+                 val radar = state.radar
+                 item { RadarCanvas(radar?.devices.orEmpty(), radar?.scanning == true) }
+@@ -76,9 +76,9 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
+                     }
+                 }
+                 if (radar?.devices.isNullOrEmpty()) {
+-                    item { EmptyState("Пока пусто", "После PROTOCOL_READY узел периодически выполняет пассивное BLE-сканирование. Дайте ему несколько секунд.") }
++                    item { EmptyState("Пока пусто", "После установления защищённой сессии узел периодически выполняет пассивное BLE-сканирование. Дайте ему несколько секунд.") }
+                 } else {
+-                    items(radar!!.devices, key = { it.addressHash }) { device -> RadarDeviceRow(device) }
++                    items(radar?.devices.orEmpty(), key = { it.addressHash }) { device -> RadarDeviceRow(device) }
+                 }
+             }
+             state.error?.let { message -> item { Text(message, color = SecureMeshColors.Critical, style = MaterialTheme.typography.bodySmall) } }
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt
+index a845973..7f7edaf 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/security/SecurityCenterScreen.kt
+@@ -46,7 +46,7 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
+                             Text("Центр безопасности", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                             Text("Проверяем не обещания, а реально включённые механизмы", color = SecureMeshColors.TextSecondary)
+                         }
+-                        StatusChip(if (protected) "PROTECTED" else "LIMITED", if (protected) SecureMeshColors.Healthy else SecureMeshColors.Warning)
++                        StatusChip(if (protected) "ЗАЩИЩЕНО" else "ОГРАНИЧЕНО", if (protected) SecureMeshColors.Healthy else SecureMeshColors.Warning)
+                     }
+                 }
+             }
+@@ -55,9 +55,9 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
+                 SecurityCard(Icons.Rounded.VisibilityOff, "Защита экрана", if (protected) "Включена" else "Выключена", protected) {
+                     Text(
+                         if (state.overlayProtectionSupported) {
+-                            "FLAG_SECURE блокирует снимки экрана и небезопасный вывод. На Android 12+ дополнительно включена защита от сторонних application overlays."
++                            "Системная защита блокирует снимки экрана и небезопасный вывод. На Android 12+ дополнительно скрываются сторонние окна поверх SecureMesh."
+                         } else {
+-                            "FLAG_SECURE блокирует снимки экрана и небезопасный вывод. Защита от application overlays доступна начиная с Android 12."
++                            "Системная защита блокирует снимки экрана и небезопасный вывод. Дополнительная защита от сторонних окон поверх приложения доступна начиная с Android 12."
+                         },
+                         color = SecureMeshColors.TextSecondary,
+                         style = MaterialTheme.typography.bodySmall,
+@@ -68,18 +68,18 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
+ 
+             item {
+                 SecurityCard(Icons.Rounded.EnhancedEncryption, "Локальный криптовольт", "AES-256-GCM", true) {
+-                    SecurityValue("Ключ", "Android Keystore · non-exportable")
++                    SecurityValue("Ключ", "Android Keystore · не извлекается")
+                 

@@ -1,0 +1,85 @@
+diff --git a/android/v1.0.4/source/app/build.gradle.kts b/android/v1.0.4/source/app/build.gradle.kts
+index 40b680f..417db1b 100644
+--- a/android/v1.0.4/source/app/build.gradle.kts
++++ b/android/v1.0.4/source/app/build.gradle.kts
+@@ -6,6 +6,8 @@ plugins {
+     alias(libs.plugins.room3)
+ }
+ 
++val secureMeshArm64Only = providers.gradleProperty("securemeshArm64Only").orNull == "true"
++
+ android {
+     namespace = "dev.securemesh.commander"
+     compileSdk = 36
+@@ -14,10 +16,13 @@ android {
+         applicationId = "dev.securemesh.commander"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 20
++        versionCode = 21
+         versionName = "1.0.4"
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables.useSupportLibrary = true
++        if (secureMeshArm64Only) {
++            ndk { abiFilters += "arm64-v8a" }
++        }
+     }
+ 
+     buildFeatures {
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/export/LocalDocumentExporter.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/export/LocalDocumentExporter.kt
+index 9069bdf..77a1580 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/export/LocalDocumentExporter.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/export/LocalDocumentExporter.kt
+@@ -4,8 +4,12 @@ import android.content.Context
+ import android.net.Uri
+ 
+ object LocalDocumentExporter {
+-    fun write(context: Context, uri: Uri, content: String) {
+-        context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+-            ?: error("Unable to open export destination")
++    fun write(context: Context, uri: Uri, content: String): Result<Unit> = runCatching {
++        val output = context.contentResolver.openOutputStream(uri)
++            ?: error("Не удалось открыть выбранное место сохранения")
++        output.bufferedWriter().use { writer ->
++            writer.write(content)
++            writer.flush()
++        }
+     }
+ }
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/map/OfflineMapManager.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/map/OfflineMapManager.kt
+index 5822ff7..d3a5c1c 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/map/OfflineMapManager.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/core/map/OfflineMapManager.kt
+@@ -428,7 +428,7 @@ class OfflineMapManager(context: Context) {
+     private fun friendlyInstallError(error: Throwable): String = when {
+         error is kotlinx.coroutines.CancellationException -> "Операция отменена"
+         error.message.isNullOrBlank() -> "Не удалось добавить карту"
+-        else -> error.message!!
++        else -> requireNotNull(error.message)
+     }
+ 
+     companion object {
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
+index 94e2a4a..446ee12 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/discovery/DiscoveryScreen.kt
+@@ -263,15 +263,15 @@ private fun SystemPairingHint(state: MeshConnectionState.PairingRequired) {
+ @Composable
+ private fun AuthenticationHint(connection: MeshConnectionState) {
+     val label = when (connection) {
+-        is MeshConnectionState.DiscoveringServices -> "Проверяем GATT service"
+-        is MeshConnectionState.IdentifyingSecureMesh -> "Проверяем SecureMesh identity"
++        is MeshConnectionState.DiscoveringServices -> "Проверяем сервис связи"
++        is MeshConnectionState.IdentifyingSecureMesh -> "Проверяем SecureMesh NodeID"
+         is MeshConnectionState.SyncingSession -> "Синхронизируем права сессии"
+         else -> "Проверяем защищённый BLE-канал"
+     }
+     TechnicalCard("Защищённое подключение") {
+         Text(label, fontWeight = FontWeight.SemiBold, color = SecureMeshColors.Text)
+         Text(
+-            "Сессия откроется только после подтверждения протокола, bonding и аутентифицированного INFO/nodeId.",
++            "Сессия откроется только после проверки протокола, системного сопряжения и подтверждения SecureMesh NodeID.",
+             color = SecureMeshColors.TextSecondary,
+         )
+         LinearProgressIndicator(Modifier.fillMaxWidth(), color = SecureMeshColors.Cyan)
+@@ -302,7 +302,7 @@ private fun DeviceDiscoveryCon

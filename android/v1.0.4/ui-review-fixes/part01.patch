@@ -1,0 +1,63 @@
+tent(state: DiscoveryUiState, viewModel: Discovery
+             onValueChange = viewModel::setQuery,
+             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+             label = { Text("Поиск устройства") },
+-            placeholder = { Text(if (state.showingUnknownBle) "Имя или BLE-адрес" else "SecureMesh-узел") },
++            placeholder = { Text(if (state.showingUnknownBle) "Имя или адрес подключения" else "SecureMesh-узел") },
+             modifier = Modifier.fillMaxWidth(),
+             singleLine = true,
+             shape = MaterialTheme.shapes.extraLarge,
+@@ -323,7 +323,7 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
+         }
+         if (!state.showingUnknownBle) {
+             Text(
+-                "Показываются только устройства с подтверждённым SecureMesh Service UUID. Имя BLE не считается идентичностью.",
++                "В обычном режиме показываются только устройства, объявляющие сервис SecureMesh. Имя Bluetooth не считается сетевой идентичностью.",
+                 color = SecureMeshColors.Muted,
+                 style = MaterialTheme.typography.bodySmall,
+             )
+@@ -424,7 +424,7 @@ fun ProtocolUnavailableScreen(
+             StatusChip("BLE подключён", SecureMeshColors.Warning)
+             Text("Узел не подтвердил SecureMesh", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
+             Text(
+-                "GATT-соединение установлено, но защищённый BLE protocol v0.2 не прошёл проверку service/characteristics, версии или INFO handshake.",
++                "Bluetooth-соединение установлено, но application protocol v2 не прошёл проверку сервиса, характеристик, версии или идентичности узла.",
+                 color = SecureMeshColors.TextSecondary,
+             )
+             TechnicalCard("Соединение") {
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt
+index d10b45e..e3a8f31 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/events/EventsScreen.kt
+@@ -37,8 +37,16 @@ fun EventsScreen(viewModel: EventsViewModel) {
+     var selected by remember { mutableStateOf<MeshEvent?>(null) }
+     var pending by remember { mutableStateOf("") }
+     var exportOpen by remember { mutableStateOf(false) }
+-    val createCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { LocalDocumentExporter.write(context, it, pending) } }
+-    val createJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { LocalDocumentExporter.write(context, it, pending) } }
++    var exportNotice by remember { mutableStateOf<String?>(null) }
++    val saveExport: (android.net.Uri?) -> Unit = { uri ->
++        uri?.let { destination ->
++            LocalDocumentExporter.write(context, destination, pending)
++                .onSuccess { exportNotice = "Файл сохранён" }
++                .onFailure { exportNotice = it.message ?: "Не удалось сохранить файл" }
++        }
++    }
++    val createCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv"), saveExport)
++    val createJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), saveExport)
+ 
+     LazyColumn(
+         Modifier.fillMaxSize(),
+@@ -81,6 +89,7 @@ fun EventsScreen(viewModel: EventsViewModel) {
+                 EventRow(event) { selected = event }
+             }
+         }
++        exportNotice?.let { notice -> item { Text(notice, color = if (notice == "Файл сохранён") SecureMeshColors.Healthy else SecureMeshColors.Critical, style = MaterialTheme.typography.bodySmall) } }
+         item { Spacer(Modifier.height(8.dp)) }
+     }
+ 
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt
+index 636eec1..6008dbc 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/radar/BleRadarScreen.kt
+@@ -50,7 +50,7 @@ fun BleRadarScreen(viewModel: BleRada

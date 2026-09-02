@@ -1,0 +1,58 @@
+         SettingValue("Резервное копирование", "Отключено")
+-                SettingValue("Облачный backend", "Не используется")
++                SettingValue("Облачный сервер", "Не используется")
+ 
+                 OutlinedButton(
+                     onClick = { confirmClear = true },
+@@ -72,7 +72,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+             ProductSettingsGroup("Bluetooth", Icons.Rounded.Bluetooth, SecureMeshColors.Blue) {
+                 SettingSwitch(
+                     "Автоматическое переподключение",
+-                    "Повторно ищет последний доверенный узел, но не переносит доверие по BLE MAC.",
++                    "Повторно ищет последний доверенный узел, но не переносит доверие только по Bluetooth-адресу.",
+                     settings.autoReconnect,
+                     enabled = settings.rememberTrustedNode,
+                 ) { value -> viewModel.update { it.copy(autoReconnect = value) } }
+@@ -90,7 +90,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+ 
+                 SettingSwitch(
+                     "Диагностический поиск всех BLE",
+-                    "Работает только вместе с developer mode. В обычном режиме показываются устройства с подтверждённым SecureMesh Service UUID.",
++                    "Доступно только в инженерном режиме. В обычном режиме показываются только устройства с сервисом SecureMesh.",
+                     settings.showUnknownBle,
+                     enabled = settings.developerMode,
+                 ) { value -> viewModel.update { it.copy(showUnknownBle = value) } }
+@@ -109,7 +109,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+ 
+                 SettingSwitch(
+                     "Журнал событий",
+-                    "Сохранять события текущего authenticated nodeId локально.",
++                    "Сохранять события текущего подтверждённого SecureMesh NodeID локально.",
+                     settings.storeEvents,
+                 ) { value -> viewModel.update { it.copy(storeEvents = value) } }
+ 
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt
+index a305e2f..ae8cf1f 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt
+@@ -122,7 +122,7 @@ fun WelcomeContent(
+                             color = SecureMeshColors.Text,
+                         )
+                         Text(
+-                            "Подключи локальный узел по Bluetooth. После проверки pairing, протокола и nodeId приложение откроет чаты, сеть, маршруты и полевые инструменты.",
++                            "Подключи локальный узел по Bluetooth. После защищённого сопряжения, проверки протокола и SecureMesh NodeID приложение откроет доступные функции.",
+                             color = SecureMeshColors.TextSecondary,
+                             style = MaterialTheme.typography.bodyLarge,
+                         )
+@@ -139,7 +139,7 @@ fun WelcomeContent(
+                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                         WelcomeFeature(Icons.Rounded.ChatBubble, "Сообщения", "Через mesh", SecureMeshColors.Cyan, Modifier.weight(1f))
+                         WelcomeFeature(Icons.Rounded.Hub, "Сеть", "Узлы и маршруты", SecureMeshColors.Blue, Modifier.weight(1f))
+-                        WelcomeFeature(Icons.Rounded.Security, "Защита", "Pairing + identity", SecureMeshColors.Violet, Modifier.weight(1f))
++                        WelcomeFeature(Icons.Rounded.Security, "Защита", "Сопряжение + NodeID", SecureMeshColors.Violet, Modifier.weight(1f))
+                     }
+                 }
+ 
+diff --git a/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImplTest.kt b/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImplTest.kt
+index 37e33a7..ceaee82 100644
+--- a/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/reposito
