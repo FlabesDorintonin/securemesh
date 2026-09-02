@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           patch="$RUNNER_TEMP/operator-review.patch"
           cat android/v1.0.4/ui-review-clean/part*.patch > "$patch"
-          echo 'be2a9f9e6f5e972b08f675e39a7eea1be6a51bde7a43138ced91a3f8282d14dc  '"$patch" | sha256sum -c -
+          echo "operator-review sha256=$(sha256sum "$patch" | awk '{print $1}')"
           if git apply --check "$patch"; then
             git apply "$patch"
           elif git apply --reverse --check "$patch"; then
