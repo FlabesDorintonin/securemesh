@@ -1,0 +1,26 @@
+diff --git a/android/v1.0.4/source/gradle/libs.versions.toml b/android/v1.0.4/source/gradle/libs.versions.toml
+index 37d182bf500d00ccfa4e7dab6ad3274875fe6a0b..09896363e0ffdf46541079e0ab878b136e96cd50 100644
+--- a/android/v1.0.4/source/gradle/libs.versions.toml
++++ b/android/v1.0.4/source/gradle/libs.versions.toml
+@@ -1,16 +1,16 @@
+ [versions]
+ agp = "8.13.2"
+-kotlin = "2.3.20"
++kotlin = "2.3.21"
+ ksp = "2.3.11"
+-coreKtx = "1.17.0"
++coreKtx = "1.19.0"
+ activityCompose = "1.13.0"
+-compose = "1.11.4"
++compose = "1.12.0"
+ icons = "1.7.8"
+ material3 = "1.4.0"
+ lifecycle = "2.10.0"
+-navigation = "2.9.8"
++navigation = "2.10.0"
+ datastore = "1.2.1"
+-room3 = "3.0.1"
++room3 = "3.0.2"
+ sqlite = "2.7.0"
+ coroutines = "1.10.2"
+ junit4 = "4.13.2"
