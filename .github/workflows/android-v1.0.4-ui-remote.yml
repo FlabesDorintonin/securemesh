@@ -80,9 +80,9 @@ jobs:
             git apply "$patch"
           elif git apply --reverse --check "$patch"; then
             echo 'OLED remote action fix already materialized; continuing.'
-          elif grep -q 'private val remoteUiMutex = Mutex()' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlViewModel.kt \
+          elif grep -q 'private val actionQueue = Channel<DeviceUiAction>(capacity = 16)' android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/deviceui/DeviceControlViewModel.kt \
             && grep -q 'void uiCommitRemoteAction()' firmware/v1.0.4-operator/SecureMesh_v1_0_4_OPERATOR.ino; then
-            echo 'OLED remote action fix is materialized with later changes; marker verification passed.'
+            echo 'OLED remote action v2 is materialized with later changes; marker verification passed.'
           else
             echo 'OLED remote action fix is neither cleanly applicable nor already applied.' >&2
             exit 1
