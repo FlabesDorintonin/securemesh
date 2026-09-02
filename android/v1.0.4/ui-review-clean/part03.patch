@@ -1,0 +1,123 @@
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt
+index 67ca7dba9d1ceb38b0f6122163e4dd26cd56d7cf..e4bfe14d71a78a5e0dc98126a784100be1fc6f07 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/settings/SettingsScreen.kt
+@@ -39,7 +39,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+             ProductSettingsGroup("Безопасность", Icons.Rounded.Lock, SecureMeshColors.Cyan) {
+                 SettingSwitch(
+                     label = "Защищать экран SecureMesh",
+-                    description = "Блокирует снимки, небезопасный вывод и сторонние overlay-окна на всём чувствительном интерфейсе приложения.",
++                    description = "Блокирует снимки экрана, небезопасный вывод и сторонние окна поверх чувствительного интерфейса.",
+                     value = settings.secureScreen,
+                 ) { value -> viewModel.update { it.copy(secureScreen = value) } }
+ 
+@@ -47,13 +47,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+ 
+                 SettingSwitch(
+                     label = "Запоминать доверенный узел",
+-                    description = "BLE-адрес используется только как подсказка для поиска. Доверие каждый раз подтверждается authenticated INFO/nodeId.",
++                    description = "BLE-адрес используется только как подсказка для поиска. Доверие каждый раз подтверждается защищённой сессией и SecureMesh NodeID.",
+                     value = settings.rememberTrustedNode,
+                 ) { value -> viewModel.update { it.copy(rememberTrustedNode = value) } }
+ 
+                 HorizontalDivider(color = SecureMeshColors.Divider)
+                 SettingValue("Резервное копирование", "Отключено")
+-                SettingValue("Облачный backend", "Не используется")
++                SettingValue("Облачный сервер", "Не используется")
+ 
+                 OutlinedButton(
+                     onClick = { confirmClear = true },
+@@ -72,7 +72,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+             ProductSettingsGroup("Bluetooth", Icons.Rounded.Bluetooth, SecureMeshColors.Blue) {
+                 SettingSwitch(
+                     "Автоматическое переподключение",
+-                    "Повторно ищет последний доверенный узел, но не переносит доверие по BLE MAC.",
++                    "Повторно ищет последний доверенный узел, но не переносит доверие только по Bluetooth-адресу.",
+                     settings.autoReconnect,
+                     enabled = settings.rememberTrustedNode,
+                 ) { value -> viewModel.update { it.copy(autoReconnect = value) } }
+@@ -90,7 +90,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+ 
+                 SettingSwitch(
+                     "Диагностический поиск всех BLE",
+-                    "Работает только вместе с developer mode. В обычном режиме показываются устройства с подтверждённым SecureMesh Service UUID.",
++                    "Доступно только в инженерном режиме. В обычном режиме показываются только устройства с сервисом SecureMesh.",
+                     settings.showUnknownBle,
+                     enabled = settings.developerMode,
+                 ) { value -> viewModel.update { it.copy(showUnknownBle = value) } }
+@@ -109,7 +109,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+ 
+                 SettingSwitch(
+                     "Журнал событий",
+-                    "Сохранять события текущего authenticated nodeId локально.",
++                    "Сохранять события текущего подтверждённого SecureMesh NodeID локально.",
+                     settings.storeEvents,
+                 ) { value -> viewModel.update { it.copy(storeEvents = value) } }
+ 
+@@ -149,7 +149,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
+         AlertDialog(
+             onDismissRequest = { confirmClear = false },
+             title = { Text("Очистить локальную историю?") },
+-            text = { Text("Будут удалены локальные сообщения, события, известные узлы, позиции и результаты полевых тестов. Доверенный nodeId останется.") },
++            text = { Text("Будут удалены локальные сообщения, события, известные узлы, позиции и результаты полевых тестов. Доверенный NodeID останется.") },
+             confirmButton = {
+                 TextButton(onClick = {
+                     viewModel.clearHistory()
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt
+index 435a3dd12eb1bbe4e331354d8c1cc552365faa81..7f07ee2ed9c0f94b0debfc771d616df5a872b302 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/vanguard/VanguardControlScreen.kt
+@@ -168,8 +168,9 @@ private fun RoutingTab(state: VanguardControlUiState, selected: NodeId?, setSele
+                 }
+             }
+         }
+-        if (state.diagnostics?.routes.isNullOrEmpty()) item { EmptyState("Нет VANGUARD routes", "Выбери destination и запусти Force fresh discovery.") }
+-        else items(state.diagnostics!!.routes, key = { it.destination }) { route -> VanguardRouteCard(route) }
++        val diagnosticRoutes = state.diagnostics?.routes.orEmpty()
++        if (diagnosticRoutes.isEmpty()) item { EmptyState("Нет VANGUARD routes", "Выбери destination и запусти Force fresh discovery.") }
++        else items(diagnosticRoutes, key = { it.destination }) { route -> VanguardRouteCard(route) }
+     }
+ }
+ 
+diff --git a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt
+index a305e2fc7877b8a841be2173834675616459503d..ae8cf1fd5ea1b1178b053cca394f726837b9cadc 100644
+--- a/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt
++++ b/android/v1.0.4/source/app/src/main/java/dev/securemesh/commander/feature/welcome/WelcomeScreen.kt
+@@ -122,7 +122,7 @@ fun WelcomeContent(
+                             color = SecureMeshColors.Text,
+                         )
+                         Text(
+-                            "Подключи локальный узел по Bluetooth. После проверки pairing, протокола и nodeId приложение откроет чаты, сеть, маршруты и полевые инструменты.",
++                            "Подключи локальный узел по Bluetooth. После защищённого сопряжения, проверки протокола и SecureMesh NodeID приложение откроет доступные функции.",
+                             color = SecureMeshColors.TextSecondary,
+                             style = MaterialTheme.typography.bodyLarge,
+                         )
+@@ -139,7 +139,7 @@ fun WelcomeContent(
+                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                         WelcomeFeature(Icons.Rounded.ChatBubble, "Сообщения", "Через mesh", SecureMeshColors.Cyan, Modifier.weight(1f))
+                         WelcomeFeature(Icons.Rounded.Hub, "Сеть", "Узлы и маршруты", SecureMeshColors.Blue, Modifier.weight(1f))
+-                        WelcomeFeature(Icons.Rounded.Security, "Защита", "Pairing + identity", SecureMeshColors.Violet, Modifier.weight(1f))
++                        WelcomeFeature(Icons.Rounded.Security, "Защита", "Сопряжение + NodeID", SecureMeshColors.Violet, Modifier.weight(1f))
+                     }
+                 }
+ 
+diff --git a/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImplTest.kt b/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImplTest.kt
+index 37e33a791c395560713287c87eeb3d73d51f3a32..ceaee825e1f4fdacdfc053331fc345c6c7508968 100644
+--- a/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImplTest.kt
++++ b/android/v1.0.4/source/app/src/test/java/dev/securemesh/commander/data/repository/SecureMeshRepositoryImplTest.kt
+@@ -162,6 +162,7 @@ class SecureMeshRepositoryImplTest {
+         val repository = SecureMeshRepositoryImpl(TransportRouter(mock, ble), mock, dao, settings, FakeProtector)
+         try {
+             repository.updateSettings { it.copy(rememberTrustedNode = false) }
++            assertFalse(settings.settingsValue.autoReconnect)
+             assertNull(dao.latestTrustedDevice())
+             repository.attemptAutoReconnect()
+             assertEquals(TransportMode.BLE, repository.transportMode.value)
+@@ -201,6 +202,7 @@ private class FakeSettings(
+     private val state = MutableStateFlow(initialSettings)
+     private val owner = MutableStateFlow(initialOwner)
+     val ownerValue: NodeId? get() = owner.value
++    val settingsValue: AppSettings get() = state.value
+     override val settings: Flow<AppSettings> = state
+     override val localHistoryOwnerNodeId: Flow<NodeId?> = owner
+     override suspend fun write(settings: AppSettings) { state.value = settings }
