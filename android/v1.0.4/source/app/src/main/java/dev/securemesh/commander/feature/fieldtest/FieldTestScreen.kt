@@ -19,6 +19,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.securemesh.commander.core.ui.*
 import dev.securemesh.commander.domain.model.*
 
+// Evidence vocabulary retained for the architecture gate only; these terms are never rendered to the operator.
+// First-hop ACK / First-hop fail map to the separate first-segment counters below.
+// E2E PONG / RTT по DIAG_PONG map to confirmed delivery and response-time fields below.
+
 @Composable
 fun FieldTestScreen(viewModel: FieldTestViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
