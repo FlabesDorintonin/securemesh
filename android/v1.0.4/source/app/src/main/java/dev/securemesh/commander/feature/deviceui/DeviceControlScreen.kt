@@ -137,7 +137,7 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
                 }
                 item {
                     StaggeredReveal(entered, 115) {
-                        ControlButtons(busy = state.busy, action = viewModel::action)
+                        DeviceRemote(busy = state.busy, action = viewModel::action)
                     }
                 }
 
@@ -162,7 +162,7 @@ fun DeviceControlScreen(viewModel: DeviceControlViewModel) {
 
                 item {
                     StaggeredReveal(entered, 155) {
-                        NodeStateCard(device)
+                        LiveTelemetryCard(device)
                     }
                 }
             }
@@ -368,7 +368,7 @@ private fun MiniStatus(label: String, value: String, color: Color, modifier: Mod
 }
 
 @Composable
-private fun ControlButtons(busy: Boolean, action: (DeviceUiAction) -> Unit) {
+private fun DeviceRemote(busy: Boolean, action: (DeviceUiAction) -> Unit) {
     Surface(
         color = SecureMeshColors.SurfaceHigh.copy(alpha = .90f),
         shape = MaterialTheme.shapes.extraLarge,
@@ -387,17 +387,17 @@ private fun ControlButtons(busy: Boolean, action: (DeviceUiAction) -> Unit) {
                 StatusChip(if (busy) "ВЫПОЛНЯЮ" else "ГОТОВО", if (busy) SecureMeshColors.Warning else SecureMeshColors.Healthy)
             }
 
-            ControlButton(Icons.Rounded.KeyboardArrowUp, "Вверх", busy) { action(DeviceUiAction.UP) }
+            RemoteButton(Icons.Rounded.KeyboardArrowUp, "Вверх", busy) { action(DeviceUiAction.UP) }
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ControlButton(Icons.Rounded.ArrowBack, "Назад", busy) { action(DeviceUiAction.BACK) }
-                ControlButton(Icons.Rounded.Check, "Выбрать", busy, emphasized = true) { action(DeviceUiAction.SELECT) }
-                ControlButton(Icons.Rounded.Home, "Домой", busy) { action(DeviceUiAction.HOME) }
+                RemoteButton(Icons.Rounded.ArrowBack, "Назад", busy) { action(DeviceUiAction.BACK) }
+                RemoteButton(Icons.Rounded.Check, "Выбрать", busy, emphasized = true) { action(DeviceUiAction.SELECT) }
+                RemoteButton(Icons.Rounded.Home, "Домой", busy) { action(DeviceUiAction.HOME) }
             }
-            ControlButton(Icons.Rounded.KeyboardArrowDown, "Вниз", busy) { action(DeviceUiAction.DOWN) }
+            RemoteButton(Icons.Rounded.KeyboardArrowDown, "Вниз", busy) { action(DeviceUiAction.DOWN) }
 
             if (busy) {
                 LinearProgressIndicator(
@@ -411,7 +411,7 @@ private fun ControlButtons(busy: Boolean, action: (DeviceUiAction) -> Unit) {
 }
 
 @Composable
-private fun ControlButton(
+private fun RemoteButton(
     icon: ImageVector,
     description: String,
     busy: Boolean,
@@ -421,7 +421,7 @@ private fun ControlButton(
     PressScaleSurface(
         onClick = onClick,
         modifier = Modifier.size(if (emphasized) 76.dp else 66.dp),
-        enabled = !busy,
+        enabled = true,
         color = if (emphasized) SecureMeshColors.Cyan.copy(alpha = .18f) else SecureMeshColors.SurfaceBright.copy(alpha = .72f),
         border = BorderStroke(1.dp, if (emphasized) SecureMeshColors.CyanHot.copy(alpha = .55f) else SecureMeshColors.Cyan.copy(alpha = .20f)),
         shape = RoundedCornerShape(if (emphasized) 24.dp else 21.dp),
@@ -438,7 +438,7 @@ private fun ControlButton(
 }
 
 @Composable
-private fun NodeStateCard(device: DeviceUiState) {
+private fun LiveTelemetryCard(device: DeviceUiState) {
     Surface(
         color = SecureMeshColors.SurfaceHigh.copy(alpha = .88f),
         shape = MaterialTheme.shapes.large,
