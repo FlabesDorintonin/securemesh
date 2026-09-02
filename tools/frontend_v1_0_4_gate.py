@@ -40,7 +40,7 @@ def main() -> int:
     vanguard = text("feature/vanguard/VanguardControlScreen.kt")
 
     ok("APK versionName is 1.0.4", 'versionName = "1.0.4"' in build)
-    ok("APK versionCode is 20", "versionCode = 20" in build)
+    ok("APK versionCode is 21", "versionCode = 21" in build)
 
     production_text = "\n".join(
         p.read_text(encoding="utf-8", errors="ignore")
