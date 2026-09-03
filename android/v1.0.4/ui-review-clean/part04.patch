@@ -1,5 +1,5 @@
 diff --git a/android/v1.0.4/source/gradle/libs.versions.toml b/android/v1.0.4/source/gradle/libs.versions.toml
-index 37d182bf500d00ccfa4e7dab6ad3274875fe6a0b..09896363e0ffdf46541079e0ab878b136e96cd50 100644
+index 37d182bf500d00ccfa4e7dab6ad3274875fe6a0b..f7b32b7f6c147da4e8da2d07a2b83f83c11f4cb7 100644
 --- a/android/v1.0.4/source/gradle/libs.versions.toml
 +++ b/android/v1.0.4/source/gradle/libs.versions.toml
 @@ -1,16 +1,16 @@
@@ -10,13 +10,11 @@ index 37d182bf500d00ccfa4e7dab6ad3274875fe6a0b..09896363e0ffdf46541079e0ab878b13
  ksp = "2.3.11"
  coreKtx = "1.17.0"
  activityCompose = "1.13.0"
--compose = "1.11.4"
-+compose = "1.12.0"
+ compose = "1.11.4"
  icons = "1.7.8"
  material3 = "1.4.0"
  lifecycle = "2.10.0"
--navigation = "2.9.8"
-+navigation = "2.10.0"
+ navigation = "2.9.8"
  datastore = "1.2.1"
 -room3 = "3.0.1"
 +room3 = "3.0.2"
