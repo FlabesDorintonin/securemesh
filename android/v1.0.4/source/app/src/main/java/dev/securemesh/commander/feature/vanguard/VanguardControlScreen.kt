@@ -168,8 +168,9 @@ private fun RoutingTab(state: VanguardControlUiState, selected: NodeId?, setSele
                 }
             }
         }
-        if (state.diagnostics?.routes.isNullOrEmpty()) item { EmptyState("Нет VANGUARD routes", "Выбери destination и запусти Force fresh discovery.") }
-        else items(state.diagnostics!!.routes, key = { it.destination }) { route -> VanguardRouteCard(route) }
+        val diagnosticRoutes = state.diagnostics?.routes.orEmpty()
+        if (diagnosticRoutes.isEmpty()) item { EmptyState("Нет VANGUARD routes", "Выбери destination и запусти Force fresh discovery.") }
+        else items(diagnosticRoutes, key = { it.destination }) { route -> VanguardRouteCard(route) }
     }
 }
 

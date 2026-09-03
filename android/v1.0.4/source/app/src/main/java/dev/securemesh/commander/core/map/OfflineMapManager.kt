@@ -428,7 +428,7 @@ class OfflineMapManager(context: Context) {
     private fun friendlyInstallError(error: Throwable): String = when {
         error is kotlinx.coroutines.CancellationException -> "Операция отменена"
         error.message.isNullOrBlank() -> "Не удалось добавить карту"
-        else -> error.message!!
+        else -> requireNotNull(error.message)
     }
 
     companion object {

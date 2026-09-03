@@ -1,1 +1,1 @@
-5c05d56fd0a54294e412c72369732e30cbdc1fff7d920cbf12b36c8a8b6f79b4  app/build/outputs/apk/debug/app-debug.apk
+e459201c895cb17d825c7be3eaaf15fbf013068ba98200042a0682648e03efcb  /home/runner/work/_temp/apks/SecureMesh-v1.0.4-build21-universal.apk

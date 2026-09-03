@@ -258,8 +258,9 @@ class BleDiscoveryParityTransport(
         }
         scanning = false
         if (wasScanning) {
-            lastScanSummary = "scan complete · callbacks=$rawCallbackCount · unique=${scanResults.size} · parseErrors=$callbackParseErrors"
-            updateScanDiagnostics(lastScanSummary!!, gattState = "IDLE")
+            val summary = "scan complete · callbacks=$rawCallbackCount · unique=${scanResults.size} · parseErrors=$callbackParseErrors"
+            lastScanSummary = summary
+            updateScanDiagnostics(summary, gattState = "IDLE")
         }
         if (updateState && (_connectionState.value is MeshConnectionState.Scanning || _connectionState.value is MeshConnectionState.DeviceFound)) {
             _connectionState.value = delegate.connectionState.value

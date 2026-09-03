@@ -4,8 +4,12 @@ import android.content.Context
 import android.net.Uri
 
 object LocalDocumentExporter {
-    fun write(context: Context, uri: Uri, content: String) {
-        context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
-            ?: error("Unable to open export destination")
+    fun write(context: Context, uri: Uri, content: String): Result<Unit> = runCatching {
+        val output = context.contentResolver.openOutputStream(uri)
+            ?: error("Не удалось открыть выбранное место сохранения")
+        output.bufferedWriter().use { writer ->
+            writer.write(content)
+            writer.flush()
+        }
     }
 }

@@ -46,7 +46,7 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
                             Text("Центр безопасности", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                             Text("Проверяем не обещания, а реально включённые механизмы", color = SecureMeshColors.TextSecondary)
                         }
-                        StatusChip(if (protected) "PROTECTED" else "LIMITED", if (protected) SecureMeshColors.Healthy else SecureMeshColors.Warning)
+                        StatusChip(if (protected) "ЗАЩИЩЕНО" else "ОГРАНИЧЕНО", if (protected) SecureMeshColors.Healthy else SecureMeshColors.Warning)
                     }
                 }
             }
@@ -55,9 +55,9 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
                 SecurityCard(Icons.Rounded.VisibilityOff, "Защита экрана", if (protected) "Включена" else "Выключена", protected) {
                     Text(
                         if (state.overlayProtectionSupported) {
-                            "FLAG_SECURE блокирует снимки экрана и небезопасный вывод. На Android 12+ дополнительно включена защита от сторонних application overlays."
+                            "Системная защита блокирует снимки экрана и небезопасный вывод. На Android 12+ дополнительно скрываются сторонние окна поверх SecureMesh."
                         } else {
-                            "FLAG_SECURE блокирует снимки экрана и небезопасный вывод. Защита от application overlays доступна начиная с Android 12."
+                            "Системная защита блокирует снимки экрана и небезопасный вывод. Дополнительная защита от сторонних окон поверх приложения доступна начиная с Android 12."
                         },
                         color = SecureMeshColors.TextSecondary,
                         style = MaterialTheme.typography.bodySmall,
@@ -68,37 +68,37 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
 
             item {
                 SecurityCard(Icons.Rounded.EnhancedEncryption, "Локальный криптовольт", "AES-256-GCM", true) {
-                    SecurityValue("Ключ", "Android Keystore · non-exportable")
+                    SecurityValue("Ключ", "Android Keystore · не извлекается")
                     SecurityValue("Контакты/заметки", "Зашифрованы")
                     SecurityValue("Текст сообщений", "Зашифрован")
-                    SecurityValue("GPS history", "Зашифрована")
-                    Text("Для каждого значения используется отдельный GCM IV; AAD привязывает ciphertext к конкретному nodeId/messageId/position record и не позволяет незаметно переставить его между записями.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("При обновлении со старых сборок plaintext GPS-кэш один раз удаляется. Старые сообщения перезаписываются в vault при запуске.", color = SecureMeshColors.Warning, style = MaterialTheme.typography.bodySmall)
+                    SecurityValue("История координат", "Зашифрована")
+                    Text("Каждая запись шифруется отдельно и привязывается к своему назначению. Подмена зашифрованных данных между контактами, сообщениями и координатами должна обнаруживаться при проверке целостности.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("При обновлении со старых сборок незашифрованный кэш координат удаляется. Поддерживаемые старые записи сообщений переносятся в защищённое локальное хранилище.", color = SecureMeshColors.Warning, style = MaterialTheme.typography.bodySmall)
                 }
             }
 
             item {
                 SecurityCard(Icons.Rounded.PhoneAndroid, "Изоляция приложения", "Локально", true) {
-                    Text("У приложения нет INTERNET permission. Android backup и device-transfer backup отключены; FLAG_SECURE и защита overlays остаются включаемыми на уровне всего окна.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("Доступ в интернет используется только для явно запущенной загрузки офлайн-карты по HTTPS. Обычная mesh/BLE-работа не требует облачного сервера. Резервное копирование Android и перенос данных приложения отключены.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                     Text("Экспортированный вручную CSV/JSON уже находится вне криптовольта — экспорт нужно считать обычным чувствительным файлом.", color = SecureMeshColors.Warning, style = MaterialTheme.typography.bodySmall)
                 }
             }
 
             item {
                 SecurityCard(Icons.Rounded.BluetoothConnected, "BLE-аутентификация", if (state.authenticated) "Сессия подтверждена" else "Нет активной защищённой сессии", state.authenticated) {
-                    SecurityValue("Node ID", state.session?.localNodeIdentity?.nodeId ?: "—")
-                    SecurityValue("System bond", state.bonded?.let { if (it) "Да" else "Нет" } ?: "—")
-                    SecurityValue("BLE protocol", state.ble?.protocolVersion?.toString() ?: "—")
-                    Text("BLE address используется только как транспортная подсказка. Доверие назначается после pairing + INFO/nodeId + PROTOCOL_READY.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    SecurityValue("NodeID", state.session?.localNodeIdentity?.nodeId ?: "—")
+                    SecurityValue("Системное сопряжение", state.bonded?.let { if (it) "Да" else "Нет" } ?: "—")
+                    SecurityValue("Application protocol", state.ble?.protocolVersion?.toString() ?: "—")
+                    Text("Bluetooth-адрес используется только как транспортная подсказка. Доверие подтверждается защищённой сессией и SecureMesh NodeID, а не адресом телефона или радиомодуля.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
 
             item {
                 SecurityCard(Icons.Rounded.Key, "Доверенное устройство", if (state.settings.rememberTrustedNode) "Запоминание включено" else "Не запоминается", state.settings.rememberTrustedNode) {
-                    SettingToggle("Запоминать доверенный nodeId", state.settings.rememberTrustedNode, viewModel::setRememberTrustedNode)
+                    SettingToggle("Запоминать доверенный NodeID", state.settings.rememberTrustedNode, viewModel::setRememberTrustedNode)
                     SettingToggle("Автоподключение", state.settings.autoReconnect, viewModel::setAutoReconnect, enabled = state.settings.rememberTrustedNode)
                     if (!state.settings.rememberTrustedNode) {
-                        Text("Сохранённая trusted-запись удаляется сразу; старый BLE address больше не используется для reconnect.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        Text("Сохранённая запись доверия удаляется сразу; прежний BLE-адрес больше не используется для автоматического подключения.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -106,8 +106,8 @@ fun SecurityCenterScreen(viewModel: SecurityCenterViewModel) {
             item {
                 SecurityCard(Icons.Rounded.Storage, "Хранение истории", "${state.settings.retentionDays} дней", true) {
                     SecurityValue("События", if (state.settings.storeEvents) "Хранятся" else "Не сохраняются")
-                    SecurityValue("GPS history", if (state.settings.positionHistory) "Хранится" else "Не сохраняется")
-                    Text("Чаты сохраняются локально по SecureMesh identity. Message key включает origin + messageId, чтобы одинаковые firmware ID разных отправителей не перетирали историю.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    SecurityValue("История координат", if (state.settings.positionHistory) "Хранится" else "Не сохраняется")
+                    Text("Чаты сохраняются локально по SecureMesh NodeID. Составной ключ сообщения учитывает отправителя, поэтому одинаковые номера сообщений от разных узлов не перезаписывают историю.", color = SecureMeshColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

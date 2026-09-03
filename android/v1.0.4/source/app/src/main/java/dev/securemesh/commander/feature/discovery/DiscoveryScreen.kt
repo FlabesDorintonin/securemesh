@@ -263,15 +263,15 @@ private fun SystemPairingHint(state: MeshConnectionState.PairingRequired) {
 @Composable
 private fun AuthenticationHint(connection: MeshConnectionState) {
     val label = when (connection) {
-        is MeshConnectionState.DiscoveringServices -> "Проверяем GATT service"
-        is MeshConnectionState.IdentifyingSecureMesh -> "Проверяем SecureMesh identity"
+        is MeshConnectionState.DiscoveringServices -> "Проверяем сервис связи"
+        is MeshConnectionState.IdentifyingSecureMesh -> "Проверяем SecureMesh NodeID"
         is MeshConnectionState.SyncingSession -> "Синхронизируем права сессии"
         else -> "Проверяем защищённый BLE-канал"
     }
     TechnicalCard("Защищённое подключение") {
         Text(label, fontWeight = FontWeight.SemiBold, color = SecureMeshColors.Text)
         Text(
-            "Сессия откроется только после подтверждения протокола, bonding и аутентифицированного INFO/nodeId.",
+            "Сессия откроется только после проверки протокола, системного сопряжения и подтверждения SecureMesh NodeID.",
             color = SecureMeshColors.TextSecondary,
         )
         LinearProgressIndicator(Modifier.fillMaxWidth(), color = SecureMeshColors.Cyan)
@@ -302,7 +302,7 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
             onValueChange = viewModel::setQuery,
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             label = { Text("Поиск устройства") },
-            placeholder = { Text(if (state.showingUnknownBle) "Имя или BLE-адрес" else "SecureMesh-узел") },
+            placeholder = { Text(if (state.showingUnknownBle) "Имя или адрес подключения" else "SecureMesh-узел") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             shape = MaterialTheme.shapes.extraLarge,
@@ -323,7 +323,7 @@ private fun DeviceDiscoveryContent(state: DiscoveryUiState, viewModel: Discovery
         }
         if (!state.showingUnknownBle) {
             Text(
-                "Показываются только устройства с подтверждённым SecureMesh Service UUID. Имя BLE не считается идентичностью.",
+                "В обычном режиме показываются только устройства, объявляющие сервис SecureMesh. Имя Bluetooth не считается сетевой идентичностью.",
                 color = SecureMeshColors.Muted,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -424,7 +424,7 @@ fun ProtocolUnavailableScreen(
             StatusChip("BLE подключён", SecureMeshColors.Warning)
             Text("Узел не подтвердил SecureMesh", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = SecureMeshColors.Text)
             Text(
-                "GATT-соединение установлено, но защищённый BLE protocol v0.2 не прошёл проверку service/characteristics, версии или INFO handshake.",
+                "Bluetooth-соединение установлено, но application protocol v2 не прошёл проверку сервиса, характеристик, версии или идентичности узла.",
                 color = SecureMeshColors.TextSecondary,
             )
             TechnicalCard("Соединение") {

@@ -37,8 +37,16 @@ fun EventsScreen(viewModel: EventsViewModel) {
     var selected by remember { mutableStateOf<MeshEvent?>(null) }
     var pending by remember { mutableStateOf("") }
     var exportOpen by remember { mutableStateOf(false) }
-    val createCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { LocalDocumentExporter.write(context, it, pending) } }
-    val createJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { LocalDocumentExporter.write(context, it, pending) } }
+    var exportNotice by remember { mutableStateOf<String?>(null) }
+    val saveExport: (android.net.Uri?) -> Unit = { uri ->
+        uri?.let { destination ->
+            LocalDocumentExporter.write(context, destination, pending)
+                .onSuccess { exportNotice = "Файл сохранён" }
+                .onFailure { exportNotice = it.message ?: "Не удалось сохранить файл" }
+        }
+    }
+    val createCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv"), saveExport)
+    val createJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json"), saveExport)
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -79,6 +87,15 @@ fun EventsScreen(viewModel: EventsViewModel) {
         } else {
             items(state.items, key = { it.id }) { event ->
                 EventRow(event) { selected = event }
+            }
+        }
+        exportNotice?.let { notice ->
+            item {
+                Text(
+                    notice,
+                    color = if (notice == "Файл сохранён") SecureMeshColors.Healthy else SecureMeshColors.Critical,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
         item { Spacer(Modifier.height(8.dp)) }

@@ -122,7 +122,7 @@ fun WelcomeContent(
                             color = SecureMeshColors.Text,
                         )
                         Text(
-                            "Подключи локальный узел по Bluetooth. После проверки pairing, протокола и nodeId приложение откроет чаты, сеть, маршруты и полевые инструменты.",
+                            "Подключи локальный узел по Bluetooth. После защищённого сопряжения, проверки протокола и SecureMesh NodeID приложение откроет доступные функции.",
                             color = SecureMeshColors.TextSecondary,
                             style = MaterialTheme.typography.bodyLarge,
                         )
@@ -139,7 +139,7 @@ fun WelcomeContent(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         WelcomeFeature(Icons.Rounded.ChatBubble, "Сообщения", "Через mesh", SecureMeshColors.Cyan, Modifier.weight(1f))
                         WelcomeFeature(Icons.Rounded.Hub, "Сеть", "Узлы и маршруты", SecureMeshColors.Blue, Modifier.weight(1f))
-                        WelcomeFeature(Icons.Rounded.Security, "Защита", "Pairing + identity", SecureMeshColors.Violet, Modifier.weight(1f))
+                        WelcomeFeature(Icons.Rounded.Security, "Защита", "Сопряжение + NodeID", SecureMeshColors.Violet, Modifier.weight(1f))
                     }
                 }
 

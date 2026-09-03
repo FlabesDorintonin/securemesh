@@ -50,7 +50,7 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
                 }
             }
             if (!state.supported) {
-                item { EmptyState("Радар недоступен", "Подключённая прошивка не заявляет capability BLE_RADAR.") }
+                item { EmptyState("Радар недоступен", "Подключённый узел не сообщает о поддержке BLE-радара.") }
             } else {
                 val radar = state.radar
                 item { RadarCanvas(radar?.devices.orEmpty(), radar?.scanning == true) }
@@ -76,9 +76,9 @@ fun BleRadarScreen(viewModel: BleRadarViewModel) {
                     }
                 }
                 if (radar?.devices.isNullOrEmpty()) {
-                    item { EmptyState("Пока пусто", "После PROTOCOL_READY узел периодически выполняет пассивное BLE-сканирование. Дайте ему несколько секунд.") }
+                    item { EmptyState("Пока пусто", "После установления защищённой сессии узел периодически выполняет пассивное BLE-сканирование. Дайте ему несколько секунд.") }
                 } else {
-                    items(radar!!.devices, key = { it.addressHash }) { device -> RadarDeviceRow(device) }
+                    items(radar?.devices.orEmpty(), key = { it.addressHash }) { device -> RadarDeviceRow(device) }
                 }
             }
             state.error?.let { message -> item { Text(message, color = SecureMeshColors.Critical, style = MaterialTheme.typography.bodySmall) } }

@@ -162,6 +162,7 @@ class SecureMeshRepositoryImplTest {
         val repository = SecureMeshRepositoryImpl(TransportRouter(mock, ble), mock, dao, settings, FakeProtector)
         try {
             repository.updateSettings { it.copy(rememberTrustedNode = false) }
+            assertFalse(settings.settingsValue.autoReconnect)
             assertNull(dao.latestTrustedDevice())
             repository.attemptAutoReconnect()
             assertEquals(TransportMode.BLE, repository.transportMode.value)
@@ -201,6 +202,7 @@ private class FakeSettings(
     private val state = MutableStateFlow(initialSettings)
     private val owner = MutableStateFlow(initialOwner)
     val ownerValue: NodeId? get() = owner.value
+    val settingsValue: AppSettings get() = state.value
     override val settings: Flow<AppSettings> = state
     override val localHistoryOwnerNodeId: Flow<NodeId?> = owner
     override suspend fun write(settings: AppSettings) { state.value = settings }

@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.room3)
 }
 
+val secureMeshArm64Only = providers.gradleProperty("securemeshArm64Only").orNull == "true"
+
 android {
     namespace = "dev.securemesh.commander"
     compileSdk = 36
@@ -14,10 +16,13 @@ android {
         applicationId = "dev.securemesh.commander"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
+        versionCode = 21
         versionName = "1.0.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        if (secureMeshArm64Only) {
+            ndk { abiFilters += "arm64-v8a" }
+        }
     }
 
     buildFeatures {

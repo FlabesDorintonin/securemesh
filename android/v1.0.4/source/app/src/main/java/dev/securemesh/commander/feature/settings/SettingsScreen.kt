@@ -39,7 +39,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             ProductSettingsGroup("Безопасность", Icons.Rounded.Lock, SecureMeshColors.Cyan) {
                 SettingSwitch(
                     label = "Защищать экран SecureMesh",
-                    description = "Блокирует снимки, небезопасный вывод и сторонние overlay-окна на всём чувствительном интерфейсе приложения.",
+                    description = "Блокирует снимки экрана, небезопасный вывод и сторонние окна поверх чувствительного интерфейса.",
                     value = settings.secureScreen,
                 ) { value -> viewModel.update { it.copy(secureScreen = value) } }
 
@@ -47,13 +47,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
                 SettingSwitch(
                     label = "Запоминать доверенный узел",
-                    description = "BLE-адрес используется только как подсказка для поиска. Доверие каждый раз подтверждается authenticated INFO/nodeId.",
+                    description = "BLE-адрес используется только как подсказка для поиска. Доверие каждый раз подтверждается защищённой сессией и SecureMesh NodeID.",
                     value = settings.rememberTrustedNode,
                 ) { value -> viewModel.update { it.copy(rememberTrustedNode = value) } }
 
                 HorizontalDivider(color = SecureMeshColors.Divider)
                 SettingValue("Резервное копирование", "Отключено")
-                SettingValue("Облачный backend", "Не используется")
+                SettingValue("Облачный сервер", "Не используется")
 
                 OutlinedButton(
                     onClick = { confirmClear = true },
@@ -72,7 +72,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             ProductSettingsGroup("Bluetooth", Icons.Rounded.Bluetooth, SecureMeshColors.Blue) {
                 SettingSwitch(
                     "Автоматическое переподключение",
-                    "Повторно ищет последний доверенный узел, но не переносит доверие по BLE MAC.",
+                    "Повторно ищет последний доверенный узел, но не переносит доверие только по Bluetooth-адресу.",
                     settings.autoReconnect,
                     enabled = settings.rememberTrustedNode,
                 ) { value -> viewModel.update { it.copy(autoReconnect = value) } }
@@ -90,7 +90,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
                 SettingSwitch(
                     "Диагностический поиск всех BLE",
-                    "Работает только вместе с developer mode. В обычном режиме показываются устройства с подтверждённым SecureMesh Service UUID.",
+                    "Доступно только в инженерном режиме. В обычном режиме показываются только устройства с сервисом SecureMesh.",
                     settings.showUnknownBle,
                     enabled = settings.developerMode,
                 ) { value -> viewModel.update { it.copy(showUnknownBle = value) } }
@@ -109,7 +109,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
                 SettingSwitch(
                     "Журнал событий",
-                    "Сохранять события текущего authenticated nodeId локально.",
+                    "Сохранять события текущего подтверждённого SecureMesh NodeID локально.",
                     settings.storeEvents,
                 ) { value -> viewModel.update { it.copy(storeEvents = value) } }
 
@@ -149,7 +149,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Очистить локальную историю?") },
-            text = { Text("Будут удалены локальные сообщения, события, известные узлы, позиции и результаты полевых тестов. Доверенный nodeId останется.") },
+            text = { Text("Будут удалены локальные сообщения, события, известные узлы, позиции и результаты полевых тестов. Доверенный NodeID останется.") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.clearHistory()
